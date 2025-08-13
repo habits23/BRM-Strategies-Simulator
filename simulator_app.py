@@ -8,20 +8,57 @@ import pprint
 # Import the actual simulation engine we just built
 import simulation_engine as engine
 
+# --- Default Data for First Run ---
+DEFAULT_STAKES_DATA = pd.DataFrame([
+    {
+        "name": "NL20", "bb_per_100": 8.0, "ev_bb_per_100": 8.3, "std_dev_per_100": 91.4,
+        "sample_hands": 77657, "bb_size": 0.20, "win_rate_drop": 0.0, "rake_bb_per_100": 15.8
+    },
+    {
+        "name": "NL50", "bb_per_100": 4.0, "ev_bb_per_100": 4.0, "std_dev_per_100": 100.0,
+        "sample_hands": 5681, "bb_size": 0.50, "win_rate_drop": 1.5, "rake_bb_per_100": 10.4
+    },
+    {
+        "name": "NL100", "bb_per_100": 2.5, "ev_bb_per_100": 2.5, "std_dev_per_100": 100.0,
+        "sample_hands": 0, "bb_size": 1.00, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0
+    },
+])
+
+DEFAULT_STRATEGIES = {
+    "Standard Progressive": {
+        "type": "standard",
+        "rules": [
+            {"threshold": 5000, "tables": {"NL100": "100%"}},
+            {"threshold": 3500, "tables": {"NL50": "100%"}},
+            {"threshold": 3000, "tables": {"NL20": "20%", "NL50": "80%"}},
+            {"threshold": 2500, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 1200, "tables": {"NL20": "100%"}},
+        ]
+    },
+    "Sticky (40 BIs)": {
+        "type": "hysteresis",
+        "num_buy_ins": 40
+    }
+}
+
 st.set_page_config(layout="wide", page_title="Poker Bankroll Simulator")
 
 st.title("Poker Bankroll Simulator")
 st.write("An interactive tool to simulate poker bankroll progression based on your data and strategies. Based on the logic from `Final BR Simulator v1_5.py`.")
 
 # --- Session State Initialization ---
-# We store all widget values in st.session_state to maintain them across reruns.
-# This is the key to removing the form while preventing the simulation from
-# running on every single widget interaction.
-
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
     st.session_state.results = None
-    st.session_state.strategy_configs = {} # Initialize strategy configs
+
+if 'stakes_data' not in st.session_state:
+    st.session_state.stakes_data = DEFAULT_STAKES_DATA
+
+if 'strategy_configs' not in st.session_state:
+    st.session_state.strategy_configs = {
+        name: pprint.pformat(config, indent=4, width=1)
+        for name, config in DEFAULT_STRATEGIES.items()
+    }
 
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
@@ -168,9 +205,6 @@ if st.session_state.run_simulation:
 
     # --- 2. Parse and validate the text inputs for stakes and strategies ---
     try:
-        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
-        config["STAKES_DATA"] = st.session_state.stakes_editor.to_dict('records')
-        config["STRATEGIES_TO_RUN"] = ast.literal_eval(st.session_state.strategy_text)
         inputs_are_valid = True
     except (ValueError, SyntaxError) as e:
         st.error(f"Error parsing text inputs. Please check your syntax. Details: {e}")
