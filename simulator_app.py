@@ -241,8 +241,9 @@ if st.session_state.run_simulation:
 
     # --- 2. Parse and validate the text inputs for stakes and strategies ---
     try:
-        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
-        config["STAKES_DATA"] = st.session_state.stakes_editor.to_dict('records')
+        # The data_editor state can sometimes be a dict, so we robustly convert it to a DataFrame first.
+        stakes_df = pd.DataFrame(st.session_state.stakes_editor)
+        config["STAKES_DATA"] = stakes_df.to_dict('records')
 
         # Assemble the strategies to run from the individual text areas
         strategies_to_run = {}
