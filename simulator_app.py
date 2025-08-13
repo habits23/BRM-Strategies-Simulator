@@ -200,14 +200,29 @@ if st.session_state.run_simulation:
         "HANDS_FOR_MAX_DF": st.session_state.hands_for_max_df,
         "SEED": st.session_state.seed,
     }
-    # Also store the config used for this run, so we can access it for display later
-    st.session_state.config_for_display = config
 
     # --- 2. Parse and validate the text inputs for stakes and strategies ---
     try:
+        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
+        config["STAKES_DATA"] = st.session_state.stakes_data.to_dict('records')
+
+        # Parse each strategy's text config into a dictionary
+        parsed_strategies = {}
+        for name, config_text in st.session_state.strategy_configs.items():
+            try:
+                parsed_strategies[name] = ast.literal_eval(config_text)
+            except (ValueError, SyntaxError) as e:
+                # Pinpoint the exact strategy that has a syntax error
+                raise ValueError(f"Syntax error in strategy '{name}': {e}")
+
+        config["STRATEGIES_TO_RUN"] = parsed_strategies
+
+        # Also store the config used for this run, so we can access it for display later
+        st.session_state.config_for_display = config
         inputs_are_valid = True
+
     except (ValueError, SyntaxError) as e:
-        st.error(f"Error parsing text inputs. Please check your syntax. Details: {e}")
+        st.error(f"Error parsing inputs. Please check your configuration. Details: {e}")
         inputs_are_valid = False
         st.session_state.results = None
 
