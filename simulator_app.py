@@ -99,105 +99,44 @@ tab1, tab2 = st.tabs(["Stakes Data", "Bankroll Management Strategies"])
 with tab1:
     st.subheader("Stakes Data")
     st.write("Enter your performance statistics for each stake you play. You can add or remove rows.")
-    # The data_editor provides a spreadsheet-like interface and works with session_state.
-    default_stakes_df = pd.DataFrame([
-        {"name": "NL20", "bb_per_100": 7.96, "ev_bb_per_100": 8.29, "std_dev_per_100": 91.41, "sample_hands": 77657, "bb_size": 0.20, "win_rate_drop": 0.0, "rake_bb_per_100": 15.82},
-        {"name": "NL50", "bb_per_100": 23.0, "ev_bb_per_100": 15.2, "std_dev_per_100": 85.43, "sample_hands": 5681, "bb_size": 0.50, "win_rate_drop": 1.5, "rake_bb_per_100": 10.36},
-        {"name": "NL100", "bb_per_100": 2.5, "ev_bb_per_100": 2.5, "std_dev_per_100": 100.0, "sample_hands": 0, "bb_size": 1.00, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0},
-        {"name": "NL200", "bb_per_100": 1.5, "ev_bb_per_100": 1.5, "std_dev_per_100": 100.0, "sample_hands": 0, "bb_size": 2.00, "win_rate_drop": 0.5, "rake_bb_per_100": 6.5},
-    ])
-    st.data_editor(default_stakes_df, num_rows="dynamic", key="stakes_editor")
+    # The data_editor reads from and writes to the session state, preserving user edits.
+    st.session_state.stakes_data = st.data_editor(st.session_state.stakes_data, num_rows="dynamic")
 
 with tab2:
     st.subheader("Bankroll Management Strategies")
-    st.write("Edit, add, or remove strategies below. Each strategy is a block of text in Python dictionary format.")
+    st.write("Manage your strategies below. Each strategy is a block of text in Python dictionary format.")
+    st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
+    st.write("---")
 
-    default_strategies_str = """{
-            {"threshold": 7000, "tables": {"NL50": "20%", "NL100": "80%"}},
-            {"threshold": 6000, "tables": {"NL50": "50%", "NL100": "50%"}},
-            {"threshold": 5000, "tables": {"NL50": "80%", "NL100": "20%"}},
-            {"threshold": 3500, "tables": {"NL50": "100%"}},
-            {"threshold": 3000, "tables": {"NL20": "20%", "NL50": "80%"}},
-            {"threshold": 2500, "tables": {"NL20": "50%", "NL50": "50%"}},
-            {"threshold": 2000, "tables": {"NL20": "80%", "NL50": "20%"}},
-            {"threshold": 1200, "tables": {"NL20": "100%"}}
-        ]
-    },
-    "Custom Strategy": {
-        "type": "standard",
-        "rules": [
-            {"threshold": 3100, "tables": {"NL50": "100%"}},
-            {"threshold": 2650, "tables": {"NL20": "10%-30%", "NL50": "70%-90%"}},
-            {"threshold": 2250, "tables": {"NL20": "30%-50%", "NL50": "50%-70%"}},
-            {"threshold": 1750, "tables": {"NL20": "50%-70%", "NL50": "30%-50%"}},
-            {"threshold": 1250, "tables": {"NL20": "70%-90%", "NL50": "10%-30%"}},
-            {"threshold": 675, "tables": {"NL20": "100%"}}
-        ]
-    },
-    "Ultra Conservative": {
-        "type": "standard",
-        "rules": [
-            {"threshold": 30000, "tables": {"NL200": "100%"}},
-            {"threshold": 25000, "tables": {"NL100": "20%", "NL200": "80%"}},
-            {"threshold": 20000, "tables": {"NL100": "50%", "NL200": "50%"}},
-            {"threshold": 16000, "tables": {"NL100": "80%", "NL200": "20%"}},
-            {"threshold": 12000, "tables": {"NL100": "100%"}},
-            {"threshold": 10000, "tables": {"NL100": "100%"}},
-            {"threshold": 8000, "tables": {"NL50": "50%", "NL100": "50%"}},
-            {"threshold": 6000, "tables": {"NL50": "80%", "NL100": "20%"}},
-            {"threshold": 5000, "tables": {"NL50": "100%"}},
-            {"threshold": 4000, "tables": {"NL20": "20%", "NL50": "80%"}},
-            {"threshold": 3000, "tables": {"NL20": "50%", "NL50": "50%"}},
-            {"threshold": 2500, "tables": {"NL20": "80%", "NL50": "20%"}},
-            {"threshold": 1600, "tables": {"NL20": "100%"}},
-            {"threshold": 750, "tables": {"NL20": "100%"}}
-        ]
-    },
-    "Granular Aggressive": {
-        "type": "standard",
-        "rules": [
-            {"threshold": 6000, "tables": {"NL200": "100%"}},
-            {"threshold": 5500, "tables": {"NL100": "20%", "NL200": "80%"}},
-            {"threshold": 5000, "tables": {"NL100": "50%", "NL200": "50%"}},
-            {"threshold": 4000, "tables": {"NL100": "80%", "NL200": "20%"}},
-            {"threshold": 2500, "tables": {"NL100": "100%"}},
-            {"threshold": 2250, "tables": {"NL50": "20%", "NL100": "80%"}},
-            {"threshold": 2000, "tables": {"NL50": "50%", "NL100": "50%"}},
-            {"threshold": 1750, "tables": {"NL50": "80%", "NL100": "20%"}},
-            {"threshold": 1000, "tables": {"NL50": "100%"}},
-            {"threshold": 900, "tables": {"NL20": "20%", "NL50": "80%"}},
-            {"threshold": 750, "tables": {"NL20": "50%", "NL50": "50%"}},
-            {"threshold": 600, "tables": {"NL20": "80%", "NL50": "20%"}},
-            {"threshold": 400, "tables": {"NL20": "100%"}}
-        ]
-    },
-    "Balanced": {
-        "type": "standard",
-        "rules": [
-            {"threshold": 10000, "tables": {"NL200": "100%"}},
-            {"threshold": 9000, "tables": {"NL100": "20%-40%", "NL200": "60%-80%"}},
-            {"threshold": 8000, "tables": {"NL100": "40%-60%", "NL200": "40%-60%"}},
-            {"threshold": 7000, "tables": {"NL100": "60%-80%", "NL200": "20%-40%"}},
-            {"threshold": 5000, "tables": {"NL100": "100%"}},
-            {"threshold": 4500, "tables": {"NL50": "10%-30%", "NL100": "70%-90%"}},
-            {"threshold": 4000, "tables": {"NL50": "30%-50%", "NL100": "50%-70%"}},
-            {"threshold": 3500, "tables": {"NL50": "50%-70%", "NL100": "30%-50%"}},
-            {"threshold": 2000, "tables": {"NL50": "100%"}},
-            {"threshold": 1800, "tables": {"NL20": "20%-40%", "NL50": "60%-80%"}},
-            {"threshold": 1600, "tables": {"NL20": "40%-60%", "NL50": "40%-60%"}},
-            {"threshold": 1400, "tables": {"NL20": "60%-80%", "NL50": "20%-40%"}},
-            {"threshold": 800, "tables": {"NL20": "100%"}}
-        ]
-    },
-    "Sticky Strategy": {
-        "type": "hysteresis",
-        "num_buy_ins": {
-            "NL20": 25, "NL50": 30, "NL100": 40, "NL200": 40
-        }
-    }
-}"""
+    strategy_names = list(st.session_state.strategy_configs.keys())
 
-    st.text_area("Strategy Definitions", value=default_strategies_str, height=600, key="strategy_text")
+    for name in strategy_names:
+        if name not in st.session_state.strategy_configs:
+            continue # Skip if it was just removed
+
+        with st.expander(f"Edit Strategy: {name}", expanded=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                new_name = st.text_input("Strategy Name", value=name, key=f"name_{name}")
+            with col2:
+                st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), use_container_width=True)
+
+            config_text = st.text_area(
+                "Strategy Configuration (Python Dictionary Format)",
+                value=st.session_state.strategy_configs[name],
+                key=f"config_{name}",
+                height=250
+            )
+
+            # Update state if name changed
+            if new_name != name:
+                # To rename, we remove the old and add the new
+                st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name)
+                # Rerun to update the UI with the new name
+                st.rerun()
+            else:
+                 # Update the config text in the state
+                 st.session_state.strategy_configs[name] = config_text
 
 
 # --- Main Logic to Run Simulation and Display Results ---
