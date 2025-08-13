@@ -23,30 +23,63 @@ if 'run_simulation' not in st.session_state:
     st.session_state.results = None
     # --- Default Strategies ---
     # Define this once at the top for easy access
+    # This now includes all strategies from your original script.
     DEFAULT_STRATEGIES = {
         "Gradual Progressive": {
             "type": "standard",
             "rules": [
-                {"threshold": 20000, "tables": {"NL200": "100%"}},
-                {"threshold": 18000, "tables": {"NL100": "20%", "NL200": "80%"}},
-                {"threshold": 16000, "tables": {"NL100": "50%", "NL200": "50%"}},
-                {"threshold": 12000, "tables": {"NL100": "80%", "NL200": "20%"}},
-                {"threshold": 8000, "tables": {"NL100": "100%"}},
-                {"threshold": 7000, "tables": {"NL50": "20%", "NL100": "80%"}},
-                {"threshold": 6000, "tables": {"NL50": "50%", "NL100": "50%"}},
-                {"threshold": 5000, "tables": {"NL50": "80%", "NL100": "20%"}},
-                {"threshold": 3500, "tables": {"NL50": "100%"}},
-                {"threshold": 3000, "tables": {"NL20": "20%", "NL50": "80%"}},
-                {"threshold": 2500, "tables": {"NL20": "50%", "NL50": "50%"}},
-                {"threshold": 2000, "tables": {"NL20": "80%", "NL50": "20%"}},
-                {"threshold": 1200, "tables": {"NL20": "100%"}}
+                {"threshold": 20000, "tables": {"NL200": "100%"}}, {"threshold": 18000, "tables": {"NL100": "20%", "NL200": "80%"}},
+                {"threshold": 16000, "tables": {"NL100": "50%", "NL200": "50%"}}, {"threshold": 12000, "tables": {"NL100": "80%", "NL200": "20%"}},
+                {"threshold": 8000, "tables": {"NL100": "100%"}}, {"threshold": 7000, "tables": {"NL50": "20%", "NL100": "80%"}},
+                {"threshold": 6000, "tables": {"NL50": "50%", "NL100": "50%"}}, {"threshold": 5000, "tables": {"NL50": "80%", "NL100": "20%"}},
+                {"threshold": 3500, "tables": {"NL50": "100%"}}, {"threshold": 3000, "tables": {"NL20": "20%", "NL50": "80%"}},
+                {"threshold": 2500, "tables": {"NL20": "50%", "NL50": "50%"}}, {"threshold": 2000, "tables": {"NL20": "80%", "NL50": "20%"}},
+                {"threshold": 1200, "tables": {"NL20": "100%"}},
+            ]
+        },
+        "Ultra Conservative": {
+            "type": "standard", "rules": [
+                {"threshold": 30000, "tables": {"NL200": "100%"}}, {"threshold": 25000, "tables": {"NL100": "20%", "NL200": "80%"}},
+                {"threshold": 20000, "tables": {"NL100": "50%", "NL200": "50%"}}, {"threshold": 16000, "tables": {"NL100": "80%", "NL200": "20%"}},
+                {"threshold": 12000, "tables": {"NL100": "100%"}}, {"threshold": 10000, "tables": {"NL100": "100%"}},
+                {"threshold": 8000, "tables": {"NL50": "50%", "NL100": "50%"}}, {"threshold": 6000, "tables": {"NL50": "80%", "NL100": "20%"}},
+                {"threshold": 5000, "tables": {"NL50": "100%"}}, {"threshold": 4000, "tables": {"NL20": "20%", "NL50": "80%"}},
+                {"threshold": 3000, "tables": {"NL20": "50%", "NL50": "50%"}}, {"threshold": 2500, "tables": {"NL20": "80%", "NL50": "20%"}},
+                {"threshold": 1600, "tables": {"NL20": "100%"}}, {"threshold": 750, "tables": {"NL20": "100%"}},
+            ]
+        },
+        "Granular Aggressive": {
+            "type": "standard", "rules": [
+                {"threshold": 6000, "tables": {"NL200": "100%"}}, {"threshold": 5500, "tables": {"NL100": "20%", "NL200": "80%"}},
+                {"threshold": 5000, "tables": {"NL100": "50%", "NL200": "50%"}}, {"threshold": 4000, "tables": {"NL100": "80%", "NL200": "20%"}},
+                {"threshold": 2500, "tables": {"NL100": "100%"}}, {"threshold": 2250, "tables": {"NL50": "20%", "NL100": "80%"}},
+                {"threshold": 2000, "tables": {"NL50": "50%", "NL100": "50%"}}, {"threshold": 1750, "tables": {"NL50": "80%", "NL100": "20%"}},
+                {"threshold": 1000, "tables": {"NL50": "100%"}}, {"threshold": 900, "tables": {"NL20": "20%", "NL50": "80%"}},
+                {"threshold": 750, "tables": {"NL20": "50%", "NL50": "50%"}}, {"threshold": 600, "tables": {"NL20": "80%", "NL50": "20%"}},
+                {"threshold": 400, "tables": {"NL20": "100%"}},
+            ]
+        },
+        "Balanced": {
+            "type": "standard", "rules": [
+                {"threshold": 10000, "tables": {"NL200": "100%"}}, {"threshold": 9000, "tables": {"NL100": "20%-40%", "NL200": "60%-80%"}},
+                {"threshold": 8000, "tables": {"NL100": "40%-60%", "NL200": "40%-60%"}}, {"threshold": 7000, "tables": {"NL100": "60%-80%", "NL200": "20%-40%"}},
+                {"threshold": 5000, "tables": {"NL100": "100%"}}, {"threshold": 4500, "tables": {"NL50": "10%-30%", "NL100": "70%-90%"}},
+                {"threshold": 4000, "tables": {"NL50": "30%-50%", "NL100": "50%-70%"}}, {"threshold": 3500, "tables": {"NL50": "50%-70%", "NL100": "30%-50%"}},
+                {"threshold": 2000, "tables": {"NL50": "100%"}}, {"threshold": 1800, "tables": {"NL20": "20%-40%", "NL50": "60%-80%"}},
+                {"threshold": 1600, "tables": {"NL20": "40%-60%", "NL50": "40%-60%"}}, {"threshold": 1400, "tables": {"NL20": "60%-80%", "NL50": "20%-40%"}},
+                {"threshold": 800, "tables": {"NL20": "100%"}},
+            ]
+        },
+        "Custom Strategy": {
+            "type": "standard", "rules": [
+                {"threshold": 3100, "tables": {"NL50": "100%"}}, {"threshold": 2650, "tables": {"NL20": "10%-30%", "NL50": "70%-90%"}},
+                {"threshold": 2250, "tables": {"NL20": "30%-50%", "NL50": "50%-70%"}}, {"threshold": 1750, "tables": {"NL20": "50%-70%", "NL50": "30%-50%"}},
+                {"threshold": 1250, "tables": {"NL20": "70%-90%", "NL50": "10%-30%"}}, {"threshold": 675, "tables": {"NL20": "100%"}},
             ]
         },
         "Sticky Strategy": {
             "type": "hysteresis",
-            "num_buy_ins": {
-                "NL20": 25, "NL50": 30, "NL100": 40, "NL200": 40
-            }
+            "num_buy_ins": {"NL20": 25, "NL50": 30, "NL100": 40, "NL200": 40}
         }
     }
     # Initialize strategy configs from the default dictionary, nicely formatted
@@ -54,7 +87,6 @@ if 'run_simulation' not in st.session_state:
         name: pprint.pformat(config, indent=4, width=1)
         for name, config in DEFAULT_STRATEGIES.items()
     }
-    st.session_state.strategy_counter = 0
 
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
@@ -62,9 +94,14 @@ def click_run_button():
     st.session_state.results = None # Clear old results when a new run is requested
 
 def add_strategy():
-    """Callback to add a new, blank strategy."""
-    st.session_state.strategy_counter += 1
-    new_name = f"New Strategy {st.session_state.strategy_counter}"
+    """Callback to add a new, blank strategy with a unique name."""
+    i = 1
+    while True:
+        new_name = f"New Strategy {i}"
+        if new_name not in st.session_state.strategy_configs:
+            break
+        i += 1
+
     # Use pprint to format the default text for the new strategy
     st.session_state.strategy_configs[new_name] = pprint.pformat({
         "type": "standard",
