@@ -38,7 +38,9 @@ with st.sidebar.form("sim_form"):
     with col3:
         config["MIN_TABLES_PER_SESSION"] = st.number_input("Min Tables", value=3, min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.")
     with col4:
-        config["MAX_TABLES_PER_SESSION"] = st.number_input("Max Tables", value=5, min_value=config["MIN_TABLES_PER_SESSION"], help="The maximum number of tables you will play in any given session.")
+        # Ensure the default value for Max Tables is never less than the current Min Tables value.
+        max_tables_default = max(5, config["MIN_TABLES_PER_SESSION"])
+        config["MAX_TABLES_PER_SESSION"] = st.number_input("Max Tables", value=max_tables_default, min_value=config["MIN_TABLES_PER_SESSION"], help="The maximum number of tables you will play in any given session.")
 
     config["TARGET_TOTAL_TABLES_FOR_PERCENTAGES"] = st.number_input("Target Tables (for % display)", value=4, min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.")
 
