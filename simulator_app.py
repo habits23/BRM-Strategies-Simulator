@@ -21,72 +21,7 @@ st.write("An interactive tool to simulate poker bankroll progression based on yo
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
     st.session_state.results = None
-    # --- Default Strategies ---
-    # Define this once at the top for easy access
-    # This now includes all strategies from your original script.
-    DEFAULT_STRATEGIES = {
-        "Gradual Progressive": {
-            "type": "standard",
-            "rules": [
-                {"threshold": 20000, "tables": {"NL200": "100%"}}, {"threshold": 18000, "tables": {"NL100": "20%", "NL200": "80%"}},
-                {"threshold": 16000, "tables": {"NL100": "50%", "NL200": "50%"}}, {"threshold": 12000, "tables": {"NL100": "80%", "NL200": "20%"}},
-                {"threshold": 8000, "tables": {"NL100": "100%"}}, {"threshold": 7000, "tables": {"NL50": "20%", "NL100": "80%"}},
-                {"threshold": 6000, "tables": {"NL50": "50%", "NL100": "50%"}}, {"threshold": 5000, "tables": {"NL50": "80%", "NL100": "20%"}},
-                {"threshold": 3500, "tables": {"NL50": "100%"}}, {"threshold": 3000, "tables": {"NL20": "20%", "NL50": "80%"}},
-                {"threshold": 2500, "tables": {"NL20": "50%", "NL50": "50%"}}, {"threshold": 2000, "tables": {"NL20": "80%", "NL50": "20%"}},
-                {"threshold": 1200, "tables": {"NL20": "100%"}},
-            ]
-        },
-        "Ultra Conservative": {
-            "type": "standard", "rules": [
-                {"threshold": 30000, "tables": {"NL200": "100%"}}, {"threshold": 25000, "tables": {"NL100": "20%", "NL200": "80%"}},
-                {"threshold": 20000, "tables": {"NL100": "50%", "NL200": "50%"}}, {"threshold": 16000, "tables": {"NL100": "80%", "NL200": "20%"}},
-                {"threshold": 12000, "tables": {"NL100": "100%"}}, {"threshold": 10000, "tables": {"NL100": "100%"}},
-                {"threshold": 8000, "tables": {"NL50": "50%", "NL100": "50%"}}, {"threshold": 6000, "tables": {"NL50": "80%", "NL100": "20%"}},
-                {"threshold": 5000, "tables": {"NL50": "100%"}}, {"threshold": 4000, "tables": {"NL20": "20%", "NL50": "80%"}},
-                {"threshold": 3000, "tables": {"NL20": "50%", "NL50": "50%"}}, {"threshold": 2500, "tables": {"NL20": "80%", "NL50": "20%"}},
-                {"threshold": 1600, "tables": {"NL20": "100%"}}, {"threshold": 750, "tables": {"NL20": "100%"}},
-            ]
-        },
-        "Granular Aggressive": {
-            "type": "standard", "rules": [
-                {"threshold": 6000, "tables": {"NL200": "100%"}}, {"threshold": 5500, "tables": {"NL100": "20%", "NL200": "80%"}},
-                {"threshold": 5000, "tables": {"NL100": "50%", "NL200": "50%"}}, {"threshold": 4000, "tables": {"NL100": "80%", "NL200": "20%"}},
-                {"threshold": 2500, "tables": {"NL100": "100%"}}, {"threshold": 2250, "tables": {"NL50": "20%", "NL100": "80%"}},
-                {"threshold": 2000, "tables": {"NL50": "50%", "NL100": "50%"}}, {"threshold": 1750, "tables": {"NL50": "80%", "NL100": "20%"}},
-                {"threshold": 1000, "tables": {"NL50": "100%"}}, {"threshold": 900, "tables": {"NL20": "20%", "NL50": "80%"}},
-                {"threshold": 750, "tables": {"NL20": "50%", "NL50": "50%"}}, {"threshold": 600, "tables": {"NL20": "80%", "NL50": "20%"}},
-                {"threshold": 400, "tables": {"NL20": "100%"}},
-            ]
-        },
-        "Balanced": {
-            "type": "standard", "rules": [
-                {"threshold": 10000, "tables": {"NL200": "100%"}}, {"threshold": 9000, "tables": {"NL100": "20%-40%", "NL200": "60%-80%"}},
-                {"threshold": 8000, "tables": {"NL100": "40%-60%", "NL200": "40%-60%"}}, {"threshold": 7000, "tables": {"NL100": "60%-80%", "NL200": "20%-40%"}},
-                {"threshold": 5000, "tables": {"NL100": "100%"}}, {"threshold": 4500, "tables": {"NL50": "10%-30%", "NL100": "70%-90%"}},
-                {"threshold": 4000, "tables": {"NL50": "30%-50%", "NL100": "50%-70%"}}, {"threshold": 3500, "tables": {"NL50": "50%-70%", "NL100": "30%-50%"}},
-                {"threshold": 2000, "tables": {"NL50": "100%"}}, {"threshold": 1800, "tables": {"NL20": "20%-40%", "NL50": "60%-80%"}},
-                {"threshold": 1600, "tables": {"NL20": "40%-60%", "NL50": "40%-60%"}}, {"threshold": 1400, "tables": {"NL20": "60%-80%", "NL50": "20%-40%"}},
-                {"threshold": 800, "tables": {"NL20": "100%"}},
-            ]
-        },
-        "Custom Strategy": {
-            "type": "standard", "rules": [
-                {"threshold": 3100, "tables": {"NL50": "100%"}}, {"threshold": 2650, "tables": {"NL20": "10%-30%", "NL50": "70%-90%"}},
-                {"threshold": 2250, "tables": {"NL20": "30%-50%", "NL50": "50%-70%"}}, {"threshold": 1750, "tables": {"NL20": "50%-70%", "NL50": "30%-50%"}},
-                {"threshold": 1250, "tables": {"NL20": "70%-90%", "NL50": "10%-30%"}}, {"threshold": 675, "tables": {"NL20": "100%"}},
-            ]
-        },
-        "Sticky Strategy": {
-            "type": "hysteresis",
-            "num_buy_ins": {"NL20": 25, "NL50": 30, "NL100": 40, "NL200": 40}
-        }
-    }
-    # Initialize strategy configs from the default dictionary, nicely formatted
-    st.session_state.strategy_configs = {
-        name: pprint.pformat(config, indent=4, width=1)
-        for name, config in DEFAULT_STRATEGIES.items()
-    }
+    st.session_state.strategy_configs = {} # Initialize strategy configs
 
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
@@ -95,14 +30,14 @@ def click_run_button():
 
 def add_strategy():
     """Callback to add a new, blank strategy with a unique name."""
-    i = 1
+    i = st.session_state.get('strategy_counter', 0) + 1
     while True:
         new_name = f"New Strategy {i}"
         if new_name not in st.session_state.strategy_configs:
+            st.session_state.strategy_counter = i
             break
         i += 1
 
-    # Use pprint to format the default text for the new strategy
     st.session_state.strategy_configs[new_name] = pprint.pformat({
         "type": "standard",
         "rules": [
@@ -137,7 +72,6 @@ col3, col4 = st.sidebar.columns(2)
 with col3:
     st.number_input("Min Tables", value=3, min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.", key="min_tables")
 with col4:
-    # Ensure the default value for Max Tables is never less than the current Min Tables value.
     max_tables_default = max(5, st.session_state.min_tables)
     st.number_input("Max Tables", value=max_tables_default, min_value=st.session_state.min_tables, help="The maximum number of tables you will play in any given session.", key="max_tables")
 
@@ -176,40 +110,94 @@ with tab1:
 
 with tab2:
     st.subheader("Bankroll Management Strategies")
-    st.write("Manage your strategies below. Each strategy is a block of text in Python dictionary format.")
-    st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
-    st.write("---")
+    st.write("Edit, add, or remove strategies below. Each strategy is a block of text in Python dictionary format.")
 
-    # Create a copy of keys to iterate over, allowing us to modify the dict in the loop
-    strategy_names = list(st.session_state.strategy_configs.keys())
+    default_strategies_str = """{
+            {"threshold": 7000, "tables": {"NL50": "20%", "NL100": "80%"}},
+            {"threshold": 6000, "tables": {"NL50": "50%", "NL100": "50%"}},
+            {"threshold": 5000, "tables": {"NL50": "80%", "NL100": "20%"}},
+            {"threshold": 3500, "tables": {"NL50": "100%"}},
+            {"threshold": 3000, "tables": {"NL20": "20%", "NL50": "80%"}},
+            {"threshold": 2500, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 2000, "tables": {"NL20": "80%", "NL50": "20%"}},
+            {"threshold": 1200, "tables": {"NL20": "100%"}}
+        ]
+    },
+    "Custom Strategy": {
+        "type": "standard",
+        "rules": [
+            {"threshold": 3100, "tables": {"NL50": "100%"}},
+            {"threshold": 2650, "tables": {"NL20": "10%-30%", "NL50": "70%-90%"}},
+            {"threshold": 2250, "tables": {"NL20": "30%-50%", "NL50": "50%-70%"}},
+            {"threshold": 1750, "tables": {"NL20": "50%-70%", "NL50": "30%-50%"}},
+            {"threshold": 1250, "tables": {"NL20": "70%-90%", "NL50": "10%-30%"}},
+            {"threshold": 675, "tables": {"NL20": "100%"}}
+        ]
+    },
+    "Ultra Conservative": {
+        "type": "standard",
+        "rules": [
+            {"threshold": 30000, "tables": {"NL200": "100%"}},
+            {"threshold": 25000, "tables": {"NL100": "20%", "NL200": "80%"}},
+            {"threshold": 20000, "tables": {"NL100": "50%", "NL200": "50%"}},
+            {"threshold": 16000, "tables": {"NL100": "80%", "NL200": "20%"}},
+            {"threshold": 12000, "tables": {"NL100": "100%"}},
+            {"threshold": 10000, "tables": {"NL100": "100%"}},
+            {"threshold": 8000, "tables": {"NL50": "50%", "NL100": "50%"}},
+            {"threshold": 6000, "tables": {"NL50": "80%", "NL100": "20%"}},
+            {"threshold": 5000, "tables": {"NL50": "100%"}},
+            {"threshold": 4000, "tables": {"NL20": "20%", "NL50": "80%"}},
+            {"threshold": 3000, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 2500, "tables": {"NL20": "80%", "NL50": "20%"}},
+            {"threshold": 1600, "tables": {"NL20": "100%"}},
+            {"threshold": 750, "tables": {"NL20": "100%"}}
+        ]
+    },
+    "Granular Aggressive": {
+        "type": "standard",
+        "rules": [
+            {"threshold": 6000, "tables": {"NL200": "100%"}},
+            {"threshold": 5500, "tables": {"NL100": "20%", "NL200": "80%"}},
+            {"threshold": 5000, "tables": {"NL100": "50%", "NL200": "50%"}},
+            {"threshold": 4000, "tables": {"NL100": "80%", "NL200": "20%"}},
+            {"threshold": 2500, "tables": {"NL100": "100%"}},
+            {"threshold": 2250, "tables": {"NL50": "20%", "NL100": "80%"}},
+            {"threshold": 2000, "tables": {"NL50": "50%", "NL100": "50%"}},
+            {"threshold": 1750, "tables": {"NL50": "80%", "NL100": "20%"}},
+            {"threshold": 1000, "tables": {"NL50": "100%"}},
+            {"threshold": 900, "tables": {"NL20": "20%", "NL50": "80%"}},
+            {"threshold": 750, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 600, "tables": {"NL20": "80%", "NL50": "20%"}},
+            {"threshold": 400, "tables": {"NL20": "100%"}}
+        ]
+    },
+    "Balanced": {
+        "type": "standard",
+        "rules": [
+            {"threshold": 10000, "tables": {"NL200": "100%"}},
+            {"threshold": 9000, "tables": {"NL100": "20%-40%", "NL200": "60%-80%"}},
+            {"threshold": 8000, "tables": {"NL100": "40%-60%", "NL200": "40%-60%"}},
+            {"threshold": 7000, "tables": {"NL100": "60%-80%", "NL200": "20%-40%"}},
+            {"threshold": 5000, "tables": {"NL100": "100%"}},
+            {"threshold": 4500, "tables": {"NL50": "10%-30%", "NL100": "70%-90%"}},
+            {"threshold": 4000, "tables": {"NL50": "30%-50%", "NL100": "50%-70%"}},
+            {"threshold": 3500, "tables": {"NL50": "50%-70%", "NL100": "30%-50%"}},
+            {"threshold": 2000, "tables": {"NL50": "100%"}},
+            {"threshold": 1800, "tables": {"NL20": "20%-40%", "NL50": "60%-80%"}},
+            {"threshold": 1600, "tables": {"NL20": "40%-60%", "NL50": "40%-60%"}},
+            {"threshold": 1400, "tables": {"NL20": "60%-80%", "NL50": "20%-40%"}},
+            {"threshold": 800, "tables": {"NL20": "100%"}}
+        ]
+    },
+    "Sticky Strategy": {
+        "type": "hysteresis",
+        "num_buy_ins": {
+            "NL20": 25, "NL50": 30, "NL100": 40, "NL200": 40
+        }
+    }
+}"""
 
-    for name in strategy_names:
-        if name not in st.session_state.strategy_configs:
-            continue # Skip if it was just removed
-
-        with st.expander(f"Edit Strategy: {name}", expanded=True):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                new_name = st.text_input("Strategy Name", value=name, key=f"name_{name}")
-            with col2:
-                st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), use_container_width=True)
-
-            config_text = st.text_area(
-                "Strategy Configuration (Python Dictionary Format)",
-                value=st.session_state.strategy_configs[name],
-                key=f"config_{name}",
-                height=250
-            )
-
-            # Update state if name changed
-            if new_name != name:
-                # To rename, we remove the old and add the new
-                st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name)
-                # Rerun to update the UI with the new name
-                st.rerun()
-            else:
-                 # Update the config text in the state
-                 st.session_state.strategy_configs[name] = config_text
+    st.text_area("Strategy Definitions", value=default_strategies_str, height=600, key="strategy_text")
 
 
 # --- Main Logic to Run Simulation and Display Results ---
@@ -241,18 +229,9 @@ if st.session_state.run_simulation:
 
     # --- 2. Parse and validate the text inputs for stakes and strategies ---
     try:
-        # The data_editor state can sometimes be a dict, so we robustly convert it to a DataFrame first.
-        stakes_df = pd.DataFrame(st.session_state.stakes_editor)
-        config["STAKES_DATA"] = stakes_df.to_dict('records')
-
-        # Assemble the strategies to run from the individual text areas
-        strategies_to_run = {}
-        for name, config_text in st.session_state.strategy_configs.items():
-            # Use ast.literal_eval to safely parse the string into a Python dictionary
-            strategies_to_run[name] = ast.literal_eval(config_text)
-        
-        config["STRATEGIES_TO_RUN"] = strategies_to_run
-
+        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
+        config["STAKES_DATA"] = st.session_state.stakes_editor.to_dict('records')
+        config["STRATEGIES_TO_RUN"] = ast.literal_eval(st.session_state.strategy_text)
         inputs_are_valid = True
     except (ValueError, SyntaxError) as e:
         st.error(f"Error parsing text inputs. Please check your syntax. Details: {e}")
