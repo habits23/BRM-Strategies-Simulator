@@ -76,15 +76,14 @@ tab1, tab2 = st.tabs(["Stakes Data", "Bankroll Management Strategies"])
 with tab1:
     st.subheader("Stakes Data")
     st.write("Enter your performance statistics for each stake you play. You can add or remove rows.")
-    # Default data from your script
-    # We use a text_input for the stakes data to ensure it's part of the session_state model
-    default_stakes_str = """[
+    # The data_editor provides a spreadsheet-like interface and works with session_state.
+    default_stakes_df = pd.DataFrame([
         {"name": "NL20", "bb_per_100": 7.96, "ev_bb_per_100": 8.29, "std_dev_per_100": 91.41, "sample_hands": 77657, "bb_size": 0.20, "win_rate_drop": 0.0, "rake_bb_per_100": 15.82},
         {"name": "NL50", "bb_per_100": 23.0, "ev_bb_per_100": 15.2, "std_dev_per_100": 85.43, "sample_hands": 5681, "bb_size": 0.50, "win_rate_drop": 1.5, "rake_bb_per_100": 10.36},
         {"name": "NL100", "bb_per_100": 2.5, "ev_bb_per_100": 2.5, "std_dev_per_100": 100.0, "sample_hands": 0, "bb_size": 1.00, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0},
-        {"name": "NL200", "bb_per_100": 1.5, "ev_bb_per_100": 1.5, "std_dev_per_100": 100.0, "sample_hands": 0, "bb_size": 2.00, "win_rate_drop": 0.5, "rake_bb_per_100": 6.5}
-    ]"""
-    stakes_text = st.text_area("Stakes Data (JSON format)", value=default_stakes_str, height=200, key="stakes_data_text")
+        {"name": "NL200", "bb_per_100": 1.5, "ev_bb_per_100": 1.5, "std_dev_per_100": 100.0, "sample_hands": 0, "bb_size": 2.00, "win_rate_drop": 0.5, "rake_bb_per_100": 6.5},
+    ])
+    st.data_editor(default_stakes_df, num_rows="dynamic", key="stakes_editor")
 
 with tab2:
     st.subheader("Bankroll Management Strategies")
@@ -216,7 +215,8 @@ if st.session_state.run_simulation:
 
     # --- 2. Parse and validate the text inputs for stakes and strategies ---
     try:
-        config["STAKES_DATA"] = ast.literal_eval(st.session_state.stakes_data_text)
+        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
+        config["STAKES_DATA"] = st.session_state.stakes_editor.to_dict('records')
         config["STRATEGIES_TO_RUN"] = ast.literal_eval(st.session_state.strategy_text)
         inputs_are_valid = True
     except (ValueError, SyntaxError) as e:
