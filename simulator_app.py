@@ -56,8 +56,11 @@ with st.sidebar.form("sim_form"):
     config["HANDS_FOR_MAX_DF"] = st.number_input("Hands to Reach Max DF", value=50000, min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.")
     config["SEED"] = st.number_input("Random Seed (for reproducibility)", value=45783, step=1, help="A fixed number that ensures the simulation produces the exact same random results every time. Change it to get a different set of random outcomes.")
 
+    st.write("---") # Visual separator
+    ready_to_run = st.checkbox("I've finished editing and am ready to run.", value=False, help="Check this box to confirm you are ready. The simulation will only run if this is checked.")
+
     # This is the button that will trigger the simulation
-    submitted = st.form_submit_button("Run Simulation")
+    submitted = st.form_submit_button("Run Simulation", use_container_width=True)
 
 
 # --- Main Area for Data and Strategy Inputs ---
@@ -193,6 +196,8 @@ with tab2:
 if submitted:
     if not strategies_to_run:
         st.error("Cannot run simulation due to invalid strategy rules.")
+    elif not ready_to_run:
+        st.warning("Please check the 'I've finished editing and am ready to run.' box in the sidebar before running the simulation.")
     else:
         st.header("Simulation Results")
         try:
