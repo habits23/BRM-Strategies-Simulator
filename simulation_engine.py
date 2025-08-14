@@ -326,12 +326,17 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
             weighted_bb_size_sum += hands_at_stake * bb_size_map[stake_name]
 
         if total_hands_for_sim > 0:
-            avg_bb_size = weighted_bb_size_sum / total_hands_for_sim
-            total_profit_eur = final_bankrolls[closest_sim_index] - config['STARTING_BANKROLL_EUR']
-            profit_from_play_eur = total_profit_eur - final_rakeback[closest_sim_index]
             stake_wrs['Assigned WR'] = f"{assigned_weighted_wr_sum / total_hands_for_sim:.2f}"
-            stake_wrs['Realized WR (Play)'] = f"{(profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
-            stake_wrs['Rakeback (bb/100)'] = f"{(final_rakeback[closest_sim_index] / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
+            avg_bb_size = weighted_bb_size_sum / total_hands_for_sim
+            
+            if avg_bb_size > 0:
+                total_profit_eur = final_bankrolls[closest_sim_index] - config['STARTING_BANKROLL_EUR']
+                profit_from_play_eur = total_profit_eur - final_rakeback[closest_sim_index]
+                stake_wrs['Realized WR (Play)'] = f"{(profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
+                stake_wrs['Rakeback (bb/100)'] = f"{(final_rakeback[closest_sim_index] / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
+            else: # Handle case where avg_bb_size is 0
+                stake_wrs['Realized WR (Play)'] = "N/A"
+                stake_wrs['Rakeback (bb/100)'] = "N/A"
         
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
