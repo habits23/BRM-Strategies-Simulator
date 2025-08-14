@@ -235,7 +235,7 @@ st.sidebar.button("Run Simulation", on_click=click_run_button, use_container_wid
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", value=2500, min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
     st.number_input("Target Bankroll (€)", value=3000, min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
-    st.number_input("Ruin Threshold (€)", value=600, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
+    st.number_input("Ruin Threshold (€)", value=400, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -663,6 +663,7 @@ if st.session_state.results:
             "Median Final BR": res['median_final_bankroll'],
             "Mode Final BR": res['final_bankroll_mode'],
             "Median Growth": res['growth_rate'],
+            "Median Rakeback": res.get('median_rakeback_eur', 0.0),
             "Risk of Ruin (%)": res['risk_of_ruin'],
             "Target Prob (%)": res['target_prob'],
             "5th %ile BR": res['p5'],
@@ -671,7 +672,7 @@ if st.session_state.results:
     summary_df = pd.DataFrame(summary_data)
     st.dataframe(summary_df.style.format({
         "Median Final BR": "€{:.2f}", "Mode Final BR": "€{:.2f}",
-        "Median Growth": "{:.2%}", "Risk of Ruin (%)": "{:.2f}%",
+        "Median Growth": "{:.2%}", "Median Rakeback": "€{:.2f}", "Risk of Ruin (%)": "{:.2f}%",
         "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:.2f}",
         "P95 Max Drawdown": "€{:.2f}"
     }).hide(axis="index"))
@@ -708,7 +709,19 @@ if st.session_state.results:
             col1, col2 = st.columns(2)
 
             with col1:
-                st.markdown("**Hands Distribution**", help="The percentage of total hands played at each stake, averaged over all simulations.")
+                st.markdown(
+                    "**Hands Distribution**", 
+                    help="""
+                    This section shows two key metrics:
+
+                    1.  **Percentage:** The share of total hands played at this stake.
+                    2.  **Avg. WR (Average Win Rate):** The average win rate the simulation used for this stake across all runs.
+
+                    **Why isn't this just my input win rate?**
+                    To be realistic, the simulation models luck and uncertainty. For each of the 1000+ simulation runs, it uses a slightly different win rate based on your sample size and a random factor to simulate running hot or cold.
+                    The `Avg. WR` is the average of all these slightly different win rates.
+                    """
+                )
                 if result.get('hands_distribution_pct'):
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                     sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))

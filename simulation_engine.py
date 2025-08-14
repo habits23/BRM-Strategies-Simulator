@@ -379,6 +379,10 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     median_max_drawdown = np.median(max_drawdowns)
     p95_max_drawdown = np.percentile(max_drawdowns, 95)
 
+    # Calculate median rakeback
+    final_rakeback = rakeback_histories[:, -1]
+    median_rakeback_eur = np.median(final_rakeback)
+
     final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
     target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
     busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
@@ -404,6 +408,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'final_highest_stake_distribution': final_highest_stake_distribution,
         'median_max_drawdown': median_max_drawdown,
         'p95_max_drawdown': p95_max_drawdown,
+        'median_rakeback_eur': median_rakeback_eur,
         'average_assigned_win_rates': average_assigned_win_rates,
     }
 def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, stake_level_map, config):
@@ -822,7 +827,7 @@ def write_strategy_report_to_pdf(pdf, report_lines, page_number_info=None):
 
 def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     """Creates a table of the main summary results and saves it to a PDF page."""
-    header = ['Strategy', 'Page', 'Median Final BR', 'Mode Final BR', 'Median Growth', 'RoR (%)', 'Target Prob (%)', '5th %ile', '2.5th %ile']
+    header = ['Strategy', 'Page', 'Median Final BR', 'Mode Final BR', 'Median Growth', 'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile', '2.5th %ile']
     cell_text = []
     for strategy_name, result in all_results.items():
         cell_text.append([
@@ -831,6 +836,7 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
             f"€{result['median_final_bankroll']:.2f}",
             f"€{result['final_bankroll_mode']:.2f}",
             f"{result['growth_rate']:.2%}",
+            f"€{result.get('median_rakeback_eur', 0.0):.2f}",
             f"{result['risk_of_ruin']:.2f}",
             f"{result['target_prob']:.2f}",
             f"€{result['p5']:.2f}",
