@@ -741,10 +741,33 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
     fig, ax = plt.subplots(figsize=(8, 5))
     colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
 
-    # Find a reasonable x-axis limit to keep the plot focused
-    max_vals = [np.percentile(res['final_bankrolls'], 99) for res in all_results.values()]
-    x_max = np.max(max_vals) if max_vals else config.get('TARGET_BANKROLL', 5000) * 2
-    x_grid = np.linspace(0, x_max, 1000)
+    # --- Dynamically determine the x-axis range for a clearer plot --- #
+    # Combine all results to find a global range that fits all strategies well. #
+    all_final_bankrolls = np.concatenate([res['final_bankrolls'] for res in all_results.values() if len(res['final_bankrolls']) > 0])
+    
+    # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
+    successful_runs = all_final_bankrolls[all_final_bankrolls > config['RUIN_THRESHOLD']]
+
+    if len(successful_runs) > 5: # Need a few points to calculate percentiles robustly
+        # Focus on the central 98% of the data (from 1st to 99th percentile). #
+        # This trims the extreme long tails, making the main body of the distribution more visible. #
+        x_min = np.percentile(successful_runs, 1)
+        x_max = np.percentile(successful_runs, 99)
+        
+        # Ensure the starting bankroll is always visible for context.
+        x_min = min(x_min, config['STARTING_BANKROLL_EUR'])
+        x_max = max(x_max, config['STARTING_BANKROLL_EUR'])
+
+        # Add some visual padding to the limits.
+        padding = (x_max - x_min) * 0.05
+        x_min -= padding
+        x_max += padding
+    else:
+        # Fallback for cases with very few successful runs (e.g., high risk of ruin)
+        x_min = 0
+        x_max = config.get('TARGET_BANKROLL', 5000) * 1.5
+
+    x_grid = np.linspace(x_min, x_max, 1000)
 
     for i, (strategy_name, result) in enumerate(all_results.items()):
         final_bankrolls = result['final_bankrolls']
@@ -754,7 +777,7 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
                 # This prevents extreme outliers (the top 1% we've already
                 # excluded from the x-axis) from skewing the density plot.
                 # The result is a plot that better represents the main body of the distribution.
-                filtered_bankrolls = final_bankrolls[final_bankrolls <= x_max]
+                filtered_bankrolls = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max)]
                 if len(filtered_bankrolls) < 2: # Need at least 2 points for KDE
                     ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)")
                     continue
@@ -772,7 +795,7 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
     ax.set_ylabel('Probability Density', fontsize=12)
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.6)
-    ax.set_xlim(left=0, right=x_max)
+    ax.set_xlim(left=x_min, right=x_max)
     if pdf:
         pdf.savefig(fig)
         plt.close(fig)
