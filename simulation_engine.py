@@ -656,22 +656,19 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     max_x_limit = np.percentile(final_bankrolls, 99.0)
     filtered_bankrolls = final_bankrolls[final_bankrolls <= max_x_limit]
 
-    mean_val = np.mean(final_bankrolls)
     median_val = result['median_final_bankroll']
-    mode_val = result['final_bankroll_mode']
-    percentiles = {p: np.percentile(final_bankrolls, p) for p in [2.5, 5, 25, 50, 75, 95, 97.5]}
+    # We only need the 5th and 95th percentiles for this cleaner plot.
+    percentiles = {p: np.percentile(final_bankrolls, p) for p in [5, 95]}
 
     fig, ax = plt.subplots(figsize=(8, 5)) # Further reduced size for a more compact app layout
     ax.hist(filtered_bankrolls, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
-    ax.axvline(mean_val, color='blue', linestyle='dashed', linewidth=2, label=f'Mean: €{mean_val:.2f}')
+
+    # Key metrics
     ax.axvline(median_val, color='red', linestyle='dashed', linewidth=2, label=f'Median: €{median_val:.2f}')
-    ax.axvline(mode_val, color='orange', linestyle='-', linewidth=2, label=f'Mode: €{mode_val:.2f}')
-    ax.axvline(percentiles[2.5], color='darkred', linestyle=':', linewidth=2, label=f'2.5th Percentile: €{percentiles[2.5]:.2f}')
-    ax.axvline(percentiles[5], color='green', linestyle=':', linewidth=2, label=f'5th Percentile: €{percentiles[5]:.2f}')
-    ax.axvline(percentiles[25], color='purple', linestyle=':', linewidth=2, label=f'25th Percentile: €{percentiles[25]:.2f}')
-    ax.axvline(percentiles[75], color='purple', linestyle=':', linewidth=2, label=f'75th Percentile: €{percentiles[75]:.2f}')
+    ax.axvline(percentiles[5], color='darkred', linestyle=':', linewidth=2, label=f'5th Percentile: €{percentiles[5]:.2f}')
     ax.axvline(percentiles[95], color='green', linestyle=':', linewidth=2, label=f'95th Percentile: €{percentiles[95]:.2f}')
-    ax.axvline(percentiles[97.5], color='darkred', linestyle=':', linewidth=2, label=f'97.5th Percentile: €{percentiles[97.5]:.2f}')
+
+    # Contextual lines
     ax.axvline(config["STARTING_BANKROLL_EUR"], color='black', linewidth=2, label=f'Starting: €{config["STARTING_BANKROLL_EUR"]:.0f}')
     ax.axvline(config["TARGET_BANKROLL"], color='gold', linestyle='-.', linewidth=2, label=f'Target: €{config["TARGET_BANKROLL"]:.0f}')
     ax.axvline(config["RUIN_THRESHOLD"], color='red', linestyle='--', linewidth=2, label=f'Ruin Threshold: €{config["RUIN_THRESHOLD"]:.0f}')
