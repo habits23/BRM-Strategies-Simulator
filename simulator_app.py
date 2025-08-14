@@ -201,8 +201,10 @@ def sync_strategy_rules(strategy_name):
                     tables[stake] = int(row[stake])
                 except (ValueError, TypeError):
                     tables[stake] = str(row[stake])
-        if tables:
-            new_rules.append({"threshold": int(threshold_val), "tables": tables})
+        # A rule is considered valid for the UI as long as it has a threshold.
+        # An empty table mix is acceptable during editing and will be treated as "No Play"
+        # by the simulation engine. Removing the `if tables:` check fixes the sorting bug.
+        new_rules.append({"threshold": int(threshold_val), "tables": tables})
     
     # The list is already sorted from the DataFrame, but we sort again to be safe.
     st.session_state.strategy_configs[strategy_name]['rules'] = sorted(new_rules, key=lambda x: x['threshold'], reverse=True)
