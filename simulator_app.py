@@ -90,7 +90,8 @@ def sync_stakes_data():
 
 def sync_strategy_rules(strategy_name):
     """Callback to sync a strategy's data editor state back to the strategy config."""
-    edited_df = st.session_state[f"rules_{strategy_name}"]
+    # The editor's state is a list of dicts.
+    edited_rules_list = st.session_state[f"rules_{strategy_name}"]
 
     available_stakes = [
         name for name in st.session_state.stakes_data['name']
@@ -98,16 +99,21 @@ def sync_strategy_rules(strategy_name):
     ]
 
     new_rules = []
-    for _, row in edited_df.iterrows():
+    # Iterate over the list of dictionaries directly.
+    for row in edited_rules_list:
         threshold_val = row.get('threshold')
-        if pd.isna(threshold_val) or threshold_val <= 0:
+        # A new row added by the user will have None/NaN values.
+        if threshold_val is None or pd.isna(threshold_val) or threshold_val <= 0:
             continue
         tables = {}
         for stake in available_stakes:
-            if stake in row and pd.notna(row[stake]) and row[stake] != '':
+            # Check if the stake key exists and its value is not None/NaN/empty.
+            if stake in row and pd.notna(row[stake]) and row[stake] != "":
                 try:
+                    # Try to convert to int first (for fixed counts).
                     tables[stake] = int(row[stake])
                 except (ValueError, TypeError):
+                    # If it fails, treat it as a string (for percentages).
                     tables[stake] = str(row[stake])
         if tables:
             new_rules.append({"threshold": int(threshold_val), "tables": tables})
