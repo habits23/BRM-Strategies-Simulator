@@ -284,7 +284,17 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
     st.number_input("Max Degrees of Freedom (t-dist)", min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
     st.number_input("Hands to Reach Max DF", min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.", key="hands_for_max_df")
 
-st.sidebar.number_input("Random Seed (for reproducibility)", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
+def randomize_seed():
+    """Generates a new random seed."""
+    import random
+    st.session_state.seed = random.randint(1, 1_000_000)
+
+seed_col1, seed_col2 = st.sidebar.columns([2, 1])
+with seed_col1:
+    st.number_input("Random Seed", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
+with seed_col2:
+    st.write(" ") # Spacer for alignment
+    st.button("🎲 New", on_click=randomize_seed, help="Generate a new random seed.", use_container_width=True)
 
 st.sidebar.header("Save & Load Configuration")
 
