@@ -130,9 +130,9 @@ class HysteresisStrategy(BankrollManagementStrategy):
 #   SIMULATION LOGIC AND HELPER FUNCTIONS
 # =================================================================================
 
-def setup_simulation_parameters(config):
+def setup_simulation_parameters(config, seed):
     """Initializes and returns common parameters needed for simulations."""
-    rng = np.random.default_rng(config['SEED'])
+    rng = np.random.default_rng(seed)
     all_win_rates = {}
     all_dfs = {}
     all_session_profits_bb = {}
@@ -1053,14 +1053,18 @@ def run_full_analysis(config):
     The main entry point for running the entire simulation analysis.
     This function is called by the Streamlit app.
     """
-    all_results = {}    
+    all_results = {}
     stake_level_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
     stake_name_map = {v: k for k, v in stake_level_map.items()}
 
+    # Create a master RNG to generate unique, deterministic seeds for each strategy.
+    # This ensures each strategy gets its own "deck of cards" while the overall
+    # simulation remains reproducible from the main seed.
+    master_rng = np.random.default_rng(config['SEED'])
+
     for strategy_name, strategy_config in config['STRATEGIES_TO_RUN'].items():
-        # --- Setup independent random data for each strategy ---
-        # This is the critical fix: ensure each strategy gets its own set of random numbers.
-        all_session_profits_bb, all_win_rates, rng = setup_simulation_parameters(config)
+        strategy_seed = master_rng.integers(1, 1_000_000_000)
+        all_session_profits_bb, all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
 
         # Determine which simulation function to use based on the class type
