@@ -282,6 +282,9 @@ def resolve_table_mix(rule, total_tables, rng):
             fixed_ratios[stake] = val
 
     if fixed_ratios:
+        # If any fixed ratios are present, they define the entire mix for this rule.
+        # We explicitly ignore any percentage strings that might also be present to avoid ambiguity.
+        percentages = {}
         total_ratio = sum(fixed_ratios.values())
         if total_ratio > 0:
             for stake, ratio_val in fixed_ratios.items():
