@@ -217,8 +217,13 @@ with tab2:
 
             # Update state if name changed
             if new_name != name:
-                st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name, {})
-                st.rerun()
+                if not new_name.strip():
+                    st.warning("Strategy name cannot be empty.")
+                elif new_name in st.session_state.strategy_configs:
+                    st.warning(f"A strategy named '{new_name}' already exists. Please choose a unique name.")
+                else:
+                    st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name)
+                    st.rerun()
 
             st.session_state.strategy_configs[name]['type'] = strategy_type
 
