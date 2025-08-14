@@ -233,9 +233,9 @@ st.sidebar.header("Simulation Parameters")
 st.sidebar.button("Run Simulation", on_click=click_run_button, use_container_width=True)
 
 with st.sidebar.expander("General Settings", expanded=True):
-    st.number_input("Starting Bankroll (€)", value=2030, min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
+    st.number_input("Starting Bankroll (€)", value=2500, min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
     st.number_input("Target Bankroll (€)", value=3000, min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
-    st.number_input("Ruin Threshold (€)", value=750, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
+    st.number_input("Ruin Threshold (€)", value=600, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -429,7 +429,7 @@ with tab2:
         if name not in st.session_state.strategy_configs:
             continue # Skip if it was just removed
 
-        with st.expander(f"Edit Strategy: {name}", expanded=True):
+        with st.expander(f"Edit Strategy: {name}", expanded=False):
             current_config = st.session_state.strategy_configs[name]
 
             # --- Row 1: Name, Type, Clone, Remove ---
