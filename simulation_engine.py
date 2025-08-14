@@ -642,7 +642,6 @@ def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name
     ax.plot(median_hands, median_history, 'b-', linewidth=3, label='Median Progression')
     ax.axhline(config['STARTING_BANKROLL_EUR'], color='black', linewidth=2, label='Starting Bankroll')
     ax.axhline(config['TARGET_BANKROLL'], color='gold', linestyle='-.', label=f"Target: €{config['TARGET_BANKROLL']}")
-    ax.axhline(config['RUIN_THRESHOLD'], color='red', linestyle='--', linewidth=2, label=f"Ruin Threshold: €{config['RUIN_THRESHOLD']}")
     ax.set_title(f'Bankroll Progression: {strategy_name}', fontsize=14)
     ax.set_xlabel('Total Hands Played', fontsize=12)
     ax.set_ylabel('Bankroll (EUR)', fontsize=12)
@@ -665,7 +664,6 @@ def plot_median_progression_comparison(all_results, config, pdf=None):
 
     ax.axhline(config['STARTING_BANKROLL_EUR'], color='gray', linestyle='--', label='Starting Bankroll')
     ax.axhline(config['TARGET_BANKROLL'], color='gold', linestyle='-.', label=f"Target: €{config['TARGET_BANKROLL']}")
-    ax.axhline(config['RUIN_THRESHOLD'], color='red', linestyle='--', linewidth=2, label=f"Ruin Threshold: €{config['RUIN_THRESHOLD']}")
 
     ax.set_title('Median Bankroll Progression Comparison Across All Strategies', fontsize=16)
     ax.set_xlabel('Total Hands Played', fontsize=12)
@@ -698,7 +696,6 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     # Contextual lines
     ax.axvline(config["STARTING_BANKROLL_EUR"], color='black', linewidth=2, label=f'Starting: €{config["STARTING_BANKROLL_EUR"]:,.0f}')
     ax.axvline(config["TARGET_BANKROLL"], color='gold', linestyle='-.', linewidth=2, label=f'Target: €{config["TARGET_BANKROLL"]:,.0f}')
-    ax.axvline(config["RUIN_THRESHOLD"], color='red', linestyle='--', linewidth=2, label=f'Ruin Threshold: €{config["RUIN_THRESHOLD"]:,.0f}')
     ax.set_title(f'Final Bankroll Distribution for {strategy_name}')
     ax.set_xlabel('Final Bankroll (EUR)')
     ax.set_ylabel('Frequency')
