@@ -728,11 +728,11 @@ if st.session_state.results:
         with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}", help="The median final bankroll, including both profit from play and rakeback.")
-            col2.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%")
-            col3.metric("Target Probability", f"{result['target_prob']:.2f}%")
-            col4.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:.2f}")
-            col5.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:.2f}")
+            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
+            col2.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+            col3.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+            col4.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col5.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
 
             st.subheader("Charts")
             plot_col1, plot_col2 = st.columns(2)
