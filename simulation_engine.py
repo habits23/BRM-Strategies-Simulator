@@ -622,12 +622,17 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
         session_total_tables = np.full(num_sims, config['AVG_TABLES'])
 
-        for idx in range(len(stake_rules)):
-            at_this_stake_mask = (current_stake_indices == idx)
+        for i in range(len(stake_rules)):
+            at_this_stake_mask = (current_stake_indices == i)
             if not np.any(at_this_stake_mask):
                 continue
-            stake_name_for_rule = stake_rules[idx]['stake_name']
-            tables_per_stake[stake_name_for_rule][at_this_stake_mask] = session_total_tables[at_this_stake_mask]
+            
+            rule = stake_rules[i]['tables']
+            indices = np.where(at_this_stake_mask)[0]
+            for sim_idx in indices:
+                resolved_mix = resolve_table_mix(rule, session_total_tables[sim_idx], rng)
+                for stake_name, count in resolved_mix.items():
+                    tables_per_stake[stake_name][sim_idx] = count
 
         total_tables = sum(tables_per_stake.values())
         active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_tables > 0)
