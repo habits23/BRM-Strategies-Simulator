@@ -808,6 +808,19 @@ if st.session_state.results:
                 else:
                     st.write("N/A")
 
+            # --- Risk of Demotion Section ---
+            if result.get('risk_of_demotion'):
+                st.markdown("---")
+                st.markdown("**Risk of Demotion**", help="The percentage of simulations that were forced to move down after reaching a specific stake.")
+                stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
+                
+                demotion_text = []
+                for stake, data in sorted_demotions:
+                    if data['reached_count'] > 0: # Only show relevant stakes
+                        demotion_text.append(f"From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_")
+                st.write(" / ".join(demotion_text))
+
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
     with st.spinner("Generating PDF report..."):
