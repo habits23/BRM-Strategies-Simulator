@@ -143,7 +143,11 @@ with tab2:
 
     # Get the list of available stake names from the stakes data tab
     # This is crucial for creating the columns in the data editor
-    available_stakes = list(st.session_state.stakes_data['name'])
+    # We filter out any empty/NaN names that can occur when a user adds a new row.
+    available_stakes = [
+        name for name in st.session_state.stakes_data['name'] 
+        if pd.notna(name) and str(name).strip()
+    ]
     strategy_names = list(st.session_state.strategy_configs.keys())
 
     for name in strategy_names:
