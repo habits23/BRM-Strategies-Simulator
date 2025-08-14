@@ -749,10 +749,13 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
     successful_runs = all_final_bankrolls[all_final_bankrolls > config['RUIN_THRESHOLD']]
 
     if len(successful_runs) > 5: # Need a few points to calculate percentiles robustly
-        # Focus on the central 98% of the data (from 1st to 99th percentile). #
-        # This trims the extreme long tails, making the main body of the distribution more visible. #
-        x_min = np.percentile(successful_runs, 1)
-        x_max = np.percentile(successful_runs, 99)
+        # Use the user-defined percentile to control the plot's "zoom".
+        # This makes the zoom symmetrical (e.g., 95 shows 5th-95th, 99 shows 1st-99th).
+        upper_percentile = config.get('PLOT_PERCENTILE_LIMIT', 99)
+        lower_percentile = 100 - upper_percentile
+
+        x_min = np.percentile(successful_runs, lower_percentile)
+        x_max = np.percentile(successful_runs, upper_percentile)
         
         # Ensure the starting bankroll is always visible for context.
         x_min = min(x_min, config['STARTING_BANKROLL_EUR'])

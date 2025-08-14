@@ -92,6 +92,7 @@ if 'start_br' not in st.session_state:
     st.session_state.prior_sample = 50000
     st.session_state.zero_hands_weight = 0.5
     st.session_state.seed = 98765
+    st.session_state.plot_percentile_limit = 99
 
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
@@ -286,6 +287,14 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
         key="prior_sample")
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
 
+with st.sidebar.expander("Plotting & Display Settings", expanded=False):
+    st.slider(
+        "Distribution Plot Percentile Range",
+        min_value=90, max_value=99, value=99,
+        help="Controls the 'zoom' on the Final Bankroll Distribution comparison plot. A value of 99 shows the 1st to 99th percentile of outcomes. A value of 95 shows the 5th to 95th, zooming in more on the central results but hiding more of the tails.",
+        key="plot_percentile_limit"
+    )
+
 def randomize_seed():
     """Generates a new random seed."""
     import random
@@ -308,7 +317,7 @@ def get_full_config_as_json():
             "ruin_thresh": st.session_state.ruin_thresh, "num_sims": st.session_state.num_sims,
             "total_hands": st.session_state.total_hands, "hands_per_check": st.session_state.hands_per_check, "target_tables_pct": st.session_state.target_tables_pct,
             "rb_percent": st.session_state.rb_percent,
-            "prior_sample": st.session_state.prior_sample, "zero_hands_weight": st.session_state.zero_hands_weight,
+            "prior_sample": st.session_state.prior_sample, "zero_hands_weight": st.session_state.zero_hands_weight, "plot_percentile_limit": st.session_state.plot_percentile_limit,
             "seed": st.session_state.seed,
         },
         "stakes_data": st.session_state.stakes_data.to_dict('records'),
@@ -642,6 +651,7 @@ if st.session_state.run_simulation:
         "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
         "ZERO_HANDS_INPUT_WEIGHT": st.session_state.zero_hands_weight,
         "SEED": st.session_state.seed,
+        "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
     }
 
     # --- 2. Parse and validate the inputs for stakes and strategies ---
