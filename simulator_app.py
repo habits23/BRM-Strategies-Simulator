@@ -11,16 +11,16 @@ import simulation_engine as engine
 # --- Default Data for First Run ---
 DEFAULT_STAKES_DATA = pd.DataFrame([
     {
-        "name": "NL20", "bb_per_100": 8.0, "ev_bb_per_100": 8.3, "std_dev_per_100": 91.4,
-        "sample_hands": 77657, "bb_size": 0.20, "win_rate_drop": 0.0, "rake_bb_per_100": 15.8
+        "name": "NL20", "bb_size": 0.20, "bb_per_100": 8.0, "ev_bb_per_100": 8.3, "std_dev_per_100": 91.4,
+        "sample_hands": 77657, "win_rate_drop": 0.0, "rake_bb_per_100": 15.8
     },
     {
-        "name": "NL50", "bb_per_100": 4.0, "ev_bb_per_100": 4.0, "std_dev_per_100": 100.0,
-        "sample_hands": 5681, "bb_size": 0.50, "win_rate_drop": 1.5, "rake_bb_per_100": 10.4
+        "name": "NL50", "bb_size": 0.50, "bb_per_100": 4.0, "ev_bb_per_100": 4.0, "std_dev_per_100": 100.0,
+        "sample_hands": 5681, "win_rate_drop": 1.5, "rake_bb_per_100": 10.4
     },
     {
-        "name": "NL100", "bb_per_100": 2.5, "ev_bb_per_100": 2.5, "std_dev_per_100": 100.0,
-        "sample_hands": 0, "bb_size": 1.00, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0
+        "name": "NL100", "bb_size": 1.00, "bb_per_100": 2.5, "ev_bb_per_100": 2.5, "std_dev_per_100": 100.0,
+        "sample_hands": 0, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0
     },
 ])
 
@@ -138,6 +138,12 @@ def sync_stakes_data():
     if editor_state["added_rows"]:
         added_df = pd.DataFrame(editor_state["added_rows"])
         df = pd.concat([df, added_df], ignore_index=True)
+
+    # --- Automatic Sorting Logic ---
+    # Ensure bb_size is numeric for sorting, coercing errors to NaN
+    df['bb_size'] = pd.to_numeric(df['bb_size'], errors='coerce')
+    # Sort the DataFrame by bb_size. Incomplete/new rows with NaN bb_size will go to the bottom.
+    df = df.sort_values(by='bb_size', ascending=True, na_position='last').reset_index(drop=True)
 
     # Update the main session state with the modified DataFrame
     st.session_state.stakes_data = df
