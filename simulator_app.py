@@ -265,7 +265,7 @@ with st.sidebar.expander("General Settings", expanded=True):
         st.number_input("Sessions per Simulation", min_value=1, max_value=1000, help="How many playing sessions are in a single simulation run. This determines the time horizon of the simulation.", key="num_sessions")
 
 with st.sidebar.expander("Session & Rakeback Settings", expanded=True):
-    st.number_input("Hands per Table per Session", min_value=1, help="The average number of hands you play on a single table during one session.", key="hands_per_table")
+    st.number_input("Hands per Table per Session", min_value=1, help="The average number of hands you play per table during one session.", key="hands_per_table")
     st.slider("Stop-Loss per Session (%)", 0, 100, help="The session ends early if you lose this percentage of your bankroll at the start of that session. Set to 100% to disable.", key="sl_percent")
 
     col3, col4 = st.columns(2)
@@ -410,7 +410,7 @@ with tab1:
             ),
             "win_rate_drop": st.column_config.NumberColumn(
                 "Win Rate Drop",
-                help="The estimated drop in your win rate (in bb/100) when moving up from the *previous* stake. This helps the model estimate your win rate at stakes with few or no hands.",
+                help="The estimated drop in your win rate (in bb/100) when moving up from the *previous* stake. This helps the model estimate your win rate at stakes with few or no hands. The lowest stake should have a drop of 0.",
                 format="%.2f"
             ),
             "rake_bb_per_100": st.column_config.NumberColumn(
