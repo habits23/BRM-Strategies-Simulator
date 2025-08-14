@@ -85,7 +85,8 @@ def remove_strategy(name_to_remove):
 
 def sync_stakes_data():
     """Callback to sync the data editor's state back to the main stakes_data state."""
-    st.session_state.stakes_data = st.session_state.stakes_data_editor
+    # The editor's state is a list of dicts. Convert it back to a DataFrame to ensure consistency.
+    st.session_state.stakes_data = pd.DataFrame(st.session_state.stakes_data_editor)
 
 def sync_strategy_rules(strategy_name):
     """Callback to sync a strategy's data editor state back to the strategy config."""
