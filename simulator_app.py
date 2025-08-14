@@ -185,7 +185,54 @@ with tab2:
                     help="The number of buy-ins (100 BBs) required to move up/down stakes."
                 )
                 if 'rules' in st.session_state.strategy_configs[name]:
-                    del st.session_state.strategy_configs[name]['
+                    del st.session_state.strategy_configs[name]['rules']
+            
+            elif strategy_type == 'standard':
+                # Clean up keys from the other strategy type
+                if 'num_buy_ins' in st.session_state.strategy_configs[name]:
+                    del st.session_state.strategy_configs[name]['num_buy_ins']
+
+                # --- Convert rules to a DataFrame for the editor ---
+                rules_list = current_config.get("rules", [])
+                df_data = [{'threshold': r['threshold'], **r.get('tables', {})} for r in rules_list]
+                
+                rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
+                rules_df = rules_df.sort_values(by='threshold', ascending=False).reset_index(drop=True)
+
+                # --- Display the data editor ---
+                edited_df = st.data_editor(
+                    rules_df,
+                    key=f"rules_{name}",
+                    num_rows="dynamic",
+                    column_config={
+                        "threshold": st.column_config.NumberColumn(
+                            "Bankroll Threshold (€)",
+                            help="The bankroll amount at which this rule applies.",
+                            min_value=0,
+                            format="€ %d"
+                        ),
+                        **{stake: st.column_config.TextColumn(
+                            f"{stake} Mix",
+                            help=f"Table mix for {stake}. Use percentages ('50%') or fixed counts (4)."
+                           ) for stake in available_stakes}
+                    }
+                )
+
+                # --- Convert the edited DataFrame back to the rules format ---
+                new_rules = []
+                for _, row in edited_df.iterrows():
+                    if pd.isna(row['threshold']) or row['threshold'] <= 0: continue
+                    tables = {}
+                    for stake in available_stakes:
+                        if stake in row and pd.notna(row[stake]) and row[stake] != '':
+                            try:
+                                tables[stake] = int(row[stake])
+                            except (ValueError, TypeError):
+                                tables[stake] = str(row[stake])
+                    if tables:
+                        new_rules.append({"threshold": int(row['threshold']), "tables": tables})
+                
+                st.session_state.strategy_configs[name]['rules'] = sorted(new_rules, key=lambda x: x['threshold'], reverse=True)
 
 # --- Main Logic to Run Simulation and Display Results ---
 
