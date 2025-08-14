@@ -430,6 +430,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'final_highest_stake_distribution': final_highest_stake_distribution,
         'median_max_drawdown': median_max_drawdown,
         'p95_max_drawdown': p95_max_drawdown,
+        'max_drawdowns': max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
@@ -749,6 +750,35 @@ def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_w
         plt.close(fig)
     return fig
 
+def plot_max_drawdown_distribution(max_drawdowns, result, strategy_name, pdf=None):
+    """Creates a histogram of maximum drawdowns with key metrics highlighted."""
+    if max_drawdowns is None or len(max_drawdowns) == 0:
+        return plt.figure() # Return an empty figure if no data
+
+    # Filter out extreme outliers for better visibility
+    max_x_limit = np.percentile(max_drawdowns, 99.0)
+    filtered_drawdowns = max_drawdowns[max_drawdowns <= max_x_limit]
+
+    median_mdd = result['median_max_drawdown']
+    p95_mdd = result['p95_max_drawdown']
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.hist(filtered_drawdowns, bins=50, color='salmon', edgecolor='black', alpha=0.7)
+
+    ax.axvline(median_mdd, color='darkred', linestyle='dashed', linewidth=2, label=f'Median MDD: €{median_mdd:,.2f}')
+    ax.axvline(p95_mdd, color='purple', linestyle=':', linewidth=2, label=f'95th Pct. MDD: €{p95_mdd:,.2f}')
+
+    ax.set_title(f'Maximum Drawdown Distribution for {strategy_name}')
+    ax.set_xlabel('Maximum Drawdown (EUR)')
+    ax.set_ylabel('Frequency')
+    ax.legend()
+    ax.grid(True)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def create_title_page(pdf, timestamp):
     """Creates a title page for the PDF report."""
     fig = plt.figure(figsize=(11, 8.5))
@@ -941,8 +971,8 @@ def generate_pdf_report(all_results, config, timestamp_str):
         strategy_page_map[strategy_name] = current_page_count + 1
         report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
         num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page # Ceiling division
-        # There are now 3 plots per strategy
-        num_plot_pages = 3
+        # There are now 4 plots per strategy
+        num_plot_pages = 4
         current_page_count += num_text_pages + num_plot_pages
 
     # Calculate a representative input win rate for the plot's label
@@ -972,6 +1002,7 @@ def generate_pdf_report(all_results, config, timestamp_str):
                 weighted_input_wr,
                 strategy_name,
                 pdf=pdf)
+            plot_max_drawdown_distribution(result['max_drawdowns'], result, strategy_name, pdf=pdf)
 
     pdf_buffer.seek(0)
     return pdf_buffer

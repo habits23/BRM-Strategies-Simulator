@@ -778,34 +778,26 @@ if st.session_state.results:
             col5.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
             col6.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:,.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
 
-            st.subheader("Charts")
-            plot_col1, plot_col2 = st.columns(2)
-            with plot_col1:
+            st.subheader("Visual Analysis")
+            row1_col1, row1_col2 = st.columns(2)
+            with row1_col1:
+                st.markdown("###### Bankroll Progression")
                 fig1 = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
                 st.pyplot(fig1)
-            with plot_col2:
+            with row1_col2:
+                st.markdown("###### Final Bankroll Distribution")
                 fig2 = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config)
                 st.pyplot(fig2)
-            
-            # --- New Assigned WR Distribution Chart ---
-            st.markdown("---")
-            st.markdown(
-                "**Distribution of Assigned Luck (Win Rate)**",
-                help=(
+
+            row2_col1, row2_col2 = st.columns(2)
+            with row2_col1:
+                st.markdown("###### Distribution of Assigned Luck (WR)", help=(
                     "This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations.\n\n"
                     "**Why is the distribution so wide?**\n\n"
                     "The width of this 'luck' distribution is determined by your **'Std Dev (bb/100)'** and **'Sample Hands'** inputs. A high standard deviation and/or a low sample size creates more uncertainty about your true win rate. The simulation reflects this by generating a wider range of possible outcomes (both lucky and unlucky).\n\n"
-                    "A value far from the center represents a simulation run where you experienced a significant, but statistically possible, streak of good or bad luck.\n\n"
-                    "**How to read this chart:**\n"
-                    "- **Blue Line:** Your average win rate, based on your inputs.\n"
-                    "- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
-                )
-            )
-            if 'avg_assigned_wr_per_sim' in result:
-                # Use a column layout to constrain the width of the plot, making it consistent
-                # with the two charts above it. The second column is intentionally left blank.
-                plot_col_luck, _ = st.columns(2)
-                with plot_col_luck:
+                    "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
+                ))
+                if 'avg_assigned_wr_per_sim' in result:
                     fig3 = engine.plot_assigned_wr_distribution(
                         result['avg_assigned_wr_per_sim'],
                         result['median_run_assigned_wr'],
@@ -813,6 +805,11 @@ if st.session_state.results:
                         strategy_name
                     )
                     st.pyplot(fig3)
+            with row2_col2:
+                st.markdown("###### Maximum Drawdown Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
+                if 'max_drawdowns' in result:
+                    fig4 = engine.plot_max_drawdown_distribution(result['max_drawdowns'], result, strategy_name)
+                    st.pyplot(fig4)
 
             st.subheader("Key Strategy Insights")
             st.markdown("_For a full breakdown, please download the PDF report._")
