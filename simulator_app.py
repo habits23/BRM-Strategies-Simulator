@@ -767,6 +767,16 @@ if st.session_state.results:
             st.subheader("Key Strategy Insights")
             st.markdown("_For a full breakdown, please download the PDF report._")
 
+            # Check for a dominant stake to provide a key insight
+            if result.get('hands_distribution_pct'):
+                hands_dist = result['hands_distribution_pct']
+                if hands_dist: # Ensure it's not empty
+                    dominant_stake = max(hands_dist, key=hands_dist.get)
+                    dominant_pct = hands_dist[dominant_stake]
+                    if dominant_pct > 75:  # Threshold for being "dominant"
+                        st.info(f"**Key Insight:** This strategy spent the vast majority of its time at **{dominant_stake}** ({dominant_pct:.1f}% of all hands played). The results are therefore heavily influenced by the performance at this single stake.")
+
+
             col1, col2 = st.columns(2)
 
             with col1:
