@@ -136,6 +136,9 @@ def setup_simulation_parameters(config, seed):
     all_win_rates = {}
     all_dfs = {}
     all_session_profits_bb = {}
+    
+    # This is the critical fix: Generate one "luck factor" per simulation run.
+    luck_factor = rng.normal(loc=0.0, scale=1.0, size=config['NUMBER_OF_SIMULATIONS'])
 
     for i, stake in enumerate(config['STAKES_DATA']):
         name = stake["name"]
@@ -151,7 +154,7 @@ def setup_simulation_parameters(config, seed):
         else:
             prior_win_rate = ev_bb_per_100
 
-        all_win_rates[name] = calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, rng, prior_win_rate, config)
+        all_win_rates[name] = calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, luck_factor, prior_win_rate, config)
         all_dfs[name] = calculate_dynamic_df(sample_hands, config)
 
         df = all_dfs[name]
@@ -202,7 +205,7 @@ def calculate_session_outcome(current_bankrolls, tables_per_stake, all_session_p
     final_session_profit = session_profits_eur + total_rakeback_eur
     return final_session_profit, hands_per_stake_this_session, total_rakeback_eur
 
-def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, rng, prior_win_rate, config):
+def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, luck_factor, prior_win_rate, config):
     """Adjusts the observed EV win rate using a Bayesian-inspired 'shrinkage' method."""
     if sample_hands > 0:
         data_weight = sample_hands / (sample_hands + config['PRIOR_SAMPLE_SIZE'])
@@ -215,7 +218,8 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, r
     effective_sample_size_for_variance = sample_hands + config['PRIOR_SAMPLE_SIZE']
     N_blocks = max(1.0, effective_sample_size_for_variance / 100.0)
     std_error = std_dev_per_100 / np.sqrt(N_blocks)
-    adjustment = rng.normal(loc=0.0, scale=std_error, size=config['NUMBER_OF_SIMULATIONS'])
+    # Apply the same luck factor to each stake, scaled by the stake's specific standard error.
+    adjustment = luck_factor * std_error
     return shrunk_win_rate + adjustment
 
 def calculate_dynamic_df(sample_hands, config):
