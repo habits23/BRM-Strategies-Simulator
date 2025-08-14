@@ -100,10 +100,13 @@ def sync_stakes_data():
     """
     editor_state = st.session_state.stakes_data_editor
     if isinstance(editor_state, dict):
-        # This handles the transient state (dict of lists with unequal length) by
-        # converting each list to a Series, which pads with NaN.
+        # This handles the transient state where editor state is a dict of lists
+        # with string-index keys ('0', '1', ...). We must map these back to the
+        # original column names to prevent a KeyError on the next script run.
+        original_columns = st.session_state.stakes_data.columns
         st.session_state.stakes_data = pd.DataFrame({
-            k: pd.Series(v) for k, v in editor_state.items()
+            col_name: pd.Series(editor_state.get(str(i)))
+            for i, col_name in enumerate(original_columns)
         })
     else:
         # This handles the stable state (list of dicts).
@@ -112,16 +115,23 @@ def sync_stakes_data():
 def sync_strategy_rules(strategy_name):
     """Callback to sync a strategy's data editor state back to the strategy config."""
     editor_state = st.session_state[f"rules_{strategy_name}"]
-    if isinstance(editor_state, dict):
-        df = pd.DataFrame({k: pd.Series(v) for k, v in editor_state.items()})
-        edited_rules_list = df.to_dict('records')
-    else:
-        edited_rules_list = editor_state
 
     available_stakes = [
         name for name in st.session_state.stakes_data['name']
         if pd.notna(name) and str(name).strip()
     ]
+    expected_columns = ['threshold'] + available_stakes
+
+    if isinstance(editor_state, dict):
+        # Handle the transient state (dict of lists with string-index keys)
+        df = pd.DataFrame({
+            col_name: pd.Series(editor_state.get(str(i)))
+            for i, col_name in enumerate(expected_columns)
+        })
+        edited_rules_list = df.to_dict('records')
+    else:
+        # Handle the stable state (list of dicts)
+        edited_rules_list = editor_state
 
     new_rules = []
     # Iterate over the list of dictionaries directly.
