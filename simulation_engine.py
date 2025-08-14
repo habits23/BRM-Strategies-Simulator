@@ -157,43 +157,35 @@ def setup_simulation_parameters(config, seed):
     return all_win_rates, rng
 
 
-def calculate_hand_block_outcome(current_bankrolls, tables_per_stake, all_win_rates, rng, active_mask, config):
+def calculate_hand_block_outcome(current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config):
     """Calculates the profit and hands played for a block of hands across all simulations."""
     session_profits_eur = np.zeros_like(current_bankrolls)
     hands_per_stake_this_session = {stake["name"]: np.zeros_like(current_bankrolls, dtype=int) for stake in config['STAKES_DATA']}
-
-    # Calculate total tables for each simulation to get proportions
-    total_tables_per_sim = np.zeros_like(current_bankrolls, dtype=float)
-    for stake_name, counts in tables_per_stake.items():
-        total_tables_per_sim += counts
-    # Avoid division by zero for simulations that are not playing any tables
-    total_tables_per_sim[total_tables_per_sim == 0] = 1.0
 
     for stake in config['STAKES_DATA']:
         name = stake["name"]
         bb_size = stake["bb_size"]
         std_dev_per_100 = stake["std_dev_per_100"]
 
-        tables_mask = active_mask & (tables_per_stake[name] > 0)
-        if np.any(tables_mask):
-            num_tables = tables_per_stake[name][tables_mask]
-            # Distribute the hands_per_check proportionally across the active tables
-            proportion_of_tables = num_tables / total_tables_per_sim[tables_mask]
-            hands_for_stake = (proportion_of_tables * config['HANDS_PER_CHECK']).astype(int)
-            hands_per_stake_this_session[name][tables_mask] = hands_for_stake
+        # Define the mask based on which simulations are active AND have a proportion for this stake
+        proportions_mask = active_mask & (proportions_per_stake[name] > 0)
+        if np.any(proportions_mask):
+            proportions = proportions_per_stake[name][proportions_mask]
+            hands_for_stake = (proportions * config['HANDS_PER_CHECK']).astype(int)
+            hands_per_stake_this_session[name][proportions_mask] = hands_for_stake
             
             num_100_hand_blocks = hands_for_stake / 100.0
 
             # Separate EV and Variance components
             # EV scales linearly with volume
-            profit_from_ev_bb = all_win_rates[name][tables_mask] * num_100_hand_blocks
+            profit_from_ev_bb = all_win_rates[name][proportions_mask] * num_100_hand_blocks
 
             # Variance scales with sqrt(volume)
-            random_noise_component = rng.normal(loc=0.0, scale=1.0, size=np.sum(tables_mask))
+            random_noise_component = rng.normal(loc=0.0, scale=1.0, size=np.sum(proportions_mask))
             profit_from_variance_bb = random_noise_component * std_dev_per_100 * np.sqrt(num_100_hand_blocks)
 
             total_profit_bb = profit_from_ev_bb + profit_from_variance_bb
-            session_profits_eur[tables_mask] += total_profit_bb * bb_size
+            session_profits_eur[proportions_mask] += total_profit_bb * bb_size
 
     total_rakeback_eur = np.zeros_like(current_bankrolls)
     if config['RAKEBACK_PERCENTAGE'] > 0:
@@ -266,10 +258,10 @@ def round_table_counts(tables_float, total_tables):
         counts[stake] += 1
     return counts
 
-def resolve_table_mix(rule, total_tables, rng):
-    """Resolves a strategy rule into a concrete dictionary of integer table counts."""
+def resolve_proportions(rule, rng):
+    """Resolves a strategy rule into a dictionary of proportions (floats summing to 1)."""
     percentages = {}
-    fixed_counts = {}
+    fixed_ratios = {}
     for stake, val in rule.items():
         if isinstance(val, str):
             sanitized_val = val.replace('%', '').replace(' ', '')
@@ -279,40 +271,14 @@ def resolve_table_mix(rule, total_tables, rng):
                 try:
                     percentages[stake] = float(sanitized_val)
                 except ValueError:
-                    pass # Ignore invalid percentage strings
+                    pass
         elif isinstance(val, int) and val > 0:
-            fixed_counts[stake] = val
+            fixed_ratios[stake] = val
 
-    # --- New Hybrid Logic ---
-    final_counts = {}
-    assigned_fixed_tables = sum(fixed_counts.values())
-
-    if assigned_fixed_tables >= total_tables:
-        # If fixed counts meet or exceed total tables, they become ratios for the whole mix.
-        # This handles cases like {'NL20': 1, 'NL50': 1} for total_tables=1 correctly.
-        total_ratio = sum(fixed_counts.values())
-        if total_ratio > 0:
-            tables_float = {k: (v / total_ratio) * total_tables for k, v in fixed_counts.items()}
-            return round_table_counts(tables_float, total_tables)
-    else:
-        # If fixed counts are less than total tables, assign them first.
-        final_counts.update(fixed_counts)
-        remaining_tables = total_tables - assigned_fixed_tables
-
-        # Then, distribute remaining tables according to percentages.
-        if remaining_tables > 0 and percentages:
-            normalized = normalize_percentages(percentages)
-            tables_float = {k: v * remaining_tables for k, v in normalized.items()}
-            percentage_counts = round_table_counts(tables_float, remaining_tables)
-            for stake, count in percentage_counts.items():
-                final_counts[stake] = final_counts.get(stake, 0) + count
-            return final_counts
-        return final_counts # Return just the fixed counts if no percentages for remainder
-
-    if not fixed_counts and percentages:
-        normalized = normalize_percentages(percentages)
-        tables_float = {k: v * total_tables for k, v in normalized.items()}
-        return round_table_counts(tables_float, total_tables)
+    if fixed_ratios:
+        return normalize_percentages(fixed_ratios)
+    if percentages:
+        return normalize_percentages(percentages)
     return {}
 
 def get_initial_table_mix_string(strategy, config):
@@ -495,14 +461,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         previous_peak_levels = peak_stake_levels.copy()
 
         # Determine the table mix for each simulation based on its current bankroll
-        tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
-        # Handle fractional average tables by randomly assigning floor or ceil.
-        # This ensures the number of tables for any given check is an integer.
-        avg_tables = config['AVG_TABLES']
-        floor_tables = int(avg_tables)
-        prob_ceil = avg_tables - floor_tables
-        extra_tables = rng.binomial(1, prob_ceil, size=num_sims)
-        session_total_tables = floor_tables + extra_tables
+        proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
         
         remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
         for threshold, rule in zip(thresholds, rules):
@@ -512,9 +471,9 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             
             indices = np.where(current_mask)[0]
             for sim_idx in indices:
-                resolved_mix = resolve_table_mix(rule, session_total_tables[sim_idx], rng)
-                for stake_name, count in resolved_mix.items():
-                    tables_per_stake[stake_name][sim_idx] = count
+                resolved_proportions = resolve_proportions(rule, rng)
+                for stake_name, prop in resolved_proportions.items():
+                    proportions_per_stake[stake_name][sim_idx] = prop
             remaining_mask[current_mask] = False
 
         # Handle simulations with bankroll below the lowest threshold by applying the lowest rule
@@ -522,14 +481,14 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             lowest_rule = rules[-1] # The last rule is the lowest threshold
             indices = np.where(remaining_mask)[0]
             for sim_idx in indices:
-                resolved_mix = resolve_table_mix(lowest_rule, session_total_tables[sim_idx], rng)
-                for stake_name, count in resolved_mix.items():
-                    tables_per_stake[stake_name][sim_idx] = count
+                resolved_proportions = resolve_proportions(lowest_rule, rng)
+                for stake_name, prop in resolved_proportions.items():
+                    proportions_per_stake[stake_name][sim_idx] = prop
 
         # --- Demotion Tracking Logic for the current block ---
         current_levels = np.full(config['NUMBER_OF_SIMULATIONS'], -1, dtype=int)
         for stake_name, level in stake_level_map.items():
-            has_tables_mask = tables_per_stake[stake_name] > 0
+            has_tables_mask = proportions_per_stake[stake_name] > 0
             current_levels[has_tables_mask] = np.maximum(current_levels[has_tables_mask], level)
 
         demotion_from_peak_mask = current_levels < previous_peak_levels
@@ -541,8 +500,8 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
-        total_tables = sum(tables_per_stake.values())
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_tables > 0)
+        total_proportions = sum(proportions_per_stake.values())
+        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0)
         if not np.any(active_mask):
             bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
             for stake_name in hands_per_stake_histories:
@@ -550,7 +509,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             break
 
         block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
-            current_bankrolls, tables_per_stake, all_win_rates, rng, active_mask, config
+            current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
         )
 
         new_bankrolls = current_bankrolls + block_profits_eur
@@ -624,13 +583,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
-        tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
-        # Handle fractional average tables by randomly assigning floor or ceil.
-        avg_tables = config['AVG_TABLES']
-        floor_tables = int(avg_tables)
-        prob_ceil = avg_tables - floor_tables
-        extra_tables = rng.binomial(1, prob_ceil, size=num_sims)
-        session_total_tables = floor_tables + extra_tables
+        proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
 
         for i in range(len(stake_rules)):
             at_this_stake_mask = (current_stake_indices == i)
@@ -638,14 +591,12 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
                 continue
             
             rule = stake_rules[i]['tables']
-            indices = np.where(at_this_stake_mask)[0]
-            for sim_idx in indices:
-                resolved_mix = resolve_table_mix(rule, session_total_tables[sim_idx], rng)
-                for stake_name, count in resolved_mix.items():
-                    tables_per_stake[stake_name][sim_idx] = count
+            resolved_proportions = resolve_proportions(rule, rng)
+            for stake_name, prop in resolved_proportions.items():
+                proportions_per_stake[stake_name][at_this_stake_mask] = prop
 
-        total_tables = sum(tables_per_stake.values())
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_tables > 0)
+        total_proportions = sum(proportions_per_stake.values())
+        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0)
 
         if not np.any(active_mask):
             bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
@@ -654,7 +605,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             break
 
         block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
-            current_bankrolls, tables_per_stake, all_win_rates, rng, active_mask, config
+            current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
         )
 
         new_bankrolls = current_bankrolls + block_profits_eur

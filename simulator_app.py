@@ -87,7 +87,6 @@ if 'start_br' not in st.session_state:
     st.session_state.num_sims = 2000
     st.session_state.total_hands = 500000
     st.session_state.hands_per_check = 1000
-    st.session_state.avg_tables = 4.0
     st.session_state.target_tables_pct = 4
     st.session_state.rb_percent = 20
     st.session_state.prior_sample = 50000
@@ -272,7 +271,6 @@ with st.sidebar.expander("General Settings", expanded=True):
 
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
-    st.number_input("Average Tables Played", min_value=1.0, step=0.5, format="%.1f", help="The average number of tables you play at once. This is used to resolve percentage-based strategy rules.", key="avg_tables")
     st.number_input("Target Tables (for % display)", min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
 
@@ -308,8 +306,8 @@ def get_full_config_as_json():
         "parameters": {
             "start_br": st.session_state.start_br, "target_br": st.session_state.target_br,
             "ruin_thresh": st.session_state.ruin_thresh, "num_sims": st.session_state.num_sims,
-            "total_hands": st.session_state.total_hands, "hands_per_check": st.session_state.hands_per_check,
-            "avg_tables": st.session_state.avg_tables, "target_tables_pct": st.session_state.target_tables_pct, "rb_percent": st.session_state.rb_percent,
+            "total_hands": st.session_state.total_hands, "hands_per_check": st.session_state.hands_per_check, "target_tables_pct": st.session_state.target_tables_pct,
+            "rb_percent": st.session_state.rb_percent,
             "prior_sample": st.session_state.prior_sample, "zero_hands_weight": st.session_state.zero_hands_weight,
             "seed": st.session_state.seed,
         },
@@ -639,7 +637,6 @@ if st.session_state.run_simulation:
         "NUMBER_OF_SIMULATIONS": st.session_state.num_sims,
         "TOTAL_HANDS_TO_SIMULATE": st.session_state.total_hands,
         "HANDS_PER_CHECK": st.session_state.hands_per_check,
-        "AVG_TABLES": st.session_state.avg_tables,
         "TARGET_TOTAL_TABLES_FOR_PERCENTAGES": st.session_state.target_tables_pct,
         "RAKEBACK_PERCENTAGE": st.session_state.rb_percent / 100.0,
         "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
