@@ -83,7 +83,7 @@ st.write("An interactive tool to simulate poker bankroll progression based on yo
 if 'start_br' not in st.session_state:
     st.session_state.start_br = 2500
     st.session_state.target_br = 3000
-    st.session_state.ruin_thresh = 400
+    st.session_state.ruin_thresh = 750
     st.session_state.num_sims = 1000
     st.session_state.num_sessions = 100
     st.session_state.hands_per_table = 60
@@ -97,7 +97,7 @@ if 'start_br' not in st.session_state:
     st.session_state.min_df = 3
     st.session_state.max_df = 30
     st.session_state.hands_for_max_df = 50000
-    st.session_state.seed = 45783
+    st.session_state.seed = 12345
 
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
