@@ -94,27 +94,37 @@ def remove_strategy(name_to_remove):
 
 def sync_stakes_data():
     """
-    Callback to sync the data editor's state back to the main stakes_data state.
-    When adding a new row, the data_editor state can temporarily be a dict of lists
-    with unequal length. This function robustly handles this.
+    Callback to apply edits from the data_editor to the main stakes_data DataFrame.
+    This function correctly handles the dictionary of changes provided by Streamlit's
+    on_change callback for st.data_editor.
     """
     editor_state = st.session_state.stakes_data_editor
-    if isinstance(editor_state, dict):
-        # This handles the transient state where editor state is a dict of lists
-        # with string-index keys ('0', '1', ...). We must map these back to the
-        # original column names to prevent a KeyError on the next script run.
-        original_columns = st.session_state.stakes_data.columns
-        st.session_state.stakes_data = pd.DataFrame({
-            col_name: pd.Series(editor_state.get(str(i)))
-            for i, col_name in enumerate(original_columns)
-        })
-    else:
-        # This handles the stable state (list of dicts).
-        st.session_state.stakes_data = pd.DataFrame(editor_state)
+
+    # Make a copy of the original DataFrame to apply changes to
+    df = st.session_state.stakes_data.copy()
+
+    # Apply deletions first, in reverse order to not mess up indices
+    if editor_state["deleted_rows"]:
+        df = df.drop(index=editor_state["deleted_rows"]).reset_index(drop=True)
+
+    # Apply edits
+    if editor_state["edited_rows"]:
+        for index, changes in editor_state["edited_rows"].items():
+            for col_name, new_value in changes.items():
+                df.loc[index, col_name] = new_value
+
+    # Apply additions
+    if editor_state["added_rows"]:
+        added_df = pd.DataFrame(editor_state["added_rows"])
+        df = pd.concat([df, added_df], ignore_index=True)
+
+    # Update the main session state with the modified DataFrame
+    st.session_state.stakes_data = df
 
 def sync_strategy_rules(strategy_name):
     """Callback to sync a strategy's data editor state back to the strategy config."""
-    editor_state = st.session_state[f"rules_{strategy_name}"]
+    edits = st.session_state[f"rules_{strategy_name}"]
+    original_rules = st.session_state.strategy_configs[strategy_name].get("rules", [])
 
     available_stakes = [
         name for name in st.session_state.stakes_data['name']
@@ -122,33 +132,35 @@ def sync_strategy_rules(strategy_name):
     ]
     expected_columns = ['threshold'] + available_stakes
 
-    if isinstance(editor_state, dict):
-        # Handle the transient state (dict of lists with string-index keys)
-        df = pd.DataFrame({
-            col_name: pd.Series(editor_state.get(str(i)))
-            for i, col_name in enumerate(expected_columns)
-        })
-        edited_rules_list = df.to_dict('records')
-    else:
-        # Handle the stable state (list of dicts)
-        edited_rules_list = editor_state
+    # Convert the original rules to a DataFrame to work with
+    df = pd.DataFrame(
+        [{'threshold': r['threshold'], **r.get('tables', {})} for r in original_rules],
+        columns=expected_columns
+    ).sort_values(by='threshold', ascending=False).reset_index(drop=True)
 
+    # Apply changes from the editor
+    if edits["deleted_rows"]:
+        df = df.drop(index=edits["deleted_rows"]).reset_index(drop=True)
+    if edits["edited_rows"]:
+        for index, changes in edits["edited_rows"].items():
+            for col_name, new_value in changes.items():
+                df.loc[index, col_name] = new_value
+    if edits["added_rows"]:
+        added_df = pd.DataFrame(edits["added_rows"], columns=expected_columns)
+        df = pd.concat([df, added_df], ignore_index=True)
+
+    # Convert the modified DataFrame back into the list-of-dicts format
     new_rules = []
-    # Iterate over the list of dictionaries directly.
-    for row in edited_rules_list:
+    for _, row in df.iterrows():
         threshold_val = row.get('threshold')
-        # A new row added by the user will have None/NaN values.
         if threshold_val is None or pd.isna(threshold_val) or threshold_val <= 0:
             continue
         tables = {}
         for stake in available_stakes:
-            # Check if the stake key exists and its value is not None/NaN/empty.
             if stake in row and pd.notna(row[stake]) and row[stake] != "":
                 try:
-                    # Try to convert to int first (for fixed counts).
                     tables[stake] = int(row[stake])
                 except (ValueError, TypeError):
-                    # If it fails, treat it as a string (for percentages).
                     tables[stake] = str(row[stake])
         if tables:
             new_rules.append({"threshold": int(threshold_val), "tables": tables})
