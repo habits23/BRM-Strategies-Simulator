@@ -133,11 +133,11 @@ class HysteresisStrategy(BankrollManagementStrategy):
 def setup_simulation_parameters(config, seed):
     """Initializes and returns common parameters needed for simulations."""
     rng = np.random.default_rng(seed)
-    all_win_rates = {}
-    all_dfs = {}
-    all_session_profits_bb = {}
-    
-    # This is the critical fix: Generate one "luck factor" per simulation run.
+    all_win_rates = {}    
+    all_dfs = {}    
+    all_normalized_t_samples = {}  
+
+# This is the critical fix: Generate one "luck factor" per simulation run.
     luck_factor = rng.normal(loc=0.0, scale=1.0, size=config['NUMBER_OF_SIMULATIONS'])
 
     for i, stake in enumerate(config['STAKES_DATA']):
@@ -159,29 +159,40 @@ def setup_simulation_parameters(config, seed):
         all_dfs[name] = calculate_dynamic_df(sample_hands, config)
 
         df = all_dfs[name]
-        t_samples = t.rvs(df, size=(config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN']), random_state=rng)
-        t_std_dev = np.sqrt(df / (df - 2))
+        t_samples = t.rvs(df, size=(config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN']), random_state=rng)        
+        # Handle df=inf case for very large samples where t becomes normal
+        t_std_dev = np.sqrt(df / (df - 2)) if np.isfinite(df) else 1.0
         normalized_t_samples = t_samples / t_std_dev
-        all_session_profits_bb[name] = (normalized_t_samples * std_dev_per_100 + all_win_rates[name][:, np.newaxis])
+        all_normalized_t_samples[name] = normalized_t_samples
 
-    return all_session_profits_bb, all_win_rates, rng
+    return all_normalized_t_samples, all_win_rates, rng
 
-def calculate_session_outcome(current_bankrolls, tables_per_stake, all_session_profits_bb, active_mask, session_index, config):
+
+def calculate_session_outcome(current_bankrolls, tables_per_stake, all_win_rates, all_normalized_t_samples, active_mask, session_index, config):
     """Calculates the profit and hands played for a single session across all simulations."""
     session_profits_eur = np.zeros_like(current_bankrolls)
     hands_per_stake_this_session = {stake["name"]: np.zeros_like(current_bankrolls, dtype=int) for stake in config['STAKES_DATA']}
-    hands_per_100_blocks = config['HANDS_PER_TABLE_PER_SESSION'] / 100.0
 
     for stake in config['STAKES_DATA']:
         name = stake["name"]
         bb_size = stake["bb_size"]
         tables_mask = active_mask & (tables_per_stake[name] > 0)
         if np.any(tables_mask):
-            profit_bb_per_100 = all_session_profits_bb[name][tables_mask, session_index]
-            total_profit_bb = profit_bb_per_100 * (tables_per_stake[name][tables_mask] * hands_per_100_blocks)
+            num_tables = tables_per_stake[name][tables_mask]
+            num_100_hand_blocks = num_tables * config['HANDS_PER_TABLE_PER_SESSION'] / 100.0
+
+            # Separate EV and Variance components
+            # EV scales linearly with volume
+            profit_from_ev_bb = all_win_rates[name][tables_mask] * num_100_hand_blocks
+
+            # Variance scales with sqrt(volume)
+            random_noise_component = all_normalized_t_samples[name][tables_mask, session_index]
+            profit_from_variance_bb = random_noise_component * std_dev_per_100 * np.sqrt(num_100_hand_blocks)
+
+            total_profit_bb = profit_from_ev_bb + profit_from_variance_bb
             session_profits_eur[tables_mask] += total_profit_bb * bb_size
 
-            hands_for_stake = tables_per_stake[name][tables_mask] * config['HANDS_PER_TABLE_PER_SESSION']
+            hands_for_stake = num_tables * config['HANDS_PER_TABLE_PER_SESSION']
             hands_per_stake_this_session[name][tables_mask] = hands_for_stake
 
     uncapped_profits = session_profits_eur.copy()
@@ -470,7 +481,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
     }
-def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, stake_level_map, config):
+def run_multiple_simulations_vectorized(strategy, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
     This version dynamically resolves table mixes for each session.
@@ -549,7 +560,7 @@ def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, s
             break
 
         session_profits_eur, hands_per_stake_this_session, session_rakeback_eur = calculate_session_outcome(
-            current_bankrolls, tables_per_stake, all_session_profits_bb, active_mask, i, config
+            current_bankrolls, tables_per_stake, all_win_rates, all_normalized_t_samples, active_mask, i, config
         )
 
         new_bankrolls = current_bankrolls + session_profits_eur
@@ -566,7 +577,7 @@ def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, s
 
     return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
 
-def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stake_level_map, config):
+def run_sticky_simulation_vectorized(strategy, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config):
     """
     Runs a simulation with a specific 'sticky' bankroll management strategy.
     This version correctly handles multiple stakes by implementing a proper state machine.
@@ -640,7 +651,7 @@ def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stak
         active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_tables > 0)
 
         session_profits_eur, hands_per_stake_this_session, session_rakeback_eur = calculate_session_outcome(
-            current_bankrolls, tables_per_stake, all_session_profits_bb, active_mask, session_idx, config
+            current_bankrolls, tables_per_stake, all_win_rates, all_normalized_t_samples, active_mask, session_idx, config
         )
 
         new_bankrolls = current_bankrolls + session_profits_eur
@@ -1070,14 +1081,14 @@ def run_full_analysis(config):
 
     for strategy_name, strategy_config in config['STRATEGIES_TO_RUN'].items():
         strategy_seed = master_rng.integers(1, 1_000_000_000)
-        all_session_profits_bb, all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
+        all_normalized_t_samples, all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_sticky_simulation_vectorized(strategy_obj, all_session_profits_bb, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_multiple_simulations_vectorized(strategy_obj, all_session_profits_bb, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analyze_strategy_results(
