@@ -133,11 +133,8 @@ class HysteresisStrategy(BankrollManagementStrategy):
 def setup_simulation_parameters(config, seed):
     """Initializes and returns common parameters needed for simulations."""
     rng = np.random.default_rng(seed)
-    all_win_rates = {}    
-    all_dfs = {}    
-    all_normalized_t_samples = {}  
-
-# This is the critical fix: Generate one "luck factor" per simulation run.
+    all_win_rates = {}
+    # This is the critical fix: Generate one "luck factor" per simulation run.
     luck_factor = rng.normal(loc=0.0, scale=1.0, size=config['NUMBER_OF_SIMULATIONS'])
 
     for i, stake in enumerate(config['STAKES_DATA']):
@@ -149,64 +146,54 @@ def setup_simulation_parameters(config, seed):
 
         if i > 0:
             previous_stake_name = config['STAKES_DATA'][i-1]["name"]
-            # The prior should be the MEAN of the previous stake's win rates.
-            # This represents our best guess for the central tendency, around which we apply consistent luck.
-            prior_win_rate = np.mean(all_win_rates[previous_stake_name]) - win_rate_drop
+            # The prior is the entire array of win rates from the previous stake.
+            # This is CRITICAL to preserve the per-simulation luck correlation across stakes.
+            prior_win_rate = all_win_rates[previous_stake_name] - win_rate_drop
         else:
             prior_win_rate = ev_bb_per_100
 
         all_win_rates[name] = calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, luck_factor, prior_win_rate, config)
-        all_dfs[name] = calculate_dynamic_df(sample_hands, config)
 
-        df = all_dfs[name]
-        t_samples = t.rvs(df, size=(config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN']), random_state=rng)        
-        # Handle df=inf case for very large samples where t becomes normal
-        t_std_dev = np.sqrt(df / (df - 2)) if np.isfinite(df) else 1.0
-        normalized_t_samples = t_samples / t_std_dev
-        all_normalized_t_samples[name] = normalized_t_samples
-
-    return all_normalized_t_samples, all_win_rates, rng
+    return all_win_rates, rng
 
 
-def calculate_session_outcome(current_bankrolls, tables_per_stake, all_win_rates, all_normalized_t_samples, active_mask, session_index, config):
-    """Calculates the profit and hands played for a single session across all simulations."""
+def calculate_hand_block_outcome(current_bankrolls, tables_per_stake, all_win_rates, rng, active_mask, config):
+    """Calculates the profit and hands played for a block of hands across all simulations."""
     session_profits_eur = np.zeros_like(current_bankrolls)
     hands_per_stake_this_session = {stake["name"]: np.zeros_like(current_bankrolls, dtype=int) for stake in config['STAKES_DATA']}
+
+    # Calculate total tables for each simulation to get proportions
+    total_tables_per_sim = np.zeros_like(current_bankrolls, dtype=float)
+    for stake_name, counts in tables_per_stake.items():
+        total_tables_per_sim += counts
+    # Avoid division by zero for simulations that are not playing any tables
+    total_tables_per_sim[total_tables_per_sim == 0] = 1.0
 
     for stake in config['STAKES_DATA']:
         name = stake["name"]
         bb_size = stake["bb_size"]
         std_dev_per_100 = stake["std_dev_per_100"]
+
         tables_mask = active_mask & (tables_per_stake[name] > 0)
         if np.any(tables_mask):
             num_tables = tables_per_stake[name][tables_mask]
-            num_100_hand_blocks = num_tables * config['HANDS_PER_TABLE_PER_SESSION'] / 100.0
+            # Distribute the hands_per_check proportionally across the active tables
+            proportion_of_tables = num_tables / total_tables_per_sim[tables_mask]
+            hands_for_stake = (proportion_of_tables * config['HANDS_PER_CHECK']).astype(int)
+            hands_per_stake_this_session[name][tables_mask] = hands_for_stake
+            
+            num_100_hand_blocks = hands_for_stake / 100.0
 
             # Separate EV and Variance components
             # EV scales linearly with volume
             profit_from_ev_bb = all_win_rates[name][tables_mask] * num_100_hand_blocks
 
             # Variance scales with sqrt(volume)
-            random_noise_component = all_normalized_t_samples[name][tables_mask, session_index]
+            random_noise_component = rng.normal(loc=0.0, scale=1.0, size=np.sum(tables_mask))
             profit_from_variance_bb = random_noise_component * std_dev_per_100 * np.sqrt(num_100_hand_blocks)
 
             total_profit_bb = profit_from_ev_bb + profit_from_variance_bb
             session_profits_eur[tables_mask] += total_profit_bb * bb_size
-
-            hands_for_stake = num_tables * config['HANDS_PER_TABLE_PER_SESSION']
-            hands_per_stake_this_session[name][tables_mask] = hands_for_stake
-
-    uncapped_profits = session_profits_eur.copy()
-
-    if config['STOP_LOSS_PERCENTAGE_PER_SESSION'] > 0.0:
-        max_loss_eur = current_bankrolls * config['STOP_LOSS_PERCENTAGE_PER_SESSION']
-        session_profits_eur = np.maximum(uncapped_profits, -max_loss_eur)
-
-        stop_loss_hit_mask = (uncapped_profits < -max_loss_eur)
-        if np.any(stop_loss_hit_mask):
-            loss_ratio = np.divide(max_loss_eur[stop_loss_hit_mask], -uncapped_profits[stop_loss_hit_mask], where=uncapped_profits[stop_loss_hit_mask] != 0)
-            for name in hands_per_stake_this_session:
-                hands_per_stake_this_session[name][stop_loss_hit_mask] = (hands_per_stake_this_session[name][stop_loss_hit_mask] * loss_ratio).astype(int)
 
     total_rakeback_eur = np.zeros_like(current_bankrolls)
     if config['RAKEBACK_PERCENTAGE'] > 0:
@@ -234,12 +221,6 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
     # Apply the same luck factor to each stake, scaled by the stake's specific standard error.
     adjustment = luck_factor * std_error
     return shrunk_win_rate + adjustment
-
-def calculate_dynamic_df(sample_hands, config):
-    """Calculates degrees of freedom dynamically based on sample size."""
-    df = config['MIN_DEGREES_OF_FREEDOM'] + (config['MAX_DEGREES_OF_FREEDOM'] - config['MIN_DEGREES_OF_FREEDOM']) * \
-         (min(sample_hands, config['HANDS_FOR_MAX_DF']) / config['HANDS_FOR_MAX_DF'])
-    return df
 
 def calculate_binned_mode(data, ruin_threshold):
     """Calculates the mode of a continuous distribution using Kernel Density Estimation (KDE)."""
@@ -482,38 +463,41 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
     }
-def run_multiple_simulations_vectorized(strategy, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config):
+def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
     This version dynamically resolves table mixes for each session.
     """
-    bankroll_history = np.full((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_per_stake_histories = {stake['name']: np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_histories = np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=float)
+    num_sims = config['NUMBER_OF_SIMULATIONS']
+    num_checks = int(np.ceil(config['TOTAL_HANDS_TO_SIMULATE'] / config['HANDS_PER_CHECK']))
+    bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
+    hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
+    rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
 
     # --- Maximum Drawdown Initialization ---
-    peak_bankrolls_so_far = np.full(config['NUMBER_OF_SIMULATIONS'], config['STARTING_BANKROLL_EUR'], dtype=float)
-    max_drawdowns_so_far = np.zeros(config['NUMBER_OF_SIMULATIONS'], dtype=float)
+    peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
+    max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
 
 
     # --- Demotion Tracking Initialization ---
     initial_rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
     initial_stakes_with_tables = [stake for stake, count in initial_rule.items() if (isinstance(count, int) and count > 0) or (isinstance(count, str) and float(count.replace('%','').split('-')[0]) > 0)]
     initial_level = max([stake_level_map[s] for s in initial_stakes_with_tables]) if initial_stakes_with_tables else -1
-    peak_stake_levels = np.full(config['NUMBER_OF_SIMULATIONS'], initial_level, dtype=int)
-    demotion_flags = {level: np.zeros(config['NUMBER_OF_SIMULATIONS'], dtype=bool) for level in stake_level_map.values()}
+    peak_stake_levels = np.full(num_sims, initial_level, dtype=int)
+    demotion_flags = {level: np.zeros(num_sims, dtype=bool) for level in stake_level_map.values()}
 
     thresholds, rules = strategy.get_rules_as_vectors()
 
-    for i in range(config['TOTAL_SESSIONS_PER_RUN']):
+    for i in range(num_checks):
         current_bankrolls = bankroll_history[:, i]
         
         # Store previous peak levels to detect demotions
         previous_peak_levels = peak_stake_levels.copy()
 
         # Determine the table mix for each simulation based on its current bankroll
-        tables_per_stake = {stake["name"]: np.zeros_like(current_bankrolls, dtype=int) for stake in config['STAKES_DATA']}
-        session_total_tables = rng.integers(config['MIN_TABLES_PER_SESSION'], config['MAX_TABLES_PER_SESSION'] + 1, size=config['NUMBER_OF_SIMULATIONS'])
+        tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
+        # Simplified to use a fixed average number of tables.
+        session_total_tables = np.full(num_sims, config['AVG_TABLES'])
         
         remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
         for threshold, rule in zip(thresholds, rules):
@@ -537,7 +521,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, all_normalized_
                 for stake_name, count in resolved_mix.items():
                     tables_per_stake[stake_name][sim_idx] = count
 
-        # --- Demotion Tracking Logic ---
+        # --- Demotion Tracking Logic for the current block ---
         current_levels = np.full(config['NUMBER_OF_SIMULATIONS'], -1, dtype=int)
         for stake_name, level in stake_level_map.items():
             has_tables_mask = tables_per_stake[stake_name] > 0
@@ -560,11 +544,11 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, all_normalized_
                 hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
             break
 
-        session_profits_eur, hands_per_stake_this_session, session_rakeback_eur = calculate_session_outcome(
-            current_bankrolls, tables_per_stake, all_win_rates, all_normalized_t_samples, active_mask, i, config
+        block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
+            current_bankrolls, tables_per_stake, all_win_rates, rng, active_mask, config
         )
 
-        new_bankrolls = current_bankrolls + session_profits_eur
+        new_bankrolls = current_bankrolls + block_profits_eur
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
         # --- Maximum Drawdown Calculation ---
@@ -572,100 +556,103 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, all_normalized_
         current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
         max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
 
-        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, session_rakeback_eur, 0)
-        for stake_name, hands_array in hands_per_stake_this_session.items():
+        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
+        for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
     return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
 
-def run_sticky_simulation_vectorized(strategy, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config):
+def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
     Runs a simulation with a specific 'sticky' bankroll management strategy.
     This version correctly handles multiple stakes by implementing a proper state machine.
     """
-    bankroll_history = np.full((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_per_stake_histories = {stake['name']: np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_histories = np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=float)
+    num_sims = config['NUMBER_OF_SIMULATIONS']
+    num_checks = int(np.ceil(config['TOTAL_HANDS_TO_SIMULATE'] / config['HANDS_PER_CHECK']))
+    bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
+    hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
+    rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
 
     # --- Maximum Drawdown Initialization ---
-    peak_bankrolls_so_far = np.full(config['NUMBER_OF_SIMULATIONS'], config['STARTING_BANKROLL_EUR'], dtype=float)
-    max_drawdowns_so_far = np.zeros(config['NUMBER_OF_SIMULATIONS'], dtype=float)
-
+    peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
+    max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
 
     # --- Demotion Tracking Initialization ---
     stake_rules = sorted(strategy.rules, key=lambda r: r['threshold'])
     rule_index_to_level = {i: stake_level_map[rule['stake_name']] for i, rule in enumerate(stake_rules)}
 
-    current_stake_indices = np.zeros(config['NUMBER_OF_SIMULATIONS'], dtype=int)
-    for i in range(len(stake_rules) - 1, -1, -1):
-        threshold = stake_rules[i]['threshold']
-        current_stake_indices[config['STARTING_BANKROLL_EUR'] >= threshold] = i
+    current_stake_indices = np.zeros(num_sims, dtype=int)
+    for idx in range(len(stake_rules) - 1, -1, -1):
+        threshold = stake_rules[idx]['threshold']
+        current_stake_indices[config['STARTING_BANKROLL_EUR'] >= threshold] = idx
 
     initial_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
     peak_stake_levels = initial_levels.copy()
-    demotion_flags = {level: np.zeros(config['NUMBER_OF_SIMULATIONS'], dtype=bool) for level in stake_level_map.values()}
+    demotion_flags = {level: np.zeros(num_sims, dtype=bool) for level in stake_level_map.values()}
 
-    for session_idx in range(config['TOTAL_SESSIONS_PER_RUN']):
-        current_bankrolls = bankroll_history[:, session_idx]
+    for i in range(num_checks):
+        current_bankrolls = bankroll_history[:, i]
 
         previous_peak_levels = peak_stake_levels.copy()
 
+        for idx in range(len(stake_rules) - 1):
+            move_up_threshold = stake_rules[idx+1]['threshold']
+            can_move_up_mask = (current_stake_indices == idx) & (current_bankrolls >= move_up_threshold)
+            current_stake_indices[can_move_up_mask] = idx + 1
 
-        previous_stake_indices = current_stake_indices.copy()
-
-        for i in range(len(stake_rules) - 1):
-            move_up_threshold = stake_rules[i+1]['threshold']
-            can_move_up_mask = (current_stake_indices == i) & (current_bankrolls >= move_up_threshold)
-            current_stake_indices[can_move_up_mask] = i + 1
-
-        for i in range(len(stake_rules) - 1, 0, -1):
-            # Hysteresis move-down: A player at stake 'i' only moves down to 'i-1'
+        for j in range(len(stake_rules) - 1, 0, -1):
+            # Hysteresis move-down: A player at stake 'j' only moves down to 'j-1'
             # if their bankroll drops below the entry threshold for stake 'i-1'.
             # This creates a "sticky" buffer zone.
-            move_down_threshold = stake_rules[i-1]['threshold']
-            must_move_down_mask = (current_stake_indices == i) & (current_bankrolls < move_down_threshold)
-            current_stake_indices[must_move_down_mask] = i - 1
+            move_down_threshold = stake_rules[j-1]['threshold']
+            must_move_down_mask = (current_stake_indices == j) & (current_bankrolls < move_down_threshold)
+            current_stake_indices[must_move_down_mask] = j - 1
 
         # --- Demotion Tracking Logic ---
         current_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
 
         demotion_from_peak_mask = current_levels < previous_peak_levels
         for level in stake_level_map.values():
-            demoted_this_session_mask = (previous_peak_levels == level) & demotion_from_peak_mask
-            demotion_flags[level][demoted_this_session_mask] = True
+            demoted_this_block_mask = (previous_peak_levels == level) & demotion_from_peak_mask
+            demotion_flags[level][demoted_this_block_mask] = True
 
         # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
-        tables_per_stake = {stake["name"]: np.zeros(config['NUMBER_OF_SIMULATIONS'], dtype=int) for stake in config['STAKES_DATA']}
-        session_total_tables = rng.integers(config['MIN_TABLES_PER_SESSION'], config['MAX_TABLES_PER_SESSION'] + 1, size=config['NUMBER_OF_SIMULATIONS'])
+        tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
+        session_total_tables = np.full(num_sims, config['AVG_TABLES'])
 
-        for i in range(len(stake_rules)):
-            at_this_stake_mask = (current_stake_indices == i)
+        for idx in range(len(stake_rules)):
+            at_this_stake_mask = (current_stake_indices == idx)
             if not np.any(at_this_stake_mask):
                 continue
-            # Since the sticky strategy is always 100% of one stake, we can vectorize this.
-            stake_name_for_rule = stake_rules[i]['stake_name']
+            stake_name_for_rule = stake_rules[idx]['stake_name']
             tables_per_stake[stake_name_for_rule][at_this_stake_mask] = session_total_tables[at_this_stake_mask]
 
         total_tables = sum(tables_per_stake.values())
         active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_tables > 0)
 
-        session_profits_eur, hands_per_stake_this_session, session_rakeback_eur = calculate_session_outcome(
-            current_bankrolls, tables_per_stake, all_win_rates, all_normalized_t_samples, active_mask, session_idx, config
+        if not np.any(active_mask):
+            bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
+            for stake_name in hands_per_stake_histories:
+                hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
+            break
+
+        block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
+            current_bankrolls, tables_per_stake, all_win_rates, rng, active_mask, config
         )
 
-        new_bankrolls = current_bankrolls + session_profits_eur
-        bankroll_history[:, session_idx+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
+        new_bankrolls = current_bankrolls + block_profits_eur
+        bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
         # --- Maximum Drawdown Calculation ---
-        peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, session_idx+1])
-        current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, session_idx+1]
+        peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
+        current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
         max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
 
-        rakeback_histories[:, session_idx+1] = rakeback_histories[:, session_idx] + np.where(active_mask, session_rakeback_eur, 0)
-        for stake_name, hands_array in hands_per_stake_this_session.items():
-            hands_per_stake_histories[stake_name][:, session_idx+1] = hands_per_stake_histories[stake_name][:, session_idx] + np.where(active_mask, hands_array, 0)
+        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
+        for stake_name, hands_array in hands_per_stake_this_block.items():
+            hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
     return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
 # =================================================================================
@@ -1082,14 +1069,14 @@ def run_full_analysis(config):
 
     for strategy_name, strategy_config in config['STRATEGIES_TO_RUN'].items():
         strategy_seed = master_rng.integers(1, 1_000_000_000)
-        all_normalized_t_samples, all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
+        all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, all_normalized_t_samples, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analyze_strategy_results(

@@ -84,19 +84,14 @@ if 'start_br' not in st.session_state:
     st.session_state.start_br = 2500
     st.session_state.target_br = 3000
     st.session_state.ruin_thresh = 750
-    st.session_state.num_sims = 1000
-    st.session_state.num_sessions = 100
-    st.session_state.hands_per_table = 60
-    st.session_state.sl_percent = 10
-    st.session_state.min_tables = 3
-    st.session_state.max_tables = max(5, st.session_state.min_tables)
+    st.session_state.num_sims = 2000
+    st.session_state.total_hands = 500000
+    st.session_state.hands_per_check = 1000
+    st.session_state.avg_tables = 4.0
     st.session_state.target_tables_pct = 4
     st.session_state.rb_percent = 20
     st.session_state.prior_sample = 50000
     st.session_state.zero_hands_weight = 0.5
-    st.session_state.min_df = 3
-    st.session_state.max_df = 30
-    st.session_state.hands_for_max_df = 50000
     st.session_state.seed = 98765
 
 if 'run_simulation' not in st.session_state:
@@ -273,18 +268,11 @@ with st.sidebar.expander("General Settings", expanded=True):
     with col1:
         st.number_input("Number of Simulations", min_value=10, max_value=50000, step=100, help="How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (e.g., 2000-10000)", key="num_sims")
     with col2:
-        st.number_input("Sessions per Simulation", min_value=1, max_value=1000, help="How many playing sessions are in a single simulation run. This determines the time horizon of the simulation.", key="num_sessions")
+        st.number_input("Total Hands to Simulate", min_value=1000, step=1000, help="The total number of hands to play in a single simulation run. This determines the time horizon.", key="total_hands")
 
-with st.sidebar.expander("Session & Rakeback Settings", expanded=True):
-    st.number_input("Hands per Table per Session", min_value=1, help="The average number of hands you play per table during one session.", key="hands_per_table")
-    st.slider("Stop-Loss per Session (%)", 0, 100, help="The session ends early if you lose this percentage of your bankroll at the start of that session. Set to 100% to disable.", key="sl_percent")
-
-    col3, col4 = st.columns(2)
-    with col3:
-        st.number_input("Min Tables", min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.", key="min_tables")
-    with col4:
-        st.number_input("Max Tables", min_value=st.session_state.min_tables, help="The maximum number of tables you will play in any given session.", key="max_tables")
-
+with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
+    st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
+    st.number_input("Average Tables Played", min_value=1.0, step=0.5, format="%.1f", help="The average number of tables you play at once. This is used to resolve percentage-based strategy rules.", key="avg_tables")
     st.number_input("Target Tables (for % display)", min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
 
@@ -299,9 +287,6 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
         ),  
         key="prior_sample")
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
-    st.number_input("Min Degrees of Freedom (t-dist)", min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
-    st.number_input("Max Degrees of Freedom (t-dist)", min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
-    st.number_input("Hands to Reach Max DF", min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.", key="hands_for_max_df")
 
 def randomize_seed():
     """Generates a new random seed."""
@@ -323,12 +308,9 @@ def get_full_config_as_json():
         "parameters": {
             "start_br": st.session_state.start_br, "target_br": st.session_state.target_br,
             "ruin_thresh": st.session_state.ruin_thresh, "num_sims": st.session_state.num_sims,
-            "num_sessions": st.session_state.num_sessions, "hands_per_table": st.session_state.hands_per_table,
-            "sl_percent": st.session_state.sl_percent, "min_tables": st.session_state.min_tables,
-            "max_tables": st.session_state.max_tables, "target_tables_pct": st.session_state.target_tables_pct,
-            "rb_percent": st.session_state.rb_percent, "prior_sample": st.session_state.prior_sample,
-            "zero_hands_weight": st.session_state.zero_hands_weight, "min_df": st.session_state.min_df,
-            "max_df": st.session_state.max_df, "hands_for_max_df": st.session_state.hands_for_max_df,
+            "total_hands": st.session_state.total_hands, "hands_per_check": st.session_state.hands_per_check,
+            "avg_tables": st.session_state.avg_tables, "target_tables_pct": st.session_state.target_tables_pct, "rb_percent": st.session_state.rb_percent,
+            "prior_sample": st.session_state.prior_sample, "zero_hands_weight": st.session_state.zero_hands_weight,
             "seed": st.session_state.seed,
         },
         "stakes_data": st.session_state.stakes_data.to_dict('records'),
@@ -655,18 +637,13 @@ if st.session_state.run_simulation:
         "TARGET_BANKROLL": st.session_state.target_br,
         "RUIN_THRESHOLD": st.session_state.ruin_thresh,
         "NUMBER_OF_SIMULATIONS": st.session_state.num_sims,
-        "TOTAL_SESSIONS_PER_RUN": st.session_state.num_sessions,
-        "HANDS_PER_TABLE_PER_SESSION": st.session_state.hands_per_table,
-        "STOP_LOSS_PERCENTAGE_PER_SESSION": st.session_state.sl_percent / 100.0,
-        "MIN_TABLES_PER_SESSION": st.session_state.min_tables,
-        "MAX_TABLES_PER_SESSION": st.session_state.max_tables,
+        "TOTAL_HANDS_TO_SIMULATE": st.session_state.total_hands,
+        "HANDS_PER_CHECK": st.session_state.hands_per_check,
+        "AVG_TABLES": st.session_state.avg_tables,
         "TARGET_TOTAL_TABLES_FOR_PERCENTAGES": st.session_state.target_tables_pct,
         "RAKEBACK_PERCENTAGE": st.session_state.rb_percent / 100.0,
         "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
         "ZERO_HANDS_INPUT_WEIGHT": st.session_state.zero_hands_weight,
-        "MIN_DEGREES_OF_FREEDOM": st.session_state.min_df,
-        "MAX_DEGREES_OF_FREEDOM": st.session_state.max_df,
-        "HANDS_FOR_MAX_DF": st.session_state.hands_for_max_df,
         "SEED": st.session_state.seed,
     }
 
