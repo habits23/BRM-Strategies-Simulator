@@ -315,14 +315,19 @@ with tab2:
                             "Bankroll Threshold (€)",
                             help="The bankroll amount at which this rule applies.",
                             min_value=0,
-                            format="€ %d"
+                            format="€ %d",
                         ),
-                        **{stake: st.column_config.NumberColumn(
-                             f"{stake} Mix",
-                             help=f"Table mix for {stake}. Use percentages ('50%') or fixed counts (4)."
-                            ) for stake in available_stakes}
-                    }
+                        **{
+                            stake: st.column_config.TextColumn(
+                                f"{stake} Mix",
+                                help=f"Table mix for {stake}. Use a fixed count (e.g., 4), a percentage (e.g., '80%'), or a range (e.g., '20-40%').",
+                            )
+                            for stake in available_stakes
+                        },
+                    },
                 )
+
+                
 
                 # The conversion logic is now handled by the sync_strategy_rules callback.
 # --- Main Logic to Run Simulation and Display Results ---
