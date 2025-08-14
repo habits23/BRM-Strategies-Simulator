@@ -301,6 +301,14 @@ with tab2:
                     df_data.append({'threshold': r['threshold'], **tables_str})
                 
                 rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
+
+                # CRITICAL FIX: Convert any NaN (float) values in stake columns to empty
+                # strings. This prevents a type mismatch error in st.data_editor where
+                # the data type is float (due to NaN) but the column is configured as Text.
+                stake_cols_in_df = [col for col in rules_df.columns if col in available_stakes]
+                if stake_cols_in_df:
+                    rules_df[stake_cols_in_df] = rules_df[stake_cols_in_df].astype(str).replace('nan', '')
+
                 rules_df = rules_df.sort_values(by='threshold', ascending=False).reset_index(drop=True)
 
                 # --- Display the data editor ---
