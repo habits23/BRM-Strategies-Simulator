@@ -163,11 +163,11 @@ def sync_strategy_rules(strategy_name):
     df = pd.DataFrame(
         [{'threshold': r['threshold'], **r.get('tables', {})} for r in original_rules],
         columns=expected_columns
-    ).sort_values(by='threshold', ascending=False).reset_index(drop=True)
+    )
 
     # Apply changes from the editor
     if edits["deleted_rows"]:
-        df = df.drop(index=edits["deleted_rows"]).reset_index(drop=True)
+        df = df.drop(index=edits["deleted_rows"])
     if edits["edited_rows"]:
         for index, changes in edits["edited_rows"].items():
             for col_name, new_value in changes.items():
@@ -176,11 +176,18 @@ def sync_strategy_rules(strategy_name):
         added_df = pd.DataFrame(edits["added_rows"], columns=expected_columns)
         df = pd.concat([df, added_df], ignore_index=True)
 
+    # --- Automatic Sorting Logic ---
+    # Ensure threshold is numeric for sorting, coercing errors to NaN
+    df['threshold'] = pd.to_numeric(df['threshold'], errors='coerce')
+    # Sort the DataFrame by threshold. Invalid/new rows with NaN threshold will go to the bottom.
+    # We sort descending because higher thresholds must be evaluated first in the strategy.
+    df = df.sort_values(by='threshold', ascending=False, na_position='last').reset_index(drop=True)
+
     # Convert the modified DataFrame back into the list-of-dicts format
     new_rules = []
     for _, row in df.iterrows():
         threshold_val = row.get('threshold')
-        if threshold_val is None or pd.isna(threshold_val) or threshold_val <= 0:
+        if pd.isna(threshold_val) or threshold_val <= 0:
             continue
         tables = {}
         for stake in available_stakes:
@@ -191,6 +198,8 @@ def sync_strategy_rules(strategy_name):
                     tables[stake] = str(row[stake])
         if tables:
             new_rules.append({"threshold": int(threshold_val), "tables": tables})
+    
+    # The list is already sorted from the DataFrame, but we sort again to be safe.
     st.session_state.strategy_configs[strategy_name]['rules'] = sorted(new_rules, key=lambda x: x['threshold'], reverse=True)
 
 # --- Sidebar for User Inputs ---
