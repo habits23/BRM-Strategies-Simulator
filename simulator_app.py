@@ -291,8 +291,14 @@ with tab2:
                     del st.session_state.strategy_configs[name]['num_buy_ins']
 
                 # --- Convert rules to a DataFrame for the editor ---
+                # We must ensure all table mix values are strings for the data_editor,
+                # as it's configured with TextColumn. Pandas might otherwise infer
+                # float types for columns with only numbers, causing a type mismatch.
                 rules_list = current_config.get("rules", [])
-                df_data = [{'threshold': r['threshold'], **r.get('tables', {})} for r in rules_list]
+                df_data = []
+                for r in rules_list:
+                    tables_str = {k: str(v) for k, v in r.get('tables', {}).items()}
+                    df_data.append({'threshold': r['threshold'], **tables_str})
                 
                 rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
                 rules_df = rules_df.sort_values(by='threshold', ascending=False).reset_index(drop=True)
