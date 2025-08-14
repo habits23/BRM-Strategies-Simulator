@@ -392,6 +392,24 @@ with tab2:
                 if 'num_buy_ins' in st.session_state.strategy_configs[name]:
                     del st.session_state.strategy_configs[name]['num_buy_ins']
 
+                # --- Real-time Validation for Standard Strategy ---
+                rules = current_config.get("rules", [])
+                if not rules:
+                    st.warning("This strategy has no rules. Please add at least one rule below.")
+                else:
+                    # Check if any rule applies to the starting bankroll
+                    start_br = st.session_state.start_br
+                    if not any(start_br >= rule['threshold'] for rule in rules):
+                        st.warning(f"No rule applies to the starting bankroll of €{start_br}. The simulation will not run for this strategy.")
+
+            # --- Real-time Validation for Hysteresis Strategy ---
+            elif strategy_type == 'hysteresis':
+                stakes_df = st.session_state.stakes_data.copy().dropna(subset=['bb_size'])
+                # Check if the bb_size column is monotonically increasing
+                if not stakes_df['bb_size'].is_monotonic_increasing:
+                    st.warning("For a 'Hysteresis' strategy to work correctly, the stakes in the 'Stakes Data' tab must be sorted by 'bb_size' in ascending order.")
+
+
                 # --- Convert rules to a DataFrame for the editor ---
                 # We must ensure all table mix values are strings for the data_editor,
                 # as it's configured with TextColumn. Pandas might otherwise infer
