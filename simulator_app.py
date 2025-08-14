@@ -747,12 +747,13 @@ if st.session_state.results:
     for strategy_name, result in all_results.items():
         with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
             st.subheader(f"Key Metrics for '{strategy_name}'")
-            col1, col2, col3, col4, col5 = st.columns(5)
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
-            col2.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
-            col3.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col4.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col5.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:,.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
+            col2.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
+            col3.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+            col4.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+            col5.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col6.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:,.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
 
             st.subheader("Charts")
             plot_col1, plot_col2 = st.columns(2)
@@ -770,17 +771,15 @@ if st.session_state.results:
 
             with col1:
                 st.markdown(
-                    "**Hands Distribution**", 
-                    help="""
-                    This section shows two key metrics:
-
-                    1.  **Percentage:** The share of total hands played at this stake.
-                    2.  **Avg. WR (Average Win Rate):** The average win rate the simulation used for this stake across all runs.
-
-                    **Why isn't this just my input win rate?**
-                    To be realistic, the simulation models luck and uncertainty. For each of the 1000+ simulation runs, it uses a slightly different win rate based on your sample size and a random factor to simulate running hot or cold.
-                    The `Avg. WR` is the average of all these slightly different win rates.
-                    """
+                    "**Hands Distribution**",
+                    help=(
+                        "This section shows two key metrics:\n\n"
+                        "1.  **Percentage:** The share of total hands played at this stake.\n"
+                        "2.  **Avg. WR (Average Win Rate):** The average win rate the simulation used for this stake across all runs.\n\n"
+                        "**Why isn't this just my input win rate?**\n\n"
+                        "To be realistic, the simulation models luck and uncertainty. For each of the 1000+ simulation runs, it uses a slightly different win rate based on your sample size and a random factor to simulate running hot or cold. "
+                        "The `Avg. WR` is the average of all these slightly different win rates."
+                    )
                 )
                 if result.get('hands_distribution_pct'):
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
