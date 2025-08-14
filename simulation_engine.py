@@ -73,10 +73,15 @@ class BankrollManagementStrategy:
     def get_table_mix(self, bankroll):
         """
         Finds the correct table mix for a given bankroll.
+        If the bankroll is below the lowest threshold, it defaults to the mix of the lowest threshold rule.
         """
         for rule in self.rules:
             if bankroll >= rule["threshold"]:
                 return rule["tables"]
+        # If no rule is met (bankroll is below the lowest threshold),
+        # return the table mix of the lowest threshold rule.
+        if self.rules:
+            return self.rules[-1]["tables"]
         return {}
 
     def get_rules_as_vectors(self):
@@ -435,6 +440,15 @@ def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, s
                 for stake_name, count in resolved_mix.items():
                     tables_per_stake[stake_name][sim_idx] = count
             remaining_mask[current_mask] = False
+
+        # Handle simulations with bankroll below the lowest threshold by applying the lowest rule
+        if np.any(remaining_mask) and rules:
+            lowest_rule = rules[-1] # The last rule is the lowest threshold
+            indices = np.where(remaining_mask)[0]
+            for sim_idx in indices:
+                resolved_mix = resolve_table_mix(lowest_rule, session_total_tables[sim_idx], rng)
+                for stake_name, count in resolved_mix.items():
+                    tables_per_stake[stake_name][sim_idx] = count
 
         # --- Demotion Tracking Logic ---
         current_levels = np.full(config['NUMBER_OF_SIMULATIONS'], -1, dtype=int)
