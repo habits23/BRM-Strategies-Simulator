@@ -64,6 +64,10 @@ DEFAULT_STRATEGIES = {
             {"threshold": 3500, "tables": {"NL20": "50%", "NL50": "50%"}},
             {"threshold": 2000, "tables": {"NL20": "100%"}},
         ]
+    },
+    "Hysteresis (40 BI Sticky)": {
+        "type": "hysteresis",
+        "num_buy_ins": 40
     }
 }
 
@@ -708,9 +712,14 @@ if st.session_state.results:
                 if result.get('hands_distribution_pct'):
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                     sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
+                    avg_win_rates = result.get('average_assigned_win_rates', {})
                     for stake, pct in sorted_stakes:
                         if pct > 0.01:
-                            st.write(f"- {stake}: {pct:.2f}%")
+                            wr_str = ""
+                            if stake in avg_win_rates:
+                                wr = avg_win_rates[stake]
+                                wr_str = f" (Avg. WR: {wr:.2f} bb/100)"
+                            st.write(f"- {stake}: {pct:.2f}%{wr_str}")
                 else:
                     st.write("No hands played.")
 
