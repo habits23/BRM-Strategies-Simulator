@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import traceback
+import json
 import copy
 
 # Import the actual simulation engine we just built
@@ -226,6 +227,83 @@ st.sidebar.number_input("Random Seed (for reproducibility)", value=45783, step=1
 
 st.sidebar.button("Run Simulation", on_click=click_run_button, use_container_width=True)
 
+st.sidebar.header("Save & Load Configuration")
+
+def get_full_config_as_json():
+    """Gathers all relevant session state into a dictionary and returns it as a JSON string."""
+    config = {
+        "parameters": {
+            "start_br": st.session_state.start_br, "target_br": st.session_state.target_br,
+            "ruin_thresh": st.session_state.ruin_thresh, "num_sims": st.session_state.num_sims,
+            "num_sessions": st.session_state.num_sessions, "hands_per_table": st.session_state.hands_per_table,
+            "sl_percent": st.session_state.sl_percent, "min_tables": st.session_state.min_tables,
+            "max_tables": st.session_state.max_tables, "target_tables_pct": st.session_state.target_tables_pct,
+            "rb_percent": st.session_state.rb_percent, "prior_sample": st.session_state.prior_sample,
+            "zero_hands_weight": st.session_state.zero_hands_weight, "min_df": st.session_state.min_df,
+            "max_df": st.session_state.max_df, "hands_for_max_df": st.session_state.hands_for_max_df,
+            "seed": st.session_state.seed,
+        },
+        "stakes_data": st.session_state.stakes_data.to_dict('records'),
+        "strategy_configs": st.session_state.strategy_configs,
+    }
+    return json.dumps(config, indent=4)
+
+st.sidebar.download_button(
+    label="Save Configuration to File",
+    data=get_full_config_as_json(),
+    file_name=f"poker_sim_config_{datetime.datetime.now().strftime('%Y%m%d')}.json",
+    mime="application/json",
+    use_container_width=True
+)
+
+def process_uploaded_config():
+    """Callback to load a configuration from an uploaded JSON file stored in session state."""
+    uploaded_file = st.session_state.get("config_uploader")
+    if uploaded_file is None:
+        return
+
+    try:
+        config_str = uploaded_file.getvalue().decode("utf-8")
+        loaded_data = json.loads(config_str)
+
+        # --- Validate and load parameters ---
+        if "parameters" in loaded_data and isinstance(loaded_data["parameters"], dict):
+            for key, value in loaded_data["parameters"].items():
+                if key in st.session_state:  # Only load keys that exist in session state
+                    st.session_state[key] = value
+        else:
+            st.error("Invalid config file: 'parameters' section is missing or malformed.")
+            return
+
+        # --- Validate and load stakes data ---
+        if "stakes_data" in loaded_data and isinstance(loaded_data["stakes_data"], list):
+            st.session_state.stakes_data = pd.DataFrame(loaded_data["stakes_data"])
+        else:
+            st.error("Invalid config file: 'stakes_data' section is missing or malformed.")
+            return
+
+        # --- Validate and load strategies ---
+        if "strategy_configs" in loaded_data and isinstance(loaded_data["strategy_configs"], dict):
+            st.session_state.strategy_configs = loaded_data["strategy_configs"]
+        else:
+            st.error("Invalid config file: 'strategy_configs' section is missing or malformed.")
+            return
+
+        st.success("Configuration loaded successfully! The app has been updated with the new settings.")
+        st.session_state.results = None  # Clear results from any previous run
+
+    except json.JSONDecodeError:
+        st.error("Error: The uploaded file is not a valid JSON file.")
+    except Exception as e:
+        st.error(f"An unexpected error occurred while loading the file: {e}")
+
+st.sidebar.file_uploader(
+    "Load Configuration from File",
+    type="json",
+    on_change=process_uploaded_config,
+    key="config_uploader",
+    help="Upload a previously saved JSON configuration file to restore all settings."
+)
 
 # --- Main Area for Data and Strategy Inputs ---
 st.header("Player & Strategy Configuration")
