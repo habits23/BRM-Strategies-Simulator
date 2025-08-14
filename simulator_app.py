@@ -97,7 +97,7 @@ if 'start_br' not in st.session_state:
     st.session_state.min_df = 3
     st.session_state.max_df = 30
     st.session_state.hands_for_max_df = 50000
-    st.session_state.seed = 12345
+    st.session_state.seed = 98765
 
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
@@ -289,7 +289,7 @@ def randomize_seed():
     import random
     st.session_state.seed = random.randint(1, 1_000_000)
 
-seed_col1, seed_col2 = st.sidebar.columns([2, 1])
+seed_col1, seed_col2 = st.sidebar.columns([3, 1])
 with seed_col1:
     st.number_input("Random Seed", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
 with seed_col2:
