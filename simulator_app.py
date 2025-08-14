@@ -825,7 +825,7 @@ if st.session_state.results:
                 st.markdown("---")
                 st.markdown(
                     "**Percentile Win Rate Analysis (bb/100)**",
-                    help="Shows the actual realized win rate from gameplay and rakeback for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did. A negative 'Play WR' for the median shows that a typical outcome involved running below expectation."
+                    help="Shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n- **Assigned WR:** The 'true' win rate the simulation assigned for this entire run (models long-term luck).\n- **Play WR:** The actual, realized win rate from gameplay after session-to-session variance.\n- **Rakeback WR:** The effective win rate gained from rakeback."
                 )
 
                 percentile_wrs = result.get('percentile_win_rates', {})
@@ -842,6 +842,7 @@ if st.session_state.results:
                         st.markdown(f"**{short_name} %ile**")
                         if long_name in percentile_wrs:
                             data = percentile_wrs[long_name]
+                            st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}")
                             st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}")
                             st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}")
 
