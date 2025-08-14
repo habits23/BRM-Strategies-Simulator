@@ -1,0 +1,5 @@
+# This configuration file helps optimize Streamlit's performance.
+
+[server]
+# Blacklist folders from Streamlit's file watcher to prevent "inotify limit" errors.
+folderWatchBlacklist = ["Reports", ".venv", "venv", "__pycache__"]
