@@ -585,12 +585,12 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
 
         proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
 
-        for i in range(len(stake_rules)):
-            at_this_stake_mask = (current_stake_indices == i)
+        for rule_idx in range(len(stake_rules)):
+            at_this_stake_mask = (current_stake_indices == rule_idx)
             if not np.any(at_this_stake_mask):
                 continue
             
-            rule = stake_rules[i]['tables']
+            rule = stake_rules[rule_idx]['tables']
             resolved_proportions = resolve_proportions(rule, rng)
             for stake_name, prop in resolved_proportions.items():
                 proportions_per_stake[stake_name][at_this_stake_mask] = prop
