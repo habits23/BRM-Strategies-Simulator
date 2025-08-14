@@ -289,12 +289,12 @@ def randomize_seed():
     import random
     st.session_state.seed = random.randint(1, 1_000_000)
 
+st.sidebar.caption("Random Seed")
 seed_col1, seed_col2 = st.sidebar.columns([3, 1])
 with seed_col1:
-    st.number_input("Random Seed", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
+    st.number_input("Random Seed", label_visibility="collapsed", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
 with seed_col2:
-    st.write(" ") # Spacer for alignment
-    st.button("🎲 New", on_click=randomize_seed, help="Generate a new random seed.", use_container_width=True)
+    st.button("🎲", on_click=randomize_seed, help="Generate a new random seed.", use_container_width=True)
 
 st.sidebar.header("Save & Load Configuration")
 
