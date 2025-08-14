@@ -165,6 +165,11 @@ def sync_strategy_rules(strategy_name):
         columns=expected_columns
     )
 
+    # CRITICAL FIX: The DataFrame used for applying edits MUST be sorted in the same
+    # way as the DataFrame passed to the data_editor to ensure indices match.
+    df['threshold'] = pd.to_numeric(df['threshold'], errors='coerce')
+    df = df.sort_values(by='threshold', ascending=False, na_position='last').reset_index(drop=True)
+
     # Apply changes from the editor
     if edits["deleted_rows"]:
         df = df.drop(index=edits["deleted_rows"])
@@ -177,7 +182,7 @@ def sync_strategy_rules(strategy_name):
         df = pd.concat([df, added_df], ignore_index=True)
 
     # --- Automatic Sorting Logic ---
-    # Ensure threshold is numeric for sorting, coercing errors to NaN
+    # This re-sorts the DataFrame *after* edits have been applied.
     df['threshold'] = pd.to_numeric(df['threshold'], errors='coerce')
     # Sort the DataFrame by threshold. Invalid/new rows with NaN threshold will go to the bottom.
     # We sort descending because higher thresholds must be evaluated first in the strategy.
