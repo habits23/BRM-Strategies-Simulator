@@ -176,11 +176,6 @@ def sync_strategy_rules(strategy_name):
         columns=expected_columns
     )
 
-    # CRITICAL FIX: The DataFrame used for applying edits MUST be sorted in the same
-    # way as the DataFrame passed to the data_editor to ensure indices match.
-    df['threshold'] = pd.to_numeric(df['threshold'], errors='coerce')
-    df = df.sort_values(by='threshold', ascending=False, na_position='last').reset_index(drop=True)
-
     # Apply changes from the editor
     if edits["deleted_rows"]:
         df = df.drop(index=edits["deleted_rows"])
@@ -513,8 +508,6 @@ with tab2:
                 stake_cols_in_df = [col for col in rules_df.columns if col in available_stakes]
                 if stake_cols_in_df:
                     rules_df[stake_cols_in_df] = rules_df[stake_cols_in_df].astype(str).replace('nan', '')
-
-                rules_df = rules_df.sort_values(by='threshold', ascending=False).reset_index(drop=True)
 
                 # --- Display the data editor ---
                 st.data_editor(
