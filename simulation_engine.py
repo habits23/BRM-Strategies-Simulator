@@ -146,7 +146,8 @@ def setup_simulation_parameters(config, seed):
 
         if i > 0:
             previous_stake_name = config['STAKES_DATA'][i-1]["name"]
-            prior_win_rate = np.mean(all_win_rates[previous_stake_name]) - win_rate_drop
+            # The prior is now the entire array of win rates from the previous stake, preserving per-simulation luck.
+            prior_win_rate = all_win_rates[previous_stake_name] - win_rate_drop
         else:
             prior_win_rate = ev_bb_per_100
 
