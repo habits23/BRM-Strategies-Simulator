@@ -194,6 +194,17 @@ def sync_stakes_data():
     df['bb_size'] = pd.to_numeric(df['bb_size'], errors='coerce')
     df = df.sort_values(by='bb_size', ascending=True, na_position='last').reset_index(drop=True)
 
+    # --- Validation Logic: Check for duplicate stake names ---
+    # We only consider non-empty, non-null names for duplication checks.
+    stake_names = df['name'].dropna().astype(str).str.strip()
+    # Filter out empty strings after stripping whitespace
+    stake_names = stake_names[stake_names != '']
+    duplicates = stake_names[stake_names.duplicated()].unique()
+
+    if len(duplicates) > 0:
+        st.error(f"Duplicate stake names found: {', '.join(duplicates)}. Please ensure all stake names are unique. Changes have not been saved.")
+        return # IMPORTANT: Abort the save if duplicates are found
+
     # Update the main session state with the modified DataFrame
     st.session_state.stakes_data = df
 
@@ -569,8 +580,18 @@ with tab2:
                     del st.session_state.strategy_configs[name]['num_buy_ins']
 
                 # --- Real-time Validation for Standard Strategy ---
-                rules = current_config.get("rules", [])
-                if not rules:
+                rules = current_config.get("rules", []) 
+
+                # --- Check for orphaned stake names in rules ---
+                orphaned_stakes = set()
+                for rule in rules:
+                    for stake_name in rule.get("tables", {}).keys():
+                        if stake_name not in available_stakes:
+                            orphaned_stakes.add(stake_name)
+                if orphaned_stakes:
+                    st.warning(f"**Warning:** The following stakes are referenced in this strategy's rules but no longer exist in the 'Stakes Data' tab: **{', '.join(sorted(list(orphaned_stakes)))}**. These rule parts will be ignored and removed upon saving.")
+
+                if not rules: 
                     st.warning("This strategy has no rules. Please add at least one rule below.")
                 else:
                     # Check if any rule applies to the starting bankroll
