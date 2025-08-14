@@ -414,7 +414,7 @@ with tab1:
             ),
             "sample_hands": st.column_config.NumberColumn(
                 "Sample Hands",
-                help="The number of hands you have played at this stake. This informs the model's confidence in your win rate.",
+                help="The number of hands you have played at this stake. A larger sample size tells the model to be more confident in your win rate estimate, resulting in less long-term variance (luck) between simulation runs. With a very large sample, the results will converge with standard variance calculators.",
                 format="%d"
             ),
             "win_rate_drop": st.column_config.NumberColumn(
