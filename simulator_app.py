@@ -83,6 +83,35 @@ def remove_strategy(name_to_remove):
     if name_to_remove in st.session_state.strategy_configs:
         del st.session_state.strategy_configs[name_to_remove]
 
+def sync_stakes_data():
+    """Callback to sync the data editor's state back to the main stakes_data state."""
+    st.session_state.stakes_data = st.session_state.stakes_data_editor
+
+def sync_strategy_rules(strategy_name):
+    """Callback to sync a strategy's data editor state back to the strategy config."""
+    edited_df = st.session_state[f"rules_{strategy_name}"]
+
+    available_stakes = [
+        name for name in st.session_state.stakes_data['name']
+        if pd.notna(name) and str(name).strip()
+    ]
+
+    new_rules = []
+    for _, row in edited_df.iterrows():
+        threshold_val = row.get('threshold')
+        if pd.isna(threshold_val) or threshold_val <= 0:
+            continue
+        tables = {}
+        for stake in available_stakes:
+            if stake in row and pd.notna(row[stake]) and row[stake] != '':
+                try:
+                    tables[stake] = int(row[stake])
+                except (ValueError, TypeError):
+                    tables[stake] = str(row[stake])
+        if tables:
+            new_rules.append({"threshold": int(threshold_val), "tables": tables})
+    st.session_state.strategy_configs[strategy_name]['rules'] = sorted(new_rules, key=lambda x: x['threshold'], reverse=True)
+
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
 
@@ -132,8 +161,14 @@ tab1, tab2 = st.tabs(["Stakes Data", "Bankroll Management Strategies"])
 with tab1:
     st.subheader("Stakes Data")
     st.write("Enter your performance statistics for each stake you play. You can add or remove rows.")
-    # The data_editor reads from and writes to the session state, preserving user edits.
-    st.session_state.stakes_data = st.data_editor(st.session_state.stakes_data, num_rows="dynamic")
+    # The data_editor now uses a key and an on_change callback to prevent losing
+    # uncommitted data during a rerun. This provides a much smoother editing experience.
+    st.data_editor(
+        st.session_state.stakes_data,
+        key="stakes_data_editor",
+        on_change=sync_stakes_data,
+        num_rows="dynamic"
+    )
 
 with tab2:
     st.subheader("Bankroll Management Strategies")
@@ -204,9 +239,11 @@ with tab2:
                 rules_df = rules_df.sort_values(by='threshold', ascending=False).reset_index(drop=True)
 
                 # --- Display the data editor ---
-                edited_df = st.data_editor(
+                st.data_editor(
                     rules_df,
                     key=f"rules_{name}",
+                    on_change=sync_strategy_rules,
+                    args=(name,),
                     num_rows="dynamic",
                     column_config={
                         "threshold": st.column_config.NumberColumn(
@@ -222,22 +259,7 @@ with tab2:
                     }
                 )
 
-                # --- Convert the edited DataFrame back to the rules format ---
-                new_rules = []
-                for _, row in edited_df.iterrows():
-                    if pd.isna(row['threshold']) or row['threshold'] <= 0: continue
-                    tables = {}
-                    for stake in available_stakes:
-                        if stake in row and pd.notna(row[stake]) and row[stake] != '':
-                            try:
-                                tables[stake] = int(row[stake])
-                            except (ValueError, TypeError):
-                                tables[stake] = str(row[stake])
-                    if tables:
-                        new_rules.append({"threshold": int(row['threshold']), "tables": tables})
-                
-                st.session_state.strategy_configs[name]['rules'] = sorted(new_rules, key=lambda x: x['threshold'], reverse=True)
-
+                # The conversion logic is now handled by the sync_strategy_rules callback.
 # --- Main Logic to Run Simulation and Display Results ---
 
 # This block runs ONLY when the "Run Simulation" button is clicked
