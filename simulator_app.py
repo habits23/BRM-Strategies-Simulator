@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import traceback
+import copy
 
 # Import the actual simulation engine we just built
 import simulation_engine as engine
@@ -91,6 +92,25 @@ def remove_strategy(name_to_remove):
     """Callback to remove a strategy."""
     if name_to_remove in st.session_state.strategy_configs:
         del st.session_state.strategy_configs[name_to_remove]
+
+def clone_strategy(name_to_clone):
+    """Callback to clone a strategy with a unique name."""
+    if name_to_clone not in st.session_state.strategy_configs:
+        return  # Should not happen
+
+    original_config = st.session_state.strategy_configs[name_to_clone]
+
+    # Find a unique name for the clone
+    i = 1
+    while True:
+        new_name = f"{name_to_clone} (Copy {i})"
+        if new_name not in st.session_state.strategy_configs:
+            break
+        i += 1
+
+    # Create a deep copy to avoid shared references, especially for the 'rules' list
+    cloned_config = copy.deepcopy(original_config)
+    st.session_state.strategy_configs[new_name] = cloned_config
 
 def sync_stakes_data():
     """
@@ -246,8 +266,8 @@ with tab2:
         with st.expander(f"Edit Strategy: {name}", expanded=True):
             current_config = st.session_state.strategy_configs[name]
 
-            # --- Row 1: Name, Type, Remove ---
-            col1, col2, col3 = st.columns([2, 1, 1])
+            # --- Row 1: Name, Type, Clone, Remove ---
+            col1, col2, col3, col4 = st.columns([4, 3, 1, 1])
             with col1:
                 new_name = st.text_input("Strategy Name", value=name, key=f"name_{name}")
             with col2:
@@ -258,8 +278,12 @@ with tab2:
                     key=f"type_{name}"
                 )
             with col3:
-                st.write("") # Spacer
-                st.write("") # Spacer
+                st.write("")  # Spacer
+                st.write("")  # Spacer
+                st.button("Clone", key=f"clone_{name}", on_click=clone_strategy, args=(name,), use_container_width=True)
+            with col4:
+                st.write("")  # Spacer
+                st.write("")  # Spacer
                 st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), use_container_width=True)
 
             # Update state if name changed
