@@ -301,51 +301,16 @@ def get_initial_table_mix_string(strategy, config):
     mix_parts = [f"{stake}: {value}" for stake, value in sorted(rule.items())]
     return ", ".join(mix_parts) if mix_parts else "No Play"
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, config):
-    """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
-    bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-    total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
-    final_bankrolls = bankroll_histories[:, -1]
-
-    total_hands_per_stake = {name: np.sum(history[:, -1]) for name, history in hands_per_stake_histories.items()}
-    grand_total_hands = sum(total_hands_per_stake.values())
-    hands_distribution_pct = {name: (total / grand_total_hands) * 100 for name, total in total_hands_per_stake.items()} if grand_total_hands > 0 else {}
-
-    risk_of_demotion = {}
-    for level, stake_name in stake_name_map.items():
-        if level > 0:
-            sims_that_reached_peak = np.sum(peak_stake_levels >= level)
-            if sims_that_reached_peak > 0:
-                sims_demoted_from_peak = np.sum(demotion_flags[level])
-                demotion_prob = (sims_demoted_from_peak / sims_that_reached_peak) * 100
-                risk_of_demotion[stake_name] = {'prob': demotion_prob, 'reached_count': sims_that_reached_peak}
-
-    final_stake_counts = defaultdict(int)
-    for br in final_bankrolls:
-        table_mix = strategy_obj.get_table_mix(br)
-        mix_str = ", ".join(f"{s}: {v}" for s, v in sorted(table_mix.items())) if table_mix else "No Play"
-        final_stake_counts[mix_str] += 1
-
-    final_stake_distribution = {mix_str: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for mix_str, count in final_stake_counts.items()}
-
-    final_highest_stake_counts = defaultdict(int)
-    stake_order_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
-    for mix_str, count in final_stake_counts.items():
-        if mix_str == "No Play":
-            final_highest_stake_counts["No Play"] += count
-        else:
-            stakes_in_mix = [s.split(':')[0].strip() for s in mix_str.split(',')]
-            if stakes_in_mix:
-                highest_stake = max(stakes_in_mix, key=lambda s: stake_order_map.get(s, -1))
-                final_highest_stake_counts[highest_stake] += count
-    final_highest_stake_distribution = {stake: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for stake, count in final_highest_stake_counts.items()}
-
+def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map):
+    """Calculates assigned and realized win rates for simulations closest to key percentiles."""
     percentile_win_rates = {}
     percentiles_to_find = {'2.5th': 2.5, '5th': 5, '25th': 25, 'Median': 50, '75th': 75, '95th': 95, '97.5th': 97.5}
     final_rakeback = rakeback_histories[:, -1]
+
     for name, p_val in sorted(percentiles_to_find.items(), key=lambda item: item[1]):
         percentile_bankroll = np.percentile(final_bankrolls, p_val)
         closest_sim_index = np.argmin(np.abs(final_bankrolls - percentile_bankroll))
+        
         stake_wrs = {'p_val': p_val}
         total_hands_for_sim, assigned_weighted_wr_sum, weighted_bb_size_sum = 0, 0, 0
 
@@ -364,7 +329,52 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
             stake_wrs['Assigned WR'] = f"{assigned_weighted_wr_sum / total_hands_for_sim:.2f}"
             stake_wrs['Realized WR (Play)'] = f"{(profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
             stake_wrs['Rakeback (bb/100)'] = f"{(final_rakeback[closest_sim_index] / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
+        
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
+    return percentile_win_rates
+
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, config):
+    """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
+    bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+    total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
+    final_bankrolls = bankroll_histories[:, -1]
+
+    average_assigned_win_rates = {name: np.mean(wr_array) for name, wr_array in all_win_rates.items()}
+
+    total_hands_per_stake = {name: np.sum(history[:, -1]) for name, history in hands_per_stake_histories.items()}
+    grand_total_hands = sum(total_hands_per_stake.values())
+    hands_distribution_pct = {name: (total / grand_total_hands) * 100 for name, total in total_hands_per_stake.items()} if grand_total_hands > 0 else {}
+
+    risk_of_demotion = {}
+    for level, stake_name in stake_name_map.items():
+        if level > 0:
+            sims_that_reached_peak = np.sum(peak_stake_levels >= level)
+            if sims_that_reached_peak > 0:
+                sims_demoted_from_peak = np.sum(demotion_flags[level])
+                demotion_prob = (sims_demoted_from_peak / sims_that_reached_peak) * 100
+                risk_of_demotion[stake_name] = {'prob': demotion_prob, 'reached_count': sims_that_reached_peak}
+
+    final_stake_counts = defaultdict(int)
+    final_highest_stake_counts = defaultdict(int)
+    stake_order_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
+
+    for br in final_bankrolls:
+        table_mix = strategy_obj.get_table_mix(br)
+        # This part is for the detailed PDF report, so it's still needed.
+        mix_str = ", ".join(f"{s}: {v}" for s, v in sorted(table_mix.items())) if table_mix else "No Play"
+        final_stake_counts[mix_str] += 1
+
+        # This is the more direct calculation for the UI summary.
+        if not table_mix:
+            final_highest_stake_counts["No Play"] += 1
+        else:
+            highest_stake = max(table_mix.keys(), key=lambda s: stake_order_map.get(s, -1))
+            final_highest_stake_counts[highest_stake] += 1
+
+    final_stake_distribution = {mix_str: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for mix_str, count in final_stake_counts.items()}
+    final_highest_stake_distribution = {stake: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for stake, count in final_highest_stake_counts.items()}
+
+    percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map)
 
     median_max_drawdown = np.median(max_drawdowns)
     p95_max_drawdown = np.percentile(max_drawdowns, 95)
@@ -394,6 +404,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'final_highest_stake_distribution': final_highest_stake_distribution,
         'median_max_drawdown': median_max_drawdown,
         'p95_max_drawdown': p95_max_drawdown,
+        'average_assigned_win_rates': average_assigned_win_rates,
     }
 def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, stake_level_map, config):
     """
