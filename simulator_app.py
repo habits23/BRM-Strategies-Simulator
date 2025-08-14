@@ -781,7 +781,15 @@ if st.session_state.results:
             st.markdown("---")
             st.markdown(
                 "**Distribution of Assigned Luck (Win Rate)**",
-                help="This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations. It helps you see if the median-outcome run (red line) was luckier or unluckier than your average input (blue line). This explains *why* the median win rate might be different from your input."
+                help=(
+                    "This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations.\n\n"
+                    "**Why is the distribution so wide?**\n\n"
+                    "The width of this 'luck' distribution is determined by your **'Std Dev (bb/100)'** and **'Sample Hands'** inputs. A high standard deviation and/or a low sample size creates more uncertainty about your true win rate. The simulation reflects this by generating a wider range of possible outcomes (both lucky and unlucky).\n\n"
+                    "A value far from the center represents a simulation run where you experienced a significant, but statistically possible, streak of good or bad luck.\n\n"
+                    "**How to read this chart:**\n"
+                    "- **Blue Line:** Your average win rate, based on your inputs.\n"
+                    "- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
+                )
             )
             if 'avg_assigned_wr_per_sim' in result:
                 # Use a column layout to constrain the width of the plot, making it consistent
