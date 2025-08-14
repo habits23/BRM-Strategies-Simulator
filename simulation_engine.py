@@ -1053,14 +1053,14 @@ def run_full_analysis(config):
     The main entry point for running the entire simulation analysis.
     This function is called by the Streamlit app.
     """
-    all_results = {}
-    
-    # --- Setup common data for all simulations ---
-    all_session_profits_bb, all_win_rates, rng = setup_simulation_parameters(config)
+    all_results = {}    
     stake_level_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
     stake_name_map = {v: k for k, v in stake_level_map.items()}
 
     for strategy_name, strategy_config in config['STRATEGIES_TO_RUN'].items():
+        # --- Setup independent random data for each strategy ---
+        # This is the critical fix: ensure each strategy gets its own set of random numbers.
+        all_session_profits_bb, all_win_rates, rng = setup_simulation_parameters(config)
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
 
         # Determine which simulation function to use based on the class type
