@@ -95,14 +95,16 @@ def remove_strategy(name_to_remove):
 def sync_stakes_data():
     """
     Callback to sync the data editor's state back to the main stakes_data state.
-    When adding a new row, the data_editor state can temporarily be a dict of
-    lists with unequal length, which causes pd.DataFrame() to fail.
-    This function robustly handles both the transient and stable states.
+    When adding a new row, the data_editor state can temporarily be a dict of lists
+    with unequal length. This function robustly handles this.
     """
     editor_state = st.session_state.stakes_data_editor
     if isinstance(editor_state, dict):
-        # This handles the transient state (dict of lists with unequal length).
-        st.session_state.stakes_data = pd.DataFrame.from_dict(editor_state, orient='index').transpose()
+        # This handles the transient state (dict of lists with unequal length) by
+        # converting each list to a Series, which pads with NaN.
+        st.session_state.stakes_data = pd.DataFrame({
+            k: pd.Series(v) for k, v in editor_state.items()
+        })
     else:
         # This handles the stable state (list of dicts).
         st.session_state.stakes_data = pd.DataFrame(editor_state)
@@ -110,10 +112,9 @@ def sync_stakes_data():
 def sync_strategy_rules(strategy_name):
     """Callback to sync a strategy's data editor state back to the strategy config."""
     editor_state = st.session_state[f"rules_{strategy_name}"]
-    # The editor's state can be a list of dicts (stable) or a dict of lists (transient).
     if isinstance(editor_state, dict):
-        # Convert the transient dict of lists to a stable list of dicts
-        edited_rules_list = pd.DataFrame.from_dict(editor_state, orient='index').transpose().to_dict('records')
+        df = pd.DataFrame({k: pd.Series(v) for k, v in editor_state.items()})
+        edited_rules_list = df.to_dict('records')
     else:
         edited_rules_list = editor_state
 
