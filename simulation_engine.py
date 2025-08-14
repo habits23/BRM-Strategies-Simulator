@@ -246,18 +246,6 @@ def normalize_percentages(percentages):
         return {k: 1.0 / len(percentages) for k in percentages}
     return {k: v / total for k, v in percentages.items()}
 
-def round_table_counts(tables_float, total_tables):
-    """Rounds float table counts to integers, ensuring the sum equals total_tables."""
-    floors = {k: int(v) for k, v in tables_float.items()}
-    remainder = total_tables - sum(floors.values())
-    remainders = {k: v - floors[k] for k, v in tables_float.items()}
-    sorted_stakes = sorted(remainders.items(), key=lambda x: x[1], reverse=True)
-    counts = floors.copy()
-    for i in range(remainder):
-        stake = sorted_stakes[i % len(sorted_stakes)][0]
-        counts[stake] += 1
-    return counts
-
 def resolve_proportions(rule, rng):
     """Resolves a strategy rule into a dictionary of proportions (floats summing to 1)."""
     percentages = {}
