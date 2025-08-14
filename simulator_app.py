@@ -113,6 +113,23 @@ def clone_strategy(name_to_clone):
     cloned_config = copy.deepcopy(original_config)
     st.session_state.strategy_configs[new_name] = cloned_config
 
+def sort_stakes_data():
+    """Callback to manually sort the stakes data by bb_size."""
+    df = st.session_state.stakes_data.copy()
+    df['bb_size'] = pd.to_numeric(df['bb_size'], errors='coerce')
+    df = df.sort_values(by='bb_size', ascending=True, na_position='last').reset_index(drop=True)
+    st.session_state.stakes_data = df
+
+def sort_strategy_rules(strategy_name):
+    """Callback to manually sort a strategy's rules by threshold."""
+    if strategy_name not in st.session_state.strategy_configs:
+        return
+    config = st.session_state.strategy_configs[strategy_name]
+    if config.get('type') == 'standard' and 'rules' in config:
+        rules = config['rules']
+        sorted_rules = sorted(rules, key=lambda x: x.get('threshold', 0), reverse=True)
+        st.session_state.strategy_configs[strategy_name]['rules'] = sorted_rules
+
 def sync_stakes_data():
     """
     Callback to apply edits from the data_editor to the main stakes_data DataFrame.
@@ -159,11 +176,6 @@ def sync_strategy_rules(strategy_name):
         columns=expected_columns
     )
 
-    # CRITICAL FIX: The DataFrame used for applying edits MUST be sorted in the same
-    # way as the DataFrame passed to the data_editor to ensure indices match.
-    df['threshold'] = pd.to_numeric(df['threshold'], errors='coerce')
-    df = df.sort_values(by='threshold', ascending=False, na_position='last').reset_index(drop=True)
-
     # Apply changes from the editor
     if edits["deleted_rows"]:
         df = df.drop(index=edits["deleted_rows"])
@@ -192,9 +204,7 @@ def sync_strategy_rules(strategy_name):
         # An empty table mix is acceptable during editing and will be treated as "No Play"
         # by the simulation engine. Removing the `if tables:` check fixes the sorting bug.
         new_rules.append({"threshold": int(threshold_val), "tables": tables})
-    
-    # The list is already sorted from the DataFrame, but we sort again to be safe.
-    st.session_state.strategy_configs[strategy_name]['rules'] = sorted(new_rules, key=lambda x: x['threshold'], reverse=True)
+    st.session_state.strategy_configs[strategy_name]['rules'] = new_rules
 
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
@@ -321,6 +331,11 @@ tab1, tab2 = st.tabs(["Stakes Data", "Bankroll Management Strategies"])
 with tab1:
     st.subheader("Stakes Data")
     st.write("Enter your performance statistics for each stake you play. You can add or remove rows.")
+    st.button(
+        "Sort Stakes by BB Size (Ascending)",
+        on_click=sort_stakes_data,
+        help="Click to sort the table by the 'bb_size' column. This is required for the Hysteresis strategy to work correctly."
+    )
     # The data_editor now uses a key and an on_change callback to prevent losing
     # uncommitted data during a rerun. This provides a much smoother editing experience.
     st.data_editor(
@@ -469,6 +484,12 @@ with tab2:
                     if not any(start_br >= rule['threshold'] for rule in rules):
                         st.warning(f"No rule applies to the starting bankroll of €{start_br}. The simulation will not run for this strategy.")
 
+                st.button(
+                    "Sort Rules by Threshold (Descending)",
+                    on_click=sort_strategy_rules, args=(name,),
+                    help="Click to sort the rules by the 'Bankroll Threshold' column. This is required for the strategy to be evaluated correctly."
+                )
+
                 # --- Convert rules to a DataFrame for the editor ---
                 # We must ensure all table mix values are strings for the data_editor,
                 # as it's configured with TextColumn. Pandas might otherwise infer
@@ -487,8 +508,6 @@ with tab2:
                 stake_cols_in_df = [col for col in rules_df.columns if col in available_stakes]
                 if stake_cols_in_df:
                     rules_df[stake_cols_in_df] = rules_df[stake_cols_in_df].astype(str).replace('nan', '')
-
-                rules_df = rules_df.sort_values(by='threshold', ascending=False).reset_index(drop=True)
 
                 # --- Display the data editor ---
                 st.data_editor(
