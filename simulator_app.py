@@ -654,7 +654,8 @@ if st.session_state.results:
                     sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
                     for stake, pct in sorted_dist:
                         if pct > 0.01:
-                            st.text(f"- {stake}: {pct:.2f}%")
+                            display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
+                            st.text(f"- {display_stake}: {pct:.2f}%")
                 else:
                     st.text("N/A")
 
