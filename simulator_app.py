@@ -403,6 +403,16 @@ with tab2:
 
             # --- Row 2: Type-specific inputs ---
             if strategy_type == 'hysteresis':
+                st.info(
+                    "**How Hysteresis (Sticky) Strategy Works:**\n\n"
+                    "This strategy prevents rapid switching between stakes. You define a buy-in (BI) buffer for each stake.\n\n"
+                    "- **Moving Up:** To move up to a higher stake, your bankroll must meet the BI requirement for that new stake.\n"
+                    "  - *Example:* To play NL50 with a 40 BI buffer, you need `40 * 100 * €0.50 = €2000`.\n"
+                    "- **Moving Down (The \"Sticky\" Part):** Once you are playing a higher stake, you will *only* move down if your bankroll drops below the BI requirement of the *lower* stake.\n"
+                    "  - *Example:* If you're playing NL50, you will only drop to NL20 if your bankroll falls below NL20's requirement (e.g., `40 * 100 * €0.20 = €800`).\n\n"
+                    "This creates a buffer zone (e.g., between €800 and €2000) where you 'stick' to the higher stake, avoiding moving down on small downswings."
+                )
+
                 # Get the current config for buy-ins, which can be an int or a dict
                 num_buy_ins_config = current_config.get("num_buy_ins", 40)
                 
