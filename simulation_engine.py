@@ -176,6 +176,7 @@ def calculate_session_outcome(current_bankrolls, tables_per_stake, all_win_rates
     for stake in config['STAKES_DATA']:
         name = stake["name"]
         bb_size = stake["bb_size"]
+        std_dev_per_100 = stake["std_dev_per_100"]
         tables_mask = active_mask & (tables_per_stake[name] > 0)
         if np.any(tables_mask):
             num_tables = tables_per_stake[name][tables_mask]
