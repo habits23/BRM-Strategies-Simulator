@@ -403,12 +403,52 @@ with tab2:
 
             # --- Row 2: Type-specific inputs ---
             if strategy_type == 'hysteresis':
-                num_buy_ins_value = current_config.get("num_buy_ins", 40)
-                st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
-                    "Buy-in Buffer (BIs)",
-                    value=num_buy_ins_value, min_value=1, key=f"bi_{name}",
-                    help="The number of buy-ins (100 BBs) required to move up/down stakes."
+                # Get the current config for buy-ins, which can be an int or a dict
+                num_buy_ins_config = current_config.get("num_buy_ins", 40)
+                
+                # Determine if we are in per-stake mode based on the data type
+                is_per_stake_mode = isinstance(num_buy_ins_config, dict)
+
+                use_per_stake_checkbox = st.checkbox(
+                    "Use per-stake buy-in buffers", 
+                    value=is_per_stake_mode, 
+                    key=f"per_stake_cb_{name}"
                 )
+
+                if use_per_stake_checkbox:
+                    # --- Per-Stake Buy-in Buffer Mode ---
+                    if not is_per_stake_mode:
+                        # Transitioning from single to per-stake: initialize dict
+                        old_value = num_buy_ins_config if isinstance(num_buy_ins_config, int) else 40
+                        new_dict = {stake: old_value for stake in available_stakes}
+                        st.session_state.strategy_configs[name]['num_buy_ins'] = new_dict
+                        num_buy_ins_config = new_dict # update local var
+
+                    st.write("Define the buy-in buffer required to play at each stake:")
+                    
+                    cols = st.columns(len(available_stakes) if available_stakes else 1)
+                    new_buy_ins_dict = {}
+                    for i, stake_name in enumerate(available_stakes):
+                        with cols[i]:
+                            stake_value = num_buy_ins_config.get(stake_name, 40)
+                            new_buy_ins_dict[stake_name] = st.number_input(
+                                f"{stake_name} BIs", value=stake_value, min_value=1, key=f"bi_{name}_{stake_name}"
+                            )
+                    st.session_state.strategy_configs[name]['num_buy_ins'] = new_buy_ins_dict
+
+                else:
+                    # --- Single Buy-in Buffer Mode ---
+                    if is_per_stake_mode:
+                        # Transitioning from per-stake to single: take first value or default
+                        first_stake_value = next(iter(num_buy_ins_config.values()), 40)
+                        st.session_state.strategy_configs[name]['num_buy_ins'] = first_stake_value
+                        num_buy_ins_config = first_stake_value # update local var
+
+                    st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
+                        "Buy-in Buffer (BIs)", value=num_buy_ins_config, min_value=1, key=f"bi_{name}",
+                        help="The number of buy-ins (100 BBs) required to move up/down stakes."
+                    )
+
                 # --- Real-time Validation for Hysteresis Strategy ---
                 stakes_df = st.session_state.stakes_data.copy().dropna(subset=['bb_size'])
                 # Check if the bb_size column is monotonically increasing
@@ -417,7 +457,6 @@ with tab2:
 
                 if 'rules' in st.session_state.strategy_configs[name]:
                     del st.session_state.strategy_configs[name]['rules']
-            
             elif strategy_type == 'standard':
                 # Clean up keys from the other strategy type
                 if 'num_buy_ins' in st.session_state.strategy_configs[name]:
