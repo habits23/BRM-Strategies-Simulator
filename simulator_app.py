@@ -328,7 +328,7 @@ with tab2:
                         **{
                             stake: st.column_config.TextColumn(
                                 f"{stake} Mix",
-                                help=f"Table mix for {stake}. Use a fixed count (e.g., 4), a percentage (e.g., '80%'), or a range (e.g., '20-40%').",
+                                help=f"Table mix for {stake}. Use a fixed ratio (e.g., 1), a percentage (e.g., '80%'), or a range (e.g., '20-40%'). Ratios are proportional (e.g., NL20: 1, NL50: 3 is a 25%/75% split).",
                             )
                             for stake in available_stakes
                         },
