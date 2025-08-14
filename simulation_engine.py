@@ -735,6 +735,15 @@ def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_w
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.6)
 
+    # --- Ensure vertical lines are always visible ---
+    # Get the current limits and expand them if the lines are outside the visible range
+    xmin, xmax = ax.get_xlim()
+    new_xmin = min(xmin, median_run_assigned_wr, average_input_wr)
+    new_xmax = max(xmax, median_run_assigned_wr, average_input_wr)
+    padding = (new_xmax - new_xmin) * 0.05 # Add 5% padding
+    ax.set_xlim(new_xmin - padding, new_xmax + padding)
+
+
     if pdf:
         pdf.savefig(fig)
         plt.close(fig)
