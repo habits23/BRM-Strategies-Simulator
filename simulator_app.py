@@ -353,7 +353,48 @@ with tab1:
     st.data_editor(
         st.session_state.stakes_data,
         key="stakes_data_editor",
-        num_rows="dynamic"
+        num_rows="dynamic",
+        column_config={
+            "name": st.column_config.TextColumn(
+                "Name",
+                help="The name of the stake (e.g., 'NL20', 'NL50'). This must be unique."
+            ),
+            "bb_size": st.column_config.NumberColumn(
+                "BB Size (€)",
+                help="The size of the big blind in your currency (e.g., 0.20 for NL20).",
+                format="€ %.2f"
+            ),
+            "bb_per_100": st.column_config.NumberColumn(
+                "Win Rate (bb/100)",
+                help="Your actual, observed win rate at this stake, measured in big blinds per 100 hands.",
+                format="%.2f"
+            ),
+            "ev_bb_per_100": st.column_config.NumberColumn(
+                "EV Win Rate (bb/100)",
+                help="Your EV-adjusted win rate (All-in Adj BB/100). This is used for the simulation's core calculations.",
+                format="%.2f"
+            ),
+            "std_dev_per_100": st.column_config.NumberColumn(
+                "Std Dev (bb/100)",
+                help="Your standard deviation in bb/100 hands. A typical value for No-Limit Hold'em is between 80 and 120.",
+                format="%.2f"
+            ),
+            "sample_hands": st.column_config.NumberColumn(
+                "Sample Hands",
+                help="The number of hands you have played at this stake. This informs the model's confidence in your win rate.",
+                format="%d"
+            ),
+            "win_rate_drop": st.column_config.NumberColumn(
+                "Win Rate Drop",
+                help="The estimated drop in your win rate (in bb/100) when moving up from the *previous* stake. This helps the model estimate your win rate at stakes with few or no hands.",
+                format="%.2f"
+            ),
+            "rake_bb_per_100": st.column_config.NumberColumn(
+                "Rake (bb/100)",
+                help="The average amount of rake you pay in big blinds per 100 hands at this stake. This is used to calculate rakeback.",
+                format="%.2f"
+            ),
+        }
     )
     st.button(
         "Save and Sort Stakes",
