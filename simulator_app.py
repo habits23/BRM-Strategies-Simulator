@@ -773,7 +773,6 @@ if st.session_state.results:
         "A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential."
     )
     with st.spinner("Generating comparison density plot..."):
-        st.pyplot(engine.plot_median_progression_comparison(all_results, config))
         st.pyplot(engine.plot_final_bankroll_comparison(all_results, config))
 
     # --- Display Detailed Results for Each Strategy ---

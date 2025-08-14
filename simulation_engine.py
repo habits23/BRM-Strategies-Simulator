@@ -750,7 +750,7 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
     """
     Creates an overlapping density plot to compare the final bankroll distributions of all strategies.
     """
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(8, 5))
     colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
 
     # Find a reasonable x-axis limit to keep the plot focused
