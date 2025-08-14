@@ -77,6 +77,28 @@ st.title("Poker Bankroll Simulator")
 st.write("An interactive tool to simulate poker bankroll progression based on your data and strategies. Based on the logic from `Final BR Simulator v1_5.py`.")
 
 # --- Session State Initialization ---
+# This block ensures all necessary keys are in the session state with default values
+# on the first run. This prevents Streamlit warnings about setting a widget's value
+# both from its `value` parameter and from the session state.
+if 'start_br' not in st.session_state:
+    st.session_state.start_br = 2500
+    st.session_state.target_br = 3000
+    st.session_state.ruin_thresh = 400
+    st.session_state.num_sims = 1000
+    st.session_state.num_sessions = 100
+    st.session_state.hands_per_table = 60
+    st.session_state.sl_percent = 10
+    st.session_state.min_tables = 3
+    st.session_state.max_tables = max(5, st.session_state.min_tables)
+    st.session_state.target_tables_pct = 4
+    st.session_state.rb_percent = 20
+    st.session_state.prior_sample = 100000
+    st.session_state.zero_hands_weight = 0.5
+    st.session_state.min_df = 3
+    st.session_state.max_df = 30
+    st.session_state.hands_for_max_df = 50000
+    st.session_state.seed = 45783
+
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
     st.session_state.results = None
@@ -85,7 +107,6 @@ if 'stakes_data' not in st.session_state:
     st.session_state.stakes_data = DEFAULT_STAKES_DATA
 
 if 'strategy_configs' not in st.session_state:
-    # We now store the dictionary directly, not a formatted string
     st.session_state.strategy_configs = DEFAULT_STRATEGIES.copy()
 
 def click_run_button():
@@ -233,38 +254,37 @@ st.sidebar.header("Simulation Parameters")
 st.sidebar.button("Run Simulation", on_click=click_run_button, use_container_width=True)
 
 with st.sidebar.expander("General Settings", expanded=True):
-    st.number_input("Starting Bankroll (€)", value=2500, min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
-    st.number_input("Target Bankroll (€)", value=3000, min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
-    st.number_input("Ruin Threshold (€)", value=400, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
+    st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
+    st.number_input("Target Bankroll (€)", min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
+    st.number_input("Ruin Threshold (€)", min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
 
     col1, col2 = st.columns(2)
     with col1:
-        st.number_input("Number of Simulations", value=1000, min_value=10, max_value=50000, step=100, help="How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (e.g., 2000-10000)", key="num_sims")
+        st.number_input("Number of Simulations", min_value=10, max_value=50000, step=100, help="How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (e.g., 2000-10000)", key="num_sims")
     with col2:
-        st.number_input("Sessions per Simulation", value=100, min_value=1, max_value=1000, help="How many playing sessions are in a single simulation run. This determines the time horizon of the simulation.", key="num_sessions")
+        st.number_input("Sessions per Simulation", min_value=1, max_value=1000, help="How many playing sessions are in a single simulation run. This determines the time horizon of the simulation.", key="num_sessions")
 
 with st.sidebar.expander("Session & Rakeback Settings", expanded=True):
-    st.number_input("Hands per Table per Session", value=60, min_value=1, help="The average number of hands you play on a single table during one session.", key="hands_per_table")
-    st.slider("Stop-Loss per Session (%)", 0, 100, 10, help="The session ends early if you lose this percentage of your bankroll at the start of that session. Set to 100% to disable.", key="sl_percent")
+    st.number_input("Hands per Table per Session", min_value=1, help="The average number of hands you play on a single table during one session.", key="hands_per_table")
+    st.slider("Stop-Loss per Session (%)", 0, 100, help="The session ends early if you lose this percentage of your bankroll at the start of that session. Set to 100% to disable.", key="sl_percent")
 
     col3, col4 = st.columns(2)
     with col3:
-        st.number_input("Min Tables", value=3, min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.", key="min_tables")
+        st.number_input("Min Tables", min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.", key="min_tables")
     with col4:
-        max_tables_default = max(5, st.session_state.min_tables)
-        st.number_input("Max Tables", value=max_tables_default, min_value=st.session_state.min_tables, help="The maximum number of tables you will play in any given session.", key="max_tables")
+        st.number_input("Max Tables", min_value=st.session_state.min_tables, help="The maximum number of tables you will play in any given session.", key="max_tables")
 
-    st.number_input("Target Tables (for % display)", value=4, min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
-    st.slider("Rakeback (%)", 0, 100, 20, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
+    st.number_input("Target Tables (for % display)", min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
+    st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
-    st.number_input("Prior Sample Size (for Bayesian model)", value=100000, min_value=1000, step=1000, help="Represents the strength of the model's prior belief about win rates. A larger value means the model is more confident in its own estimates and less influenced by small sample sizes from your data.", key="prior_sample")
-    st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, 0.5, 0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
-    st.number_input("Min Degrees of Freedom (t-dist)", value=3, min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
-    st.number_input("Max Degrees of Freedom (t-dist)", value=30, min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
-    st.number_input("Hands to Reach Max DF", value=50000, min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.", key="hands_for_max_df")
+    st.number_input("Prior Sample Size (for Bayesian model)", min_value=1000, step=1000, help="Represents the strength of the model's prior belief about win rates. A larger value means the model is more confident in its own estimates and less influenced by small sample sizes from your data.", key="prior_sample")
+    st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
+    st.number_input("Min Degrees of Freedom (t-dist)", min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
+    st.number_input("Max Degrees of Freedom (t-dist)", min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
+    st.number_input("Hands to Reach Max DF", min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.", key="hands_for_max_df")
 
-st.sidebar.number_input("Random Seed (for reproducibility)", value=45783, step=1, help="A fixed number that ensures the simulation produces the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
+st.sidebar.number_input("Random Seed (for reproducibility)", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
 
 st.sidebar.header("Save & Load Configuration")
 
@@ -673,10 +693,10 @@ if st.session_state.results:
 
     st.dataframe(
         summary_df.style.format({
-            "Median Final BR": "€{:.2f}", "Mode Final BR": "€{:.2f}",
-            "Median Growth": "{:.2%}", "Median Rakeback": "€{:.2f}", "Risk of Ruin (%)": "{:.2f}%",
-            "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:.2f}",
-            "P95 Max Drawdown": "€{:.2f}"
+            "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
+            "Median Growth": "{:.2%}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
+            "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
+            "P95 Max Drawdown": "€{:,.2f}"
         }).hide(axis="index"),
         column_config={
             "Strategy": st.column_config.TextColumn(
@@ -728,11 +748,11 @@ if st.session_state.results:
         with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
+            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
             col2.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
             col3.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col4.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col5.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
+            col4.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col5.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:,.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
 
             st.subheader("Charts")
             plot_col1, plot_col2 = st.columns(2)

@@ -402,8 +402,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
                                       for rule in strategy_obj.rules if rule["threshold"] > config['STARTING_BANKROLL_EUR']},
         'below_threshold_drop_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories <= rule["threshold"], axis=1))
                                        for rule in strategy_obj.rules if rule["threshold"] < config['STARTING_BANKROLL_EUR']},
-        'percentile_win_rates': percentile_win_rates,
-        'hands_distribution_pct': hands_distribution_pct, 'risk_of_demotion': risk_of_demotion,
+        'percentile_win_rates': percentile_win_rates, 'risk_of_demotion': risk_of_demotion,
+        'hands_distribution_pct': hands_distribution_pct,
         'final_stake_distribution': final_stake_distribution,
         'final_highest_stake_distribution': final_highest_stake_distribution,
         'median_max_drawdown': median_max_drawdown,
@@ -417,8 +417,8 @@ def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, s
     This version dynamically resolves table mixes for each session.
     """
     bankroll_history = np.full((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_played_per_stake_history = {stake['name']: np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_history = np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=float)
+    hands_per_stake_histories = {stake['name']: np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=int) for stake in config['STAKES_DATA']}
+    rakeback_histories = np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=float)
 
     # --- Maximum Drawdown Initialization ---
     peak_bankrolls_so_far = np.full(config['NUMBER_OF_SIMULATIONS'], config['STARTING_BANKROLL_EUR'], dtype=float)
@@ -485,8 +485,8 @@ def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, s
         active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_tables > 0)
         if not np.any(active_mask):
             bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
-            for stake_name in hands_played_per_stake_history:
-                hands_played_per_stake_history[stake_name][:, i+1:] = hands_played_per_stake_history[stake_name][:, i][:, np.newaxis]
+            for stake_name in hands_per_stake_histories:
+                hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
             break
 
         session_profits_eur, hands_per_stake_this_session, session_rakeback_eur = calculate_session_outcome(
@@ -501,11 +501,11 @@ def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, s
         current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
         max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
 
-        rakeback_history[:, i+1] = rakeback_history[:, i] + np.where(active_mask, session_rakeback_eur, 0)
+        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, session_rakeback_eur, 0)
         for stake_name, hands_array in hands_per_stake_this_session.items():
-            hands_played_per_stake_history[stake_name][:, i+1] = hands_played_per_stake_history[stake_name][:, i] + np.where(active_mask, hands_array, 0)
+            hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_played_per_stake_history, rakeback_history, peak_stake_levels, demotion_flags, max_drawdowns_so_far
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
 
 def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stake_level_map, config):
     """
@@ -513,8 +513,8 @@ def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stak
     This version correctly handles multiple stakes by implementing a proper state machine.
     """
     bankroll_history = np.full((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_played_per_stake_history = {stake['name']: np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_history = np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=float)
+    hands_per_stake_histories = {stake['name']: np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=int) for stake in config['STAKES_DATA']}
+    rakeback_histories = np.zeros((config['NUMBER_OF_SIMULATIONS'], config['TOTAL_SESSIONS_PER_RUN'] + 1), dtype=float)
 
     # --- Maximum Drawdown Initialization ---
     peak_bankrolls_so_far = np.full(config['NUMBER_OF_SIMULATIONS'], config['STARTING_BANKROLL_EUR'], dtype=float)
@@ -537,8 +537,8 @@ def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stak
     for session_idx in range(config['TOTAL_SESSIONS_PER_RUN']):
         current_bankrolls = bankroll_history[:, session_idx]
 
-        # Store previous peak levels to detect demotions
         previous_peak_levels = peak_stake_levels.copy()
+
 
         previous_stake_indices = current_stake_indices.copy()
 
@@ -560,10 +560,8 @@ def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stak
 
         demotion_from_peak_mask = current_levels < previous_peak_levels
         for level in stake_level_map.values():
-            if level > 0:
-                # A demotion happened if the previous peak was 'level' and the current level is lower.
-                demoted_this_session_mask = (previous_peak_levels == level) & demotion_from_peak_mask
-                demotion_flags[level][demoted_this_session_mask] = True
+            demoted_this_session_mask = (previous_peak_levels == level) & demotion_from_peak_mask
+            demotion_flags[level][demoted_this_session_mask] = True
 
         # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
@@ -594,11 +592,11 @@ def run_sticky_simulation_vectorized(strategy, all_session_profits_bb, rng, stak
         current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, session_idx+1]
         max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
 
-        rakeback_history[:, session_idx+1] = rakeback_history[:, session_idx] + np.where(active_mask, session_rakeback_eur, 0)
+        rakeback_histories[:, session_idx+1] = rakeback_histories[:, session_idx] + np.where(active_mask, session_rakeback_eur, 0)
         for stake_name, hands_array in hands_per_stake_this_session.items():
-            hands_played_per_stake_history[stake_name][:, session_idx+1] = hands_played_per_stake_history[stake_name][:, session_idx] + np.where(active_mask, hands_array, 0)
+            hands_per_stake_histories[stake_name][:, session_idx+1] = hands_per_stake_histories[stake_name][:, session_idx] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_played_per_stake_history, rakeback_history, peak_stake_levels, demotion_flags, max_drawdowns_so_far
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
@@ -669,14 +667,14 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     ax.hist(filtered_bankrolls, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
 
     # Key metrics
-    ax.axvline(median_val, color='red', linestyle='dashed', linewidth=2, label=f'Median: €{median_val:.2f}')
-    ax.axvline(percentiles[5], color='darkred', linestyle=':', linewidth=2, label=f'5th Percentile: €{percentiles[5]:.2f}')
-    ax.axvline(percentiles[95], color='green', linestyle=':', linewidth=2, label=f'95th Percentile: €{percentiles[95]:.2f}')
+    ax.axvline(median_val, color='red', linestyle='dashed', linewidth=2, label=f'Median: €{median_val:,.2f}')
+    ax.axvline(percentiles[5], color='darkred', linestyle=':', linewidth=2, label=f'5th Percentile: €{percentiles[5]:,.2f}')
+    ax.axvline(percentiles[95], color='green', linestyle=':', linewidth=2, label=f'95th Percentile: €{percentiles[95]:,.2f}')
 
     # Contextual lines
-    ax.axvline(config["STARTING_BANKROLL_EUR"], color='black', linewidth=2, label=f'Starting: €{config["STARTING_BANKROLL_EUR"]:.0f}')
-    ax.axvline(config["TARGET_BANKROLL"], color='gold', linestyle='-.', linewidth=2, label=f'Target: €{config["TARGET_BANKROLL"]:.0f}')
-    ax.axvline(config["RUIN_THRESHOLD"], color='red', linestyle='--', linewidth=2, label=f'Ruin Threshold: €{config["RUIN_THRESHOLD"]:.0f}')
+    ax.axvline(config["STARTING_BANKROLL_EUR"], color='black', linewidth=2, label=f'Starting: €{config["STARTING_BANKROLL_EUR"]:,.0f}')
+    ax.axvline(config["TARGET_BANKROLL"], color='gold', linestyle='-.', linewidth=2, label=f'Target: €{config["TARGET_BANKROLL"]:,.0f}')
+    ax.axvline(config["RUIN_THRESHOLD"], color='red', linestyle='--', linewidth=2, label=f'Ruin Threshold: €{config["RUIN_THRESHOLD"]:,.0f}')
     ax.set_title(f'Final Bankroll Distribution for {strategy_name}')
     ax.set_xlabel('Final Bankroll (EUR)')
     ax.set_ylabel('Frequency')
@@ -711,11 +709,11 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
         if 'above_threshold_hit_counts' in res and res['above_threshold_hit_counts']:
             lines.append("Probability of hitting upper thresholds:")
             for threshold, count in sorted(res['above_threshold_hit_counts'].items(), reverse=True):
-                lines.append(f"   - €{threshold}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
+                lines.append(f"   - €{threshold:,.0f}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
         if 'below_threshold_drop_counts' in res and res['below_threshold_drop_counts']:
             lines.append("Probability of dropping to lower thresholds:")
             for threshold, count in sorted(res['below_threshold_drop_counts'].items(), reverse=True):
-                lines.append(f"   - €{threshold}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
+                lines.append(f"   - €{threshold:,.0f}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
         return lines
 
     def _write_hands_distribution(res):
@@ -833,14 +831,14 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
         cell_text.append([
             strategy_name,
             str(strategy_page_map.get(strategy_name, '-')),
-            f"€{result['median_final_bankroll']:.2f}",
-            f"€{result['final_bankroll_mode']:.2f}",
+            f"€{result['median_final_bankroll']:,.2f}",
+            f"€{result['final_bankroll_mode']:,.2f}",
             f"{result['growth_rate']:.2%}",
-            f"€{result.get('median_rakeback_eur', 0.0):.2f}",
+            f"€{result.get('median_rakeback_eur', 0.0):,.2f}",
             f"{result['risk_of_ruin']:.2f}",
             f"{result['target_prob']:.2f}",
-            f"€{result['p5']:.2f}",
-            f"€{result['p2_5']:.2f}"
+            f"€{result['p5']:,.2f}",
+            f"€{result['p2_5']:,.2f}"
         ])
 
     if not cell_text: return
