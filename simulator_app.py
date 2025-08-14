@@ -763,16 +763,14 @@ if st.session_state.results:
             ),
         }
     )
-    # --- Display Comparison Plots ---
-    st.subheader("Median Bankroll Progression Comparison")
-    st.pyplot(engine.plot_median_progression_comparison(all_results, config))
-
-    st.subheader("Final Bankroll Distribution Comparison")
-    st.markdown(
-        "This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. "
-        "A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential."
-    )
-    with st.spinner("Generating comparison density plot..."):
+    # --- Display Comparison Plots in a 2-column layout ---
+    st.subheader("Strategy Comparison Visuals")
+    comp_col1, comp_col2 = st.columns(2)
+    with comp_col1:
+        st.markdown("###### Median Bankroll Progression")
+        st.pyplot(engine.plot_median_progression_comparison(all_results, config))
+    with comp_col2:
+        st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
         st.pyplot(engine.plot_final_bankroll_comparison(all_results, config))
 
     # --- Display Detailed Results for Each Strategy ---
