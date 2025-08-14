@@ -685,7 +685,7 @@ if st.session_state.results:
             ),
             "Median Final BR": st.column_config.TextColumn(
                 "Median Final BR",
-                help="The median (50th percentile) final bankroll across all simulations. This is the most likely central outcome."
+                help="The median (50th percentile) final bankroll across all simulations. This value includes both profit from play and rakeback."
             ),
             "Mode Final BR": st.column_config.TextColumn(
                 "Mode Final BR",
@@ -728,7 +728,7 @@ if st.session_state.results:
         with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}")
+            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}", help="The median final bankroll, including both profit from play and rakeback.")
             col2.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%")
             col3.metric("Target Probability", f"{result['target_prob']:.2f}%")
             col4.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:.2f}")
