@@ -384,6 +384,12 @@ with tab2:
                     value=num_buy_ins_value, min_value=1, key=f"bi_{name}",
                     help="The number of buy-ins (100 BBs) required to move up/down stakes."
                 )
+                # --- Real-time Validation for Hysteresis Strategy ---
+                stakes_df = st.session_state.stakes_data.copy().dropna(subset=['bb_size'])
+                # Check if the bb_size column is monotonically increasing
+                if not stakes_df['bb_size'].is_monotonic_increasing:
+                    st.warning("For a 'Hysteresis' strategy to work correctly, the stakes in the 'Stakes Data' tab must be sorted by 'bb_size' in ascending order.")
+
                 if 'rules' in st.session_state.strategy_configs[name]:
                     del st.session_state.strategy_configs[name]['rules']
             
@@ -401,14 +407,6 @@ with tab2:
                     start_br = st.session_state.start_br
                     if not any(start_br >= rule['threshold'] for rule in rules):
                         st.warning(f"No rule applies to the starting bankroll of €{start_br}. The simulation will not run for this strategy.")
-
-            # --- Real-time Validation for Hysteresis Strategy ---
-            elif strategy_type == 'hysteresis':
-                stakes_df = st.session_state.stakes_data.copy().dropna(subset=['bb_size'])
-                # Check if the bb_size column is monotonically increasing
-                if not stakes_df['bb_size'].is_monotonic_increasing:
-                    st.warning("For a 'Hysteresis' strategy to work correctly, the stakes in the 'Stakes Data' tab must be sorted by 'bb_size' in ascending order.")
-
 
                 # --- Convert rules to a DataFrame for the editor ---
                 # We must ensure all table mix values are strings for the data_editor,
@@ -455,9 +453,6 @@ with tab2:
                     },
                 )
 
-                
-
-                # The conversion logic is now handled by the sync_strategy_rules callback.
 # --- Main Logic to Run Simulation and Display Results ---
 
 # This block runs ONLY when the "Run Simulation" button is clicked
