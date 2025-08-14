@@ -324,7 +324,11 @@ with tab1:
 
 with tab2:
     st.subheader("Bankroll Management Strategies")
-    st.write("Define your strategies below. Use the data editor for 'Standard' strategies to set thresholds and table mixes. Use percentages (e.g., '80%') or fixed table counts (e.g., 4).")
+    st.write(
+        "Define your strategies below. For 'Standard' strategies, use the data editor to set bankroll thresholds and table mixes. "
+        "You can use fixed ratios (e.g., `1`), percentages (e.g., `'80%'`), or percentage ranges (e.g., `'20-40%'`). "
+        "Hover over the 'Mix' column headers for more details."
+    )
     st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
     st.write("---")
 
@@ -503,6 +507,10 @@ if st.session_state.run_simulation:
                 # THIS IS WHERE WE CALL OUR REFACTORED ENGINE
                 # Store results in session state so they persist across reruns
                 st.session_state.results = engine.run_full_analysis(config)
+        except ValueError as e:
+            st.error(f"A configuration error prevented the simulation from running: {e}")
+            st.info("Please check your strategy rules and stake definitions for issues.")
+            st.session_state.results = None # Clear results on error
         except Exception as e:
             st.error("An error occurred during the simulation.")
             st.exception(e)
@@ -537,13 +545,11 @@ if st.session_state.results:
         "Median Growth": "{:.2%}", "Risk of Ruin (%)": "{:.2f}%",
         "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:.2f}",
         "P95 Max Drawdown": "€{:.2f}"
-    }))
+    }).hide(axis="index"))
 
     # --- Display Comparison Plot ---
-    # Use columns to constrain the width of the main comparison plot
-    plot_col_left, plot_col_main, plot_col_right = st.columns([1.0, 2.0, 1.0])
-    with plot_col_main:
-        st.pyplot(engine.plot_median_progression_comparison(all_results, config))
+    st.subheader("Median Bankroll Progression Comparison")
+    st.pyplot(engine.plot_median_progression_comparison(all_results, config))
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():
