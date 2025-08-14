@@ -71,11 +71,20 @@ def add_strategy():
             break
         i += 1
 
+    # Use the first available stake as a sensible default
+    available_stakes = [
+        name for name in st.session_state.stakes_data['name']
+        if pd.notna(name) and str(name).strip()
+    ]
+    if available_stakes:
+        default_tables = {available_stakes[0]: "100%"}
+    else:
+        # If no stakes are defined, create an empty rule
+        default_tables = {}
+
     st.session_state.strategy_configs[new_name] = {
         "type": "standard",
-        "rules": [
-            {"threshold": 1000, "tables": {"NL20": "100%"}}
-        ]
+        "rules": [{"threshold": 1000, "tables": default_tables}]
     }
 
 def remove_strategy(name_to_remove):
@@ -84,14 +93,29 @@ def remove_strategy(name_to_remove):
         del st.session_state.strategy_configs[name_to_remove]
 
 def sync_stakes_data():
-    """Callback to sync the data editor's state back to the main stakes_data state."""
-    # The editor's state is a list of dicts. Convert it back to a DataFrame to ensure consistency.
-    st.session_state.stakes_data = pd.DataFrame(st.session_state.stakes_data_editor)
+    """
+    Callback to sync the data editor's state back to the main stakes_data state.
+    When adding a new row, the data_editor state can temporarily be a dict of
+    lists with unequal length, which causes pd.DataFrame() to fail.
+    This function robustly handles both the transient and stable states.
+    """
+    editor_state = st.session_state.stakes_data_editor
+    if isinstance(editor_state, dict):
+        # This handles the transient state (dict of lists with unequal length).
+        st.session_state.stakes_data = pd.DataFrame.from_dict(editor_state, orient='index').transpose()
+    else:
+        # This handles the stable state (list of dicts).
+        st.session_state.stakes_data = pd.DataFrame(editor_state)
 
 def sync_strategy_rules(strategy_name):
     """Callback to sync a strategy's data editor state back to the strategy config."""
-    # The editor's state is a list of dicts.
-    edited_rules_list = st.session_state[f"rules_{strategy_name}"]
+    editor_state = st.session_state[f"rules_{strategy_name}"]
+    # The editor's state can be a list of dicts (stable) or a dict of lists (transient).
+    if isinstance(editor_state, dict):
+        # Convert the transient dict of lists to a stable list of dicts
+        edited_rules_list = pd.DataFrame.from_dict(editor_state, orient='index').transpose().to_dict('records')
+    else:
+        edited_rules_list = editor_state
 
     available_stakes = [
         name for name in st.session_state.stakes_data['name']
