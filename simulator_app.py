@@ -704,8 +704,7 @@ if st.session_state.results:
             col1, col2 = st.columns(2)
 
             with col1:
-                st.markdown("**Hands Played Distribution**")
-                st.caption("The percentage of total hands played at each stake, averaged over all simulations.")
+                st.markdown("**Hands Distribution**", help="The percentage of total hands played at each stake, averaged over all simulations.")
                 if result.get('hands_distribution_pct'):
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                     sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
@@ -716,8 +715,7 @@ if st.session_state.results:
                     st.write("No hands played.")
 
             with col2:
-                st.markdown("**Highest Stake at Simulation's End**")
-                st.caption("The percentage of simulations that finished with this as their highest active stake.")
+                st.markdown("**Final Stake**", help="The percentage of simulations that finished with this as their highest active stake.")
                 if result.get('final_highest_stake_distribution'):
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                     sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
