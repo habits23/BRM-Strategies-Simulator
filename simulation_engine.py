@@ -496,8 +496,13 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
 
         # Determine the table mix for each simulation based on its current bankroll
         tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
-        # Simplified to use a fixed average number of tables.
-        session_total_tables = np.full(num_sims, config['AVG_TABLES'])
+        # Handle fractional average tables by randomly assigning floor or ceil.
+        # This ensures the number of tables for any given check is an integer.
+        avg_tables = config['AVG_TABLES']
+        floor_tables = int(avg_tables)
+        prob_ceil = avg_tables - floor_tables
+        extra_tables = rng.binomial(1, prob_ceil, size=num_sims)
+        session_total_tables = floor_tables + extra_tables
         
         remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
         for threshold, rule in zip(thresholds, rules):
@@ -620,7 +625,12 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
         tables_per_stake = {stake["name"]: np.zeros(num_sims, dtype=int) for stake in config['STAKES_DATA']}
-        session_total_tables = np.full(num_sims, config['AVG_TABLES'])
+        # Handle fractional average tables by randomly assigning floor or ceil.
+        avg_tables = config['AVG_TABLES']
+        floor_tables = int(avg_tables)
+        prob_ceil = avg_tables - floor_tables
+        extra_tables = rng.binomial(1, prob_ceil, size=num_sims)
+        session_total_tables = floor_tables + extra_tables
 
         for i in range(len(stake_rules)):
             at_this_stake_mask = (current_stake_indices == i)
