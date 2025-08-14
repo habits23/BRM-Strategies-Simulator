@@ -492,7 +492,6 @@ with tab2:
                 st.data_editor(
                     rules_df,
                     key=f"rules_{name}",
-                    args=(name,),
                     num_rows="dynamic",
                     column_config={
                         "threshold": st.column_config.NumberColumn(
@@ -614,7 +613,7 @@ if st.session_state.results:
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():
-        with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=True):
+        with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}")
@@ -632,13 +631,32 @@ if st.session_state.results:
                 fig2 = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config)
                 st.pyplot(fig2)
 
-            st.subheader("Detailed Text Analysis")
-            # We need to re-initialize the strategy object to pass to the report generator
-            strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
-            strategy_obj = engine.initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
-            # Generate and display the text report
-            report_lines = engine.get_strategy_report_lines(strategy_name, result, strategy_obj, config)
-            st.code('\n'.join(report_lines))
+            st.subheader("Key Strategy Insights")
+            st.markdown("_For a full breakdown, please download the PDF report._")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**Hands Played Distribution**")
+                if result.get('hands_distribution_pct'):
+                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                    sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
+                    for stake, pct in sorted_stakes:
+                        if pct > 0.01:
+                            st.text(f"- {stake}: {pct:.2f}%")
+                else:
+                    st.text("No hands played.")
+
+            with col2:
+                st.markdown("**Final Highest Stake Played**")
+                if result.get('final_highest_stake_distribution'):
+                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                    sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
+                    for stake, pct in sorted_dist:
+                        if pct > 0.01:
+                            st.text(f"- {stake}: {pct:.2f}%")
+                else:
+                    st.text("N/A")
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
