@@ -669,9 +669,9 @@ if st.session_state.results:
                     sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
                     for stake, pct in sorted_stakes:
                         if pct > 0.01:
-                            st.text(f"- {stake}: {pct:.2f}%")
+                            st.write(f"- {stake}: {pct:.2f}%")
                 else:
-                    st.text("No hands played.")
+                    st.write("No hands played.")
 
             with col2:
                 st.markdown("**Final Highest Stake Played**")
@@ -681,9 +681,9 @@ if st.session_state.results:
                     for stake, pct in sorted_dist:
                         if pct > 0.01:
                             display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
-                            st.text(f"- {display_stake}: {pct:.2f}%")
+                            st.write(f"- {display_stake}: {pct:.2f}%")
                 else:
-                    st.text("N/A")
+                    st.write("N/A")
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
