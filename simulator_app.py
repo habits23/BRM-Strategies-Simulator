@@ -670,13 +670,53 @@ if st.session_state.results:
             "P95 Max Drawdown": res['p95_max_drawdown']
         })
     summary_df = pd.DataFrame(summary_data)
-    st.dataframe(summary_df.style.format({
-        "Median Final BR": "€{:.2f}", "Mode Final BR": "€{:.2f}",
-        "Median Growth": "{:.2%}", "Median Rakeback": "€{:.2f}", "Risk of Ruin (%)": "{:.2f}%",
-        "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:.2f}",
-        "P95 Max Drawdown": "€{:.2f}"
-    }).hide(axis="index"))
 
+    st.dataframe(
+        summary_df.style.format({
+            "Median Final BR": "€{:.2f}", "Mode Final BR": "€{:.2f}",
+            "Median Growth": "{:.2%}", "Median Rakeback": "€{:.2f}", "Risk of Ruin (%)": "{:.2f}%",
+            "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:.2f}",
+            "P95 Max Drawdown": "€{:.2f}"
+        }).hide(axis="index"),
+        column_config={
+            "Strategy": st.column_config.TextColumn(
+                "Strategy",
+                help="The name of the bankroll management strategy."
+            ),
+            "Median Final BR": st.column_config.TextColumn(
+                "Median Final BR",
+                help="The median (50th percentile) final bankroll across all simulations. This is the most likely central outcome."
+            ),
+            "Mode Final BR": st.column_config.TextColumn(
+                "Mode Final BR",
+                help="The most frequently occurring final bankroll outcome, calculated using Kernel Density Estimation."
+            ),
+            "Median Growth": st.column_config.TextColumn(
+                "Median Growth",
+                help="The median percentage growth from the starting bankroll."
+            ),
+            "Median Rakeback": st.column_config.TextColumn(
+                "Median Rakeback",
+                help="The median amount of rakeback earned in Euros across all simulations."
+            ),
+            "Risk of Ruin (%)": st.column_config.TextColumn(
+                "Risk of Ruin (%)",
+                help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'."
+            ),
+            "Target Prob (%)": st.column_config.TextColumn(
+                "Target Prob (%)",
+                help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point."
+            ),
+            "5th %ile BR": st.column_config.TextColumn(
+                "5th %ile BR",
+                help="The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value."
+            ),
+            "P95 Max Drawdown": st.column_config.TextColumn(
+                "P95 Max Drawdown",
+                help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value."
+            ),
+        }
+    )
     # --- Display Comparison Plot ---
     st.subheader("Median Bankroll Progression Comparison")
     plot_col_left, plot_col_main, plot_col_right = st.columns([1.0, 2.0, 1.0])
