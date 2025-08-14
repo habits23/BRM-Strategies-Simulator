@@ -548,7 +548,9 @@ if st.session_state.results:
 
     # --- Display Comparison Plot ---
     st.subheader("Median Bankroll Progression Comparison")
-    st.pyplot(engine.plot_median_progression_comparison(all_results, config))
+    plot_col_left, plot_col_main, plot_col_right = st.columns([1.0, 2.0, 1.0])
+    with plot_col_main:
+        st.pyplot(engine.plot_median_progression_comparison(all_results, config))
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():
