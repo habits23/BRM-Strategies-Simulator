@@ -105,7 +105,12 @@ class HysteresisStrategy(BankrollManagementStrategy):
         stake_thresholds = []
         for i in range(len(self.stakes_data) - 1, -1, -1):
             current_stake = self.stakes_data[i]
-            buy_ins_for_stake = self.num_buy_ins.get(current_stake['name'], self.num_buy_ins) if isinstance(self.num_buy_ins, dict) else self.num_buy_ins
+            if isinstance(self.num_buy_ins, dict):
+                # Use the specific value, or a default of 40 if a stake is somehow missing.
+                buy_ins_for_stake = self.num_buy_ins.get(current_stake['name'], 40)
+            else:
+                # Use the global integer value.
+                buy_ins_for_stake = self.num_buy_ins
             threshold = buy_ins_for_stake * 100 * current_stake["bb_size"]
             tables_config = {s["name"]: "0%" for s in self.stakes_data}
             tables_config[current_stake["name"]] = "100%"
