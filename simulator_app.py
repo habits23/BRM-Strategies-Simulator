@@ -190,39 +190,38 @@ def sync_strategy_rules(strategy_name):
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
 
-st.sidebar.subheader("General Settings")
-st.sidebar.number_input("Starting Bankroll (€)", value=2030, min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
-st.sidebar.number_input("Target Bankroll (€)", value=3000, min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
-st.sidebar.number_input("Ruin Threshold (€)", value=750, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
+with st.sidebar.expander("General Settings", expanded=True):
+    st.number_input("Starting Bankroll (€)", value=2030, min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
+    st.number_input("Target Bankroll (€)", value=3000, min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
+    st.number_input("Ruin Threshold (€)", value=750, min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
 
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    st.number_input("Number of Simulations", value=2000, min_value=10, max_value=50000, step=100, help="How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (e.g., 2000-10000)", key="num_sims")
-with col2:
-    st.number_input("Sessions per Simulation", value=100, min_value=1, max_value=1000, help="How many playing sessions are in a single simulation run. This determines the time horizon of the simulation.", key="num_sessions")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.number_input("Number of Simulations", value=2000, min_value=10, max_value=50000, step=100, help="How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (e.g., 2000-10000)", key="num_sims")
+    with col2:
+        st.number_input("Sessions per Simulation", value=100, min_value=1, max_value=1000, help="How many playing sessions are in a single simulation run. This determines the time horizon of the simulation.", key="num_sessions")
 
-st.sidebar.subheader("Session Settings")
-st.sidebar.number_input("Hands per Table per Session", value=60, min_value=1, help="The average number of hands you play on a single table during one session.", key="hands_per_table")
-st.sidebar.slider("Stop-Loss per Session (%)", 0, 100, 10, help="The session ends early if you lose this percentage of your bankroll at the start of that session. Set to 100% to disable.", key="sl_percent")
+with st.sidebar.expander("Session & Rakeback Settings", expanded=True):
+    st.number_input("Hands per Table per Session", value=60, min_value=1, help="The average number of hands you play on a single table during one session.", key="hands_per_table")
+    st.slider("Stop-Loss per Session (%)", 0, 100, 10, help="The session ends early if you lose this percentage of your bankroll at the start of that session. Set to 100% to disable.", key="sl_percent")
 
-col3, col4 = st.sidebar.columns(2)
-with col3:
-    st.number_input("Min Tables", value=3, min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.", key="min_tables")
-with col4:
-    max_tables_default = max(5, st.session_state.min_tables)
-    st.number_input("Max Tables", value=max_tables_default, min_value=st.session_state.min_tables, help="The maximum number of tables you will play in any given session.", key="max_tables")
+    col3, col4 = st.columns(2)
+    with col3:
+        st.number_input("Min Tables", value=3, min_value=1, help="The minimum number of tables you will play in any given session. The app will pick a random number between Min and Max for each session.", key="min_tables")
+    with col4:
+        max_tables_default = max(5, st.session_state.min_tables)
+        st.number_input("Max Tables", value=max_tables_default, min_value=st.session_state.min_tables, help="The maximum number of tables you will play in any given session.", key="max_tables")
 
-st.sidebar.number_input("Target Tables (for % display)", value=4, min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
+    st.number_input("Target Tables (for % display)", value=4, min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
+    st.slider("Rakeback (%)", 0, 100, 20, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
 
-st.sidebar.subheader("Rakeback")
-st.sidebar.slider("Rakeback (%)", 0, 100, 20, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
+with st.sidebar.expander("Advanced Statistical Settings"):
+    st.number_input("Prior Sample Size (for Bayesian model)", value=100000, min_value=1000, step=1000, help="Represents the strength of the model's prior belief about win rates. A larger value means the model is more confident in its own estimates and less influenced by small sample sizes from your data.", key="prior_sample")
+    st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, 0.5, 0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
+    st.number_input("Min Degrees of Freedom (t-dist)", value=3, min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
+    st.number_input("Max Degrees of Freedom (t-dist)", value=30, min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
+    st.number_input("Hands to Reach Max DF", value=50000, min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.", key="hands_for_max_df")
 
-st.sidebar.subheader("Advanced Statistical Settings")
-st.sidebar.number_input("Prior Sample Size (for Bayesian model)", value=100000, min_value=1000, step=1000, help="Represents the strength of the model's prior belief about win rates. A larger value means the model is more confident in its own estimates and less influenced by small sample sizes from your data.", key="prior_sample")
-st.sidebar.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, 0.5, 0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
-st.sidebar.number_input("Min Degrees of Freedom (t-dist)", value=3, min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
-st.sidebar.number_input("Max Degrees of Freedom (t-dist)", value=30, min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
-st.sidebar.number_input("Hands to Reach Max DF", value=50000, min_value=1000, step=1000, help="The number of hands required to transition from Min DF to Max DF. This controls how quickly the model gains confidence in your results.", key="hands_for_max_df")
 st.sidebar.number_input("Random Seed (for reproducibility)", value=45783, step=1, help="A fixed number that ensures the simulation produces the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
 
 st.sidebar.button("Run Simulation", on_click=click_run_button, use_container_width=True)
