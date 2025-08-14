@@ -92,7 +92,7 @@ if 'start_br' not in st.session_state:
     st.session_state.max_tables = max(5, st.session_state.min_tables)
     st.session_state.target_tables_pct = 4
     st.session_state.rb_percent = 20
-    st.session_state.prior_sample = 100000
+    st.session_state.prior_sample = 50000
     st.session_state.zero_hands_weight = 0.5
     st.session_state.min_df = 3
     st.session_state.max_df = 30
@@ -281,10 +281,11 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
     st.number_input(
         "Prior Sample Size (for Bayesian model)",
         min_value=1000, step=1000,
-        help=(
-            "Represents the strength of the model's prior belief. A larger value means the model is more confident in its own estimates and less influenced by your data's sample size.\n\n"
-            "**Important:** The model also adds random noise (based on your Std Dev) to each simulation's assigned win rate. For stakes with a small sample size, this randomness can be significant and may even result in a negative win rate for some simulations, reflecting real-world variance."
-        ),
+        help=(  
+            "Represents the model's 'skepticism' of your win rate data. A larger value means the model relies more on its own extrapolated estimates.\n\n"
+            "**Intuition:** With the default of 50,000, if you provide a stake with a 50,000 hand sample, the model will weigh your win rate and its own prior estimate equally (50/50).\n\n"
+            "For stakes with smaller samples, the model adds significant random noise to reflect real-world variance, which can sometimes result in an assigned win rate that is negative, even if your input was positive."
+        ),  
         key="prior_sample")
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
     st.number_input("Min Degrees of Freedom (t-dist)", min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
