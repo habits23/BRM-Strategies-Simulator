@@ -278,7 +278,14 @@ with st.sidebar.expander("Session & Rakeback Settings", expanded=True):
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
-    st.number_input("Prior Sample Size (for Bayesian model)", min_value=1000, step=1000, help="Represents the strength of the model's prior belief about win rates. A larger value means the model is more confident in its own estimates and less influenced by small sample sizes from your data.", key="prior_sample")
+    st.number_input(
+        "Prior Sample Size (for Bayesian model)",
+        min_value=1000, step=1000,
+        help=(
+            "Represents the strength of the model's prior belief. A larger value means the model is more confident in its own estimates and less influenced by your data's sample size.\n\n"
+            "**Important:** The model also adds random noise (based on your Std Dev) to each simulation's assigned win rate. For stakes with a small sample size, this randomness can be significant and may even result in a negative win rate for some simulations, reflecting real-world variance."
+        ),
+        key="prior_sample")
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
     st.number_input("Min Degrees of Freedom (t-dist)", min_value=2, help="The starting 'fatness' of the tails for the t-distribution, used for small sample sizes to model higher variance. Must be > 2.", key="min_df")
     st.number_input("Max Degrees of Freedom (t-dist)", min_value=st.session_state.min_df, help="The 'df' for very large sample sizes. As df increases, the t-distribution approaches a normal distribution.", key="max_df")
