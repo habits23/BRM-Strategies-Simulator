@@ -35,7 +35,7 @@ DEFAULT_STRATEGIES = {
             {"threshold": 1200, "tables": {"NL20": "100%"}},
         ]
     },
-    "Sticky (40 BIs)": {
+    "Hysteresis (Sticky)": {
         "type": "hysteresis",
         "num_buy_ins": 40
     }
