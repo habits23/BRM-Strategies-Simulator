@@ -784,13 +784,17 @@ if st.session_state.results:
                 help="This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations. It helps you see if the median-outcome run (red line) was luckier or unluckier than your average input (blue line). This explains *why* the median win rate might be different from your input."
             )
             if 'avg_assigned_wr_per_sim' in result:
-                fig3 = engine.plot_assigned_wr_distribution(
-                    result['avg_assigned_wr_per_sim'],
-                    result['median_run_assigned_wr'],
-                    weighted_input_wr,
-                    strategy_name
-                )
-                st.pyplot(fig3)
+                # Use a column layout to constrain the width of the plot, making it consistent
+                # with the two charts above it. The second column is intentionally left blank.
+                plot_col_luck, _ = st.columns(2)
+                with plot_col_luck:
+                    fig3 = engine.plot_assigned_wr_distribution(
+                        result['avg_assigned_wr_per_sim'],
+                        result['median_run_assigned_wr'],
+                        weighted_input_wr,
+                        strategy_name
+                    )
+                    st.pyplot(fig3)
 
             st.subheader("Key Strategy Insights")
             st.markdown("_For a full breakdown, please download the PDF report._")
