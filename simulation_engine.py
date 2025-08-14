@@ -339,6 +339,28 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
     final_bankrolls = bankroll_histories[:, -1]
 
+    # --- Calculate Weighted Assigned WR for each simulation ---
+    # This is crucial for understanding the distribution of "luck" (assigned win rates)
+    final_hands_per_stake = {name: history[:, -1] for name, history in hands_per_stake_histories.items()}
+    total_hands_per_sim = np.sum(list(final_hands_per_stake.values()), axis=0)
+
+    weighted_assigned_wr_sum = np.zeros(config['NUMBER_OF_SIMULATIONS'])
+    for stake_name, wr_array in all_win_rates.items():
+        weighted_assigned_wr_sum += wr_array * final_hands_per_stake[stake_name]
+
+    # Avoid division by zero for sims with no hands played
+    avg_assigned_wr_per_sim = np.divide(
+        weighted_assigned_wr_sum,
+        total_hands_per_sim,
+        out=np.zeros_like(weighted_assigned_wr_sum),
+        where=total_hands_per_sim != 0
+    )
+
+    # Find the Assigned WR for the run that resulted in the median final bankroll
+    median_final_bankroll_val = np.percentile(final_bankrolls, 50)
+    median_sim_index = np.argmin(np.abs(final_bankrolls - median_final_bankroll_val))
+    median_run_assigned_wr = avg_assigned_wr_per_sim[median_sim_index]
+
     average_assigned_win_rates = {name: np.mean(wr_array) for name, wr_array in all_win_rates.items()}
 
     total_hands_per_stake = {name: np.sum(history[:, -1]) for name, history in hands_per_stake_histories.items()}
@@ -410,6 +432,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'p95_max_drawdown': p95_max_drawdown,
         'median_rakeback_eur': median_rakeback_eur,
         'average_assigned_win_rates': average_assigned_win_rates,
+        'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
+        'median_run_assigned_wr': median_run_assigned_wr,
     }
 def run_multiple_simulations_vectorized(strategy, all_session_profits_bb, rng, stake_level_map, config):
     """
@@ -685,6 +709,37 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
         plt.close(fig)
     return fig
 
+def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_wr, average_input_wr, strategy_name, pdf=None):
+    """
+    Plots the distribution of the weighted average 'Assigned WR' for all simulations.
+    This visualizes the 'luck' distribution and highlights where the median-outcome run falls.
+    """
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Filter out extreme outliers for better visualization
+    p1 = np.percentile(avg_assigned_wr_per_sim, 1)
+    p99 = np.percentile(avg_assigned_wr_per_sim, 99)
+    filtered_data = avg_assigned_wr_per_sim[(avg_assigned_wr_per_sim >= p1) & (avg_assigned_wr_per_sim <= p99)]
+
+    ax.hist(filtered_data, bins=50, color='c', edgecolor='black', alpha=0.6, label='Distribution of All Runs\' Luck')
+
+    ax.axvline(average_input_wr, color='blue', linestyle='--', linewidth=2,
+               label=f'Your Avg. Input WR: {average_input_wr:.2f}')
+
+    ax.axvline(median_run_assigned_wr, color='red', linestyle='-', linewidth=2.5,
+               label=f'Luck of Median-Outcome Run: {median_run_assigned_wr:.2f}')
+
+    ax.set_title(f'Distribution of Assigned Luck (WR) for {strategy_name}', fontsize=14)
+    ax.set_xlabel('Weighted Average Assigned Win Rate (bb/100)', fontsize=12)
+    ax.set_ylabel('Frequency (Number of Simulations)', fontsize=12)
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def create_title_page(pdf, timestamp):
     """Creates a title page for the PDF report."""
     fig = plt.figure(figsize=(11, 8.5))
@@ -876,9 +931,18 @@ def generate_pdf_report(all_results, config, timestamp_str):
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
         strategy_page_map[strategy_name] = current_page_count + 1
         report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
-        num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page
-        num_plot_pages = 2
+        num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page # Ceiling division
+        # There are now 3 plots per strategy
+        num_plot_pages = 3
         current_page_count += num_text_pages + num_plot_pages
+
+    # Calculate a representative input win rate for the plot's label
+    total_sample_hands = sum(s['sample_hands'] for s in config['STAKES_DATA'])
+    if total_sample_hands > 0:
+        weighted_input_wr = sum(s['ev_bb_per_100'] * s['sample_hands'] for s in config['STAKES_DATA']) / total_sample_hands
+    else:
+        # Fallback if no sample hands are provided
+        weighted_input_wr = config['STAKES_DATA'][0]['ev_bb_per_100'] if config['STAKES_DATA'] else 1.5
 
     with PdfPages(pdf_buffer) as pdf:
         create_title_page(pdf, timestamp_str)
@@ -893,6 +957,12 @@ def generate_pdf_report(all_results, config, timestamp_str):
             write_strategy_report_to_pdf(pdf, report_lines_for_writing, page_number_info={'current': page_num})
             plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
             plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf)
+            plot_assigned_wr_distribution(
+                result['avg_assigned_wr_per_sim'],
+                result['median_run_assigned_wr'],
+                weighted_input_wr,
+                strategy_name,
+                pdf=pdf)
 
     pdf_buffer.seek(0)
     return pdf_buffer

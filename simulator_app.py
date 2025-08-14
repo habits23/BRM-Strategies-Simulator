@@ -672,6 +672,19 @@ if st.session_state.run_simulation:
 if st.session_state.results:
     all_results = st.session_state.results
     config = st.session_state.get('config_for_display', {}) # Get the config used for the run
+
+    # Calculate a representative input win rate for the plot's label
+    weighted_input_wr = 1.5 # Default fallback
+    if config: # Ensure config exists before trying to access it
+        stakes_data = config.get('STAKES_DATA', [])
+        total_sample_hands = sum(s.get('sample_hands', 0) for s in stakes_data)
+        if total_sample_hands > 0:
+            weighted_input_wr = sum(s.get('ev_bb_per_100', 0) * s.get('sample_hands', 0) for s in stakes_data) / total_sample_hands
+        elif stakes_data:
+            # Fallback if no sample hands are provided
+            weighted_input_wr = stakes_data[0].get('ev_bb_per_100', 1.5)
+
+
     st.header("Simulation Results")
     st.subheader("Strategy Comparison")
 
@@ -763,6 +776,21 @@ if st.session_state.results:
             with plot_col2:
                 fig2 = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config)
                 st.pyplot(fig2)
+            
+            # --- New Assigned WR Distribution Chart ---
+            st.markdown("---")
+            st.markdown(
+                "**Distribution of Assigned Luck (Win Rate)**",
+                help="This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations. It helps you see if the median-outcome run (red line) was luckier or unluckier than your average input (blue line). This explains *why* the median win rate might be different from your input."
+            )
+            if 'avg_assigned_wr_per_sim' in result:
+                fig3 = engine.plot_assigned_wr_distribution(
+                    result['avg_assigned_wr_per_sim'],
+                    result['median_run_assigned_wr'],
+                    weighted_input_wr,
+                    strategy_name
+                )
+                st.pyplot(fig3)
 
             st.subheader("Key Strategy Insights")
             st.markdown("_For a full breakdown, please download the PDF report._")
@@ -837,6 +865,7 @@ if st.session_state.results:
                     "**Percentile Win Rate Analysis (bb/100)**",
                     help="Shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n- **Assigned WR:** The 'true' win rate the simulation assigned for this entire run (models long-term luck).\n- **Play WR:** The actual, realized win rate from gameplay after session-to-session variance.\n- **Rakeback WR:** The effective win rate gained from rakeback."
                 )
+                st.caption("Note: The 'Median' column shows the win rate for the simulation that had the median *final bankroll*, not necessarily median *luck*. If most runs are successful, the median run will often be one that was assigned an above-average win rate.")
 
                 percentile_wrs = result.get('percentile_win_rates', {})
                 percentiles_to_show = {
