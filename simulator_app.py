@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
-import ast
 import datetime
 import traceback
-import pprint
 
 # Import the actual simulation engine we just built
 import simulation_engine as engine
@@ -55,10 +53,8 @@ if 'stakes_data' not in st.session_state:
     st.session_state.stakes_data = DEFAULT_STAKES_DATA
 
 if 'strategy_configs' not in st.session_state:
-    st.session_state.strategy_configs = {
-        name: pprint.pformat(config, indent=4, width=1)
-        for name, config in DEFAULT_STRATEGIES.items()
-    }
+    # We now store the dictionary directly, not a formatted string
+    st.session_state.strategy_configs = DEFAULT_STRATEGIES.copy()
 
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
@@ -75,12 +71,12 @@ def add_strategy():
             break
         i += 1
 
-    st.session_state.strategy_configs[new_name] = pprint.pformat({
+    st.session_state.strategy_configs[new_name] = {
         "type": "standard",
         "rules": [
             {"threshold": 1000, "tables": {"NL20": "100%"}}
         ]
-    }, indent=4, width=1)
+    }
 
 def remove_strategy(name_to_remove):
     """Callback to remove a strategy."""
@@ -141,10 +137,13 @@ with tab1:
 
 with tab2:
     st.subheader("Bankroll Management Strategies")
-    st.write("Manage your strategies below. Each strategy is a block of text in Python dictionary format.")
+    st.write("Define your strategies below. Use the data editor for 'Standard' strategies to set thresholds and table mixes. Use percentages (e.g., '80%') or fixed table counts (e.g., 4).")
     st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
     st.write("---")
 
+    # Get the list of available stake names from the stakes data tab
+    # This is crucial for creating the columns in the data editor
+    available_stakes = list(st.session_state.stakes_data['name'])
     strategy_names = list(st.session_state.strategy_configs.keys())
 
     for name in strategy_names:
@@ -152,29 +151,41 @@ with tab2:
             continue # Skip if it was just removed
 
         with st.expander(f"Edit Strategy: {name}", expanded=True):
-            col1, col2 = st.columns([3, 1])
+            current_config = st.session_state.strategy_configs[name]
+
+            # --- Row 1: Name, Type, Remove ---
+            col1, col2, col3 = st.columns([2, 1, 1])
             with col1:
                 new_name = st.text_input("Strategy Name", value=name, key=f"name_{name}")
             with col2:
+                strategy_type = st.selectbox(
+                    "Strategy Type",
+                    options=["standard", "hysteresis"],
+                    index=0 if current_config.get("type", "standard") == "standard" else 1,
+                    key=f"type_{name}"
+                )
+            with col3:
+                st.write("") # Spacer
+                st.write("") # Spacer
                 st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), use_container_width=True)
-
-            config_text = st.text_area(
-                "Strategy Configuration (Python Dictionary Format)",
-                value=st.session_state.strategy_configs[name],
-                key=f"config_{name}",
-                height=250
-            )
 
             # Update state if name changed
             if new_name != name:
-                # To rename, we remove the old and add the new
-                st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name)
-                # Rerun to update the UI with the new name
+                st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name, {})
                 st.rerun()
-            else:
-                 # Update the config text in the state
-                 st.session_state.strategy_configs[name] = config_text
 
+            st.session_state.strategy_configs[name]['type'] = strategy_type
+
+            # --- Row 2: Type-specific inputs ---
+            if strategy_type == 'hysteresis':
+                num_buy_ins_value = current_config.get("num_buy_ins", 40)
+                st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
+                    "Buy-in Buffer (BIs)",
+                    value=num_buy_ins_value, min_value=1, key=f"bi_{name}",
+                    help="The number of buy-ins (100 BBs) required to move up/down stakes."
+                )
+                if 'rules' in st.session_state.strategy_configs[name]:
+                    del st.session_state.strategy_configs[name]['
 
 # --- Main Logic to Run Simulation and Display Results ---
 
@@ -201,28 +212,20 @@ if st.session_state.run_simulation:
         "SEED": st.session_state.seed,
     }
 
-    # --- 2. Parse and validate the text inputs for stakes and strategies ---
+    # --- 2. Parse and validate the inputs for stakes and strategies ---
     try:
         # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
         config["STAKES_DATA"] = st.session_state.stakes_data.to_dict('records')
 
-        # Parse each strategy's text config into a dictionary
-        parsed_strategies = {}
-        for name, config_text in st.session_state.strategy_configs.items():
-            try:
-                parsed_strategies[name] = ast.literal_eval(config_text)
-            except (ValueError, SyntaxError) as e:
-                # Pinpoint the exact strategy that has a syntax error
-                raise ValueError(f"Syntax error in strategy '{name}': {e}")
-
-        config["STRATEGIES_TO_RUN"] = parsed_strategies
+        # The strategies are now directly in the correct dictionary format. No more parsing needed!
+        config["STRATEGIES_TO_RUN"] = st.session_state.strategy_configs
 
         # Also store the config used for this run, so we can access it for display later
         st.session_state.config_for_display = config
         inputs_are_valid = True
 
-    except (ValueError, SyntaxError) as e:
-        st.error(f"Error parsing inputs. Please check your configuration. Details: {e}")
+    except Exception as e: # Catch any other potential errors during config assembly
+        st.error(f"Error preparing simulation configuration. Details: {e}")
         inputs_are_valid = False
         st.session_state.results = None
 
