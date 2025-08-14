@@ -820,6 +820,32 @@ if st.session_state.results:
                         demotion_text.append(f"From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_")
                 st.write(" / ".join(demotion_text))
 
+            # --- Percentile Win Rate Analysis Section ---
+            if result.get('percentile_win_rates'):
+                st.markdown("---")
+                st.markdown(
+                    "**Percentile Win Rate Analysis (bb/100)**",
+                    help="Shows the actual realized win rate from gameplay and rakeback for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did. A negative 'Play WR' for the median shows that a typical outcome involved running below expectation."
+                )
+
+                percentile_wrs = result.get('percentile_win_rates', {})
+                percentiles_to_show = {
+                    "5th": "5th Percentile",
+                    "Median": "Median Percentile",
+                    "95th": "95th Percentile"
+                }
+
+                cols = st.columns(len(percentiles_to_show))
+
+                for i, (short_name, long_name) in enumerate(percentiles_to_show.items()):
+                    with cols[i]:
+                        st.markdown(f"**{short_name} %ile**")
+                        if long_name in percentile_wrs:
+                            data = percentile_wrs[long_name]
+                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}")
+                            st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}")
+
+
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
     with st.spinner("Generating PDF report..."):
