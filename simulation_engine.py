@@ -270,27 +270,47 @@ def round_table_counts(tables_float, total_tables):
 def resolve_table_mix(rule, total_tables, rng):
     """Resolves a strategy rule into a concrete dictionary of integer table counts."""
     percentages = {}
-    fixed_ratios = {}
+    fixed_counts = {}
     for stake, val in rule.items():
         if isinstance(val, str):
             sanitized_val = val.replace('%', '').replace(' ', '')
             if "-" in sanitized_val:
                 percentages[stake] = sample_percentage_range(sanitized_val, rng)
             else:
-                percentages[stake] = float(sanitized_val)
+                try:
+                    percentages[stake] = float(sanitized_val)
+                except ValueError:
+                    pass # Ignore invalid percentage strings
         elif isinstance(val, int) and val > 0:
-            fixed_ratios[stake] = val
+            fixed_counts[stake] = val
 
-    if fixed_ratios:
-        # If any fixed ratios are present, they define the entire mix for this rule.
-        # We explicitly ignore any percentage strings that might also be present to avoid ambiguity.
-        percentages = {}
-        total_ratio = sum(fixed_ratios.values())
+    # --- New Hybrid Logic ---
+    final_counts = {}
+    assigned_fixed_tables = sum(fixed_counts.values())
+
+    if assigned_fixed_tables >= total_tables:
+        # If fixed counts meet or exceed total tables, they become ratios for the whole mix.
+        # This handles cases like {'NL20': 1, 'NL50': 1} for total_tables=1 correctly.
+        total_ratio = sum(fixed_counts.values())
         if total_ratio > 0:
-            for stake, ratio_val in fixed_ratios.items():
-                percentages[stake] = (ratio_val / total_ratio) * 100.0
+            tables_float = {k: (v / total_ratio) * total_tables for k, v in fixed_counts.items()}
+            return round_table_counts(tables_float, total_tables)
+    else:
+        # If fixed counts are less than total tables, assign them first.
+        final_counts.update(fixed_counts)
+        remaining_tables = total_tables - assigned_fixed_tables
 
-    if percentages:
+        # Then, distribute remaining tables according to percentages.
+        if remaining_tables > 0 and percentages:
+            normalized = normalize_percentages(percentages)
+            tables_float = {k: v * remaining_tables for k, v in normalized.items()}
+            percentage_counts = round_table_counts(tables_float, remaining_tables)
+            for stake, count in percentage_counts.items():
+                final_counts[stake] = final_counts.get(stake, 0) + count
+            return final_counts
+        return final_counts # Return just the fixed counts if no percentages for remainder
+
+    if not fixed_counts and percentages:
         normalized = normalize_percentages(percentages)
         tables_float = {k: v * total_tables for k, v in normalized.items()}
         return round_table_counts(tables_float, total_tables)
