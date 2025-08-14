@@ -666,7 +666,7 @@ def create_title_page(pdf, timestamp):
     pdf.savefig(fig)
     plt.close(fig)
 
-def _get_strategy_report_lines(strategy_name, result, strategy_obj, config):
+def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
     """Gathers all the text lines for a strategy's detailed report."""
     report_lines = [
         f"--- Detailed Report for: {strategy_name} ---",
@@ -844,7 +844,7 @@ def generate_pdf_report(all_results, config, timestamp_str):
         strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
         strategy_page_map[strategy_name] = current_page_count + 1
-        report_lines = _get_strategy_report_lines(strategy_name, result, strategy_obj, config)
+        report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
         num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page
         num_plot_pages = 2
         current_page_count += num_text_pages + num_plot_pages
@@ -858,7 +858,7 @@ def generate_pdf_report(all_results, config, timestamp_str):
             strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
             strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
             page_num = strategy_page_map.get(strategy_name, 0)
-            report_lines_for_writing = _get_strategy_report_lines(strategy_name, result, strategy_obj, config)
+            report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
             write_strategy_report_to_pdf(pdf, report_lines_for_writing, page_number_info={'current': page_num})
             plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
             plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf)

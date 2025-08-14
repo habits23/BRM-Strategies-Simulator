@@ -432,7 +432,7 @@ if st.session_state.results:
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():
-        with st.expander(f"Detailed Analysis for: {strategy_name}"):
+        with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=True):
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:.2f}")
@@ -449,6 +449,14 @@ if st.session_state.results:
             with plot_col2:
                 fig2 = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config)
                 st.pyplot(fig2)
+
+            st.subheader("Detailed Text Analysis")
+            # We need to re-initialize the strategy object to pass to the report generator
+            strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
+            strategy_obj = engine.initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
+            # Generate and display the text report
+            report_lines = engine.get_strategy_report_lines(strategy_name, result, strategy_obj, config)
+            st.code('\n'.join(report_lines))
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
