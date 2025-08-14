@@ -750,7 +750,16 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
         final_bankrolls = result['final_bankrolls']
         if len(final_bankrolls) > 1:
             try:
-                kde = gaussian_kde(final_bankrolls)
+                # FIX: Filter the data before calculating the KDE.
+                # This prevents extreme outliers (the top 1% we've already
+                # excluded from the x-axis) from skewing the density plot.
+                # The result is a plot that better represents the main body of the distribution.
+                filtered_bankrolls = final_bankrolls[final_bankrolls <= x_max]
+                if len(filtered_bankrolls) < 2: # Need at least 2 points for KDE
+                    ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)")
+                    continue
+
+                kde = gaussian_kde(filtered_bankrolls)
                 density = kde(x_grid)
                 ax.plot(x_grid, density, label=strategy_name, color=colors[i], linewidth=2)
                 ax.fill_between(x_grid, density, color=colors[i], alpha=0.1)
