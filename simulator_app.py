@@ -272,7 +272,7 @@ with st.sidebar.expander("General Settings", expanded=True):
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
     st.number_input("Target Tables (for % display)", min_value=1, help="Used for display purposes in the PDF report to show an example table mix for strategies that use percentages.", key="target_tables_pct")
-    st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each session.", key="rb_percent")
+    st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
     st.number_input(
@@ -763,11 +763,18 @@ if st.session_state.results:
             ),
         }
     )
-    # --- Display Comparison Plot ---
+    # --- Display Comparison Plots ---
     st.subheader("Median Bankroll Progression Comparison")
-    plot_col_left, plot_col_main, plot_col_right = st.columns([1.0, 2.0, 1.0])
-    with plot_col_main:
+    st.pyplot(engine.plot_median_progression_comparison(all_results, config))
+
+    st.subheader("Final Bankroll Distribution Comparison")
+    st.markdown(
+        "This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. "
+        "A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential."
+    )
+    with st.spinner("Generating comparison density plot..."):
         st.pyplot(engine.plot_median_progression_comparison(all_results, config))
+        st.pyplot(engine.plot_final_bankroll_comparison(all_results, config))
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():

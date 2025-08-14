@@ -746,6 +746,41 @@ def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_w
         plt.close(fig)
     return fig
 
+def plot_final_bankroll_comparison(all_results, config, pdf=None):
+    """
+    Creates an overlapping density plot to compare the final bankroll distributions of all strategies.
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+
+    # Find a reasonable x-axis limit to keep the plot focused
+    max_vals = [np.percentile(res['final_bankrolls'], 99) for res in all_results.values()]
+    x_max = np.max(max_vals) if max_vals else config.get('TARGET_BANKROLL', 5000) * 2
+    x_grid = np.linspace(0, x_max, 1000)
+
+    for i, (strategy_name, result) in enumerate(all_results.items()):
+        final_bankrolls = result['final_bankrolls']
+        if len(final_bankrolls) > 1:
+            try:
+                kde = gaussian_kde(final_bankrolls)
+                density = kde(x_grid)
+                ax.plot(x_grid, density, label=strategy_name, color=colors[i], linewidth=2)
+                ax.fill_between(x_grid, density, color=colors[i], alpha=0.1)
+            except (np.linalg.LinAlgError, ValueError):
+                # Fallback for datasets that are not suitable for KDE
+                ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)")
+
+    ax.set_title('Comparison of Final Bankroll Distributions', fontsize=16)
+    ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
+    ax.set_ylabel('Probability Density', fontsize=12)
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.6)
+    ax.set_xlim(left=0, right=x_max)
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def plot_max_drawdown_distribution(max_drawdowns, result, strategy_name, pdf=None):
     """Creates a histogram of maximum drawdowns with key metrics highlighted."""
     if max_drawdowns is None or len(max_drawdowns) == 0:
@@ -983,6 +1018,7 @@ def generate_pdf_report(all_results, config, timestamp_str):
         create_title_page(pdf, timestamp_str)
         save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
         plot_median_progression_comparison(all_results, config, pdf=pdf)
+        plot_final_bankroll_comparison(all_results, config, pdf=pdf)
 
         for strategy_name, result in all_results.items():
             strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
