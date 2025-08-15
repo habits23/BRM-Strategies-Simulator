@@ -1047,7 +1047,7 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
             line = f"• {line[2:]}" # Use a bullet point character
         
         # Strip emoji and bold markers for cleaner text
-        line = line.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','').replace('🚀','').replace('😌','').replace('🎢','')
+        line = line.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','').replace('🚀','').replace('😌','').replace('🎢','').replace('💰','').replace('⚠️','').replace('🧠','')
 
         fig.text(x_pos, y_pos, line, transform=fig.transFigure, size=font_size, weight=font_weight, va='top', ha='left', wrap=True)
         y_pos -= 0.04 # Fixed spacing between lines
