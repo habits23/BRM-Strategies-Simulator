@@ -147,12 +147,17 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Strategy Comparison
     *   **Summary Table**: A quick overview of the most important metrics.
         *   **Median Final BR**: The 50th percentile outcome. Half the time you do better, half the time you do worse. It's a good measure of the "typical" result.
+        *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
+        *   **Median Profit (Play)**: The median profit from gameplay only, excluding rakeback.
+        *   **Median Rakeback**: The median rakeback earned. Compare this to "Median Profit (Play)" to see how much your strategy relies on rakeback.
         *   **Risk of Ruin (RoR)**: Your chance of going broke according to your ruin threshold. A critical risk metric.
         *   **Target Prob**: Your chance of hitting your goal.
         *   **P95 Max Downswing**: A measure of a "worst-case" downswing. 5% of the time, you will have a downswing even bigger than this number.
     *   **Comparison Plots**:
         *   **Median Bankroll Progression**: Shows the typical journey of your bankroll over time for each strategy.
         *   **Final Bankroll Distribution**: A key plot. A tall, narrow peak means a strategy is very consistent. A short, wide curve means the strategy is higher risk/higher reward.
+        *   **Psychological Cost: Time Spent Below Bankroll Peak**: A bar chart showing the median percentage of hands a strategy spends 'underwater'. A lower percentage indicates a smoother, less stressful journey.
+        *   **Risk vs. Reward Analysis**: A scatter plot showing the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward).
 
     #### Detailed Analysis (Per Strategy)
     This section gives you a deep dive into each strategy.
@@ -163,6 +168,7 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Maximum Downswing Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
     *   **Key Insights**:
         *   **Hands Distribution**: Shows where you'll spend most of your time. The `Avg. WR` here is the average of all the "assigned luck" win rates for that stake, which is why it might differ slightly from your input.
+        *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
         *   **Median Stop-Losses**: If enabled, this metric shows the typical number of times a stop-loss was triggered during a simulation run. It's a good indicator of session volatility.
         *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
     *   **Percentile Win Rate Analysis**: This explains *why* some runs did well and others did poorly.
@@ -938,6 +944,16 @@ if st.session_state.get("simulation_output"):
     with comp_col2:
         st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
         st.pyplot(engine.plot_final_bankroll_comparison(all_results, config))
+
+    # --- Display new comparison plots in a second 2-column layout ---
+    comp_col3, comp_col4 = st.columns(2)
+    with comp_col3:
+        st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
+        st.pyplot(engine.plot_time_underwater_comparison(all_results, config))
+    with comp_col4:
+        st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
+        st.pyplot(engine.plot_risk_reward_scatter(all_results, config))
+
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():

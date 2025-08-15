@@ -322,7 +322,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
@@ -405,6 +405,15 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     # Calculate median hands played
     median_hands_played = np.median(total_hands_per_sim)
 
+    # Calculate median time spent underwater
+    time_underwater_pct = np.divide(
+        underwater_hands_count,
+        total_hands_per_sim,
+        out=np.zeros_like(underwater_hands_count, dtype=float),
+        where=total_hands_per_sim != 0
+    ) * 100
+    median_time_underwater_pct = np.median(time_underwater_pct)
+
     final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
     target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
     busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
@@ -435,6 +444,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'median_profit_from_play_eur': median_profit_from_play_eur,
         'median_hands_played': median_hands_played,
         'median_stop_losses': median_stop_losses,
+        'median_time_underwater_pct': median_time_underwater_pct,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
@@ -458,6 +468,9 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
     # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
     is_stopped_out = np.zeros(num_sims, dtype=bool)
     stop_loss_triggers = np.zeros(num_sims, dtype=int)
+
+    # --- Underwater Time Initialization ---
+    underwater_hands_count = np.zeros(num_sims, dtype=int)
 
     # --- Demotion Tracking Initialization ---
     initial_rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
@@ -556,6 +569,10 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         new_bankrolls = current_bankrolls + block_profits_eur
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
+        # --- Underwater Time Calculation ---
+        underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
+        underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
+
         # --- Maximum Drawdown Calculation ---
         peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
         current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
@@ -565,7 +582,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
 
 def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -586,6 +603,9 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
     is_stopped_out = np.zeros(num_sims, dtype=bool)
     stop_loss_triggers = np.zeros(num_sims, dtype=int)
+
+    # --- Underwater Time Initialization ---
+    underwater_hands_count = np.zeros(num_sims, dtype=int)
 
     # --- Demotion Tracking Initialization ---
     stake_rules = sorted(strategy.rules, key=lambda r: r['threshold'])
@@ -683,6 +703,10 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         new_bankrolls = current_bankrolls + block_profits_eur
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
+        # --- Underwater Time Calculation ---
+        underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
+        underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
+
         # --- Maximum Drawdown Calculation ---
         peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
         current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
@@ -692,7 +716,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
@@ -917,6 +941,83 @@ def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=N
         plt.close(fig)
     return fig
 
+def plot_time_underwater_comparison(all_results, config, pdf=None):
+    """
+    Creates a bar chart comparing the median percentage of time each strategy
+    spends 'underwater' (below a previous bankroll peak).
+    """
+    strategy_names = list(all_results.keys())
+    underwater_pcts = [res.get('median_time_underwater_pct', 0) for res in all_results.values()]
+
+    if not strategy_names:
+        return plt.figure()
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    # Horizontal bar chart for better readability of strategy names
+    bars = ax.barh(strategy_names, underwater_pcts, color=plt.cm.cividis(np.linspace(0.4, 0.9, len(strategy_names))))
+    
+    ax.set_xlabel('Median Time Spent "Underwater" (%)', fontsize=12)
+    ax.set_title('Psychological Cost: Time Spent Below Bankroll Peak', fontsize=16)
+    ax.invert_yaxis()  # Puts the first strategy at the top
+    ax.grid(axis='x', linestyle='--', alpha=0.7)
+
+    # Add percentage labels to the bars
+    for bar in bars:
+        width = bar.get_width()
+        ax.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center')
+
+    ax.set_xlim(right=max(underwater_pcts) * 1.15 if underwater_pcts else 100)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
+def plot_risk_reward_scatter(all_results, config, pdf=None):
+    """
+    Creates a scatter plot to visualize the risk vs. reward trade-off for each strategy.
+    """
+    strategy_names = list(all_results.keys())
+    
+    # Define the metrics for the axes
+    # X-axis: Risk (lower is better)
+    risk_metric_key = 'risk_of_ruin'
+    risk_values = [res.get(risk_metric_key, 0) for res in all_results.values()]
+    risk_label = 'Risk of Ruin (%)'
+
+    # Y-axis: Reward (higher is better)
+    reward_metric_key = 'median_final_bankroll'
+    reward_values = [res.get(reward_metric_key, 0) for res in all_results.values()]
+    reward_label = f"Median Final Bankroll (€)"
+
+    if not strategy_names or len(strategy_names) < 2:
+        return plt.figure() # Don't plot if there's nothing to compare
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    colors = plt.cm.viridis(np.linspace(0, 1, len(strategy_names)))
+    
+    ax.scatter(risk_values, reward_values, s=150, c=colors, alpha=0.7, edgecolors='w', zorder=10)
+
+    # Annotate each point with the strategy name
+    for i, name in enumerate(strategy_names):
+        ax.text(risk_values[i], reward_values[i] + np.std(reward_values)*0.03, name, fontsize=9, ha='center')
+
+    # Add interpretation quadrants based on the average
+    avg_risk = np.mean(risk_values)
+    avg_reward = np.mean(reward_values)
+    ax.axvline(avg_risk, color='gray', linestyle='--', linewidth=0.8)
+    ax.axhline(avg_reward, color='gray', linestyle='--', linewidth=0.8)
+
+    ax.set_xlabel(risk_label, fontsize=12)
+    ax.set_ylabel(reward_label, fontsize=12)
+    ax.set_title('Risk vs. Reward Analysis', fontsize=16)
+    ax.grid(True, linestyle=':', alpha=0.5)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
 
 def write_analysis_report_to_pdf(pdf, analysis_report):
     """Writes the qualitative analysis report to a PDF page."""
@@ -1149,8 +1250,8 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
     
-    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(2) = 5 pages before details
-    page_counter_for_map = 5
+    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(4) = 7 pages before details
+    page_counter_for_map = 7
     lines_per_page = 45
 
     for strategy_name, result in all_results.items():
@@ -1182,6 +1283,8 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
 
         plot_median_progression_comparison(all_results, config, pdf=pdf)
         plot_final_bankroll_comparison(all_results, config, pdf=pdf)
+        plot_time_underwater_comparison(all_results, config, pdf=pdf)
+        plot_risk_reward_scatter(all_results, config, pdf=pdf)
 
         for strategy_name, result in all_results.items():
             strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
@@ -1283,6 +1386,14 @@ def generate_qualitative_analysis(all_results, config):
             median_sl_val = all_results[most_sl_strats[0]]['median_stop_losses']
             insights.append(f"\n**⚠️ Session Volatility:** The **{names}** strategy {verb} the stop-loss most often (median of {median_sl_val:.1f} times). This indicates it was more prone to large, single-session losses.")
 
+    # Add insight for Time Underwater
+    most_underwater_strats, _ = find_best_worst_with_ties('median_time_underwater_pct', higher_is_better=True)
+    if most_underwater_strats:
+        strat_name = most_underwater_strats[0]
+        underwater_pct = all_results[strat_name]['median_time_underwater_pct']
+        if underwater_pct > 60: # Threshold for a "high" amount of time underwater
+            insights.append(f"\n**🧠 Psychological Cost:** The **'{strat_name}'** strategy spent the most time 'underwater' ({underwater_pct:.0f}% of hands). While potentially profitable, this indicates a psychologically demanding journey with long periods of grinding back to a previous peak.")
+
     insights.append("\n### Why Did They Perform This Way?")
 
     if worst_ror and best_targets and worst_ror in best_targets:
@@ -1375,14 +1486,14 @@ def run_full_analysis(config):
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analyze_strategy_results(
             strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng,
-            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, config
+            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, config
         )
 
     # Generate the final qualitative analysis report
