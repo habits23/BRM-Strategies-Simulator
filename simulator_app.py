@@ -214,7 +214,7 @@ def setup_sanity_check():
             "rules": [{"threshold": 0, "tables": {"NL20": "100%"}}]
         }
     }
-    st.session_state.start_br = 1000
+    st.session_state.start_br = 10000 # Use a large BR to make ruin effectively impossible
     st.session_state.total_hands = 100000
     st.session_state.rb_percent = 0 # Turn off rakeback for simplicity
     st.session_state.num_sims = 10000 # Use a high number for an accurate check
