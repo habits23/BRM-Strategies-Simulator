@@ -109,9 +109,9 @@ with st.expander("Need Help? Click here for the User Guide"):
     *   **`EV Win Rate (bb/100)`**: **This is the most important number!** Use your "All-in Adj bb/100" from your poker tracker (like PokerTracker 4 or Hand2Note). This is the best measure of your true skill.
     *   **`Std Dev (bb/100)`**: Your standard deviation. This measures how "swingy" your results are. You can find this in your tracker. 80-120 is typical for No-Limit Hold'em.
     *   **`Sample Hands`**: How many hands of data you have for this stake. This is crucial! A large sample tells the model to be confident in your EV Win Rate. A small sample tells the model that your true win rate is uncertain, so it will simulate a wider range of possibilities (the "luck" factor).
-    *   **`Win Rate Drop`**: How much you expect your win rate to decrease when moving up from the stake *below* this one. This helps the model guess your win rate at stakes you haven't played much. The lowest stake should always have a drop of 0.
+    *   **`Win Rate Drop`**: The estimated change in your win rate (in bb/100) when moving up from the *previous* stake. Use a positive value for a drop (e.g., 1.5) and a negative value for an expected increase (e.g., -1.0). The lowest stake should have a value of 0.
     *   **`Rake (bb/100)`**: How much rake you pay at this stake. Used to calculate your rakeback profit.
-    *   **Save and Sort Stakes Button**: **Always click this after making changes!** It's required for some strategies to work correctly.
+    *   **Save and Sort Stakes Button**: **Always click this after making changes!** This is required for the Hysteresis (Sticky) strategy to function correctly.
 
     #### Tab 2: Bankroll Management Strategies
     Here you define the rules for moving up and down stakes.
@@ -119,19 +119,22 @@ with st.expander("Need Help? Click here for the User Guide"):
     *   **Standard Strategy**:
         *   You set bankroll `thresholds`. When your bankroll is above a threshold, the corresponding rule applies.
         *   The `table mix` tells the simulator what games to play. You can use:
-            *   **Fixed Ratios**: `NL20: 1`, `NL50: 1` means you play 50% of your tables at NL20 and 50% at NL50.
+            *   **Fixed Ratios**: `NL20: 1`, `NL50: 3` means you play 25% of your tables at NL20 and 75% at NL50.
             *   **Percentages**: `NL100: "100%"` means you play only NL100.
             *   **Percentage Ranges**: `NL200: "20-40%"` models uncertainty in your game selection.
     *   **Hysteresis (Sticky) Strategy**:
-        *   This is a "move up fast, move down slow" strategy designed to prevent you from dropping stakes during small downswings.
-        *   **Moving Up**: You move up to a new stake (e.g., NL50) only when you have enough buy-ins for it (e.g., 30 BIs for NL50).
-        *   **Moving Down (The "Sticky" Part)**: Once you're playing NL50, you *only* move back down to NL20 if your bankroll drops below the requirement for NL20 (e.g., 30 BIs for NL20). This creates a "buffer zone" where you stick to the higher stake.
+        *   This is a "move up fast, move down slow" strategy designed to prevent you from dropping stakes during small downswings. You can set a single buy-in buffer for all stakes or check the box to define a unique buffer for each stake individually.
+        *   **Moving Up**: You move up to a new stake (e.g., NL50) only when you have enough buy-ins for it (e.g., 40 BIs for NL50).
+        *   **Moving Down (The "Sticky" Part)**: Once you're playing NL50, you *only* move back down to NL20 if your bankroll drops below the requirement for NL20 (e.g., 40 BIs for NL20). This creates a "buffer zone" where you stick to the higher stake.
 
     ---
 
     ### Section 3: Interpreting the Results
 
     This is where you see the outcome of thousands of possible poker careers.
+
+    #### Automated Strategy Analysis
+    *   This is the first section you'll see in the results. It's an AI-generated summary that gives you plain-English insights into your strategies. It will tell you which strategy was the safest, which had the most upside, and why one might have performed better than another. This analysis is also included in the PDF report.
 
     #### Strategy Comparison
     *   **Summary Table**: A quick overview of the most important metrics.
@@ -158,7 +161,7 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Play WR**: The actual result from playing the hands, including both the `Assigned WR` and normal session-to-session variance.
         *   **Rakeback WR**: The extra win rate you got from rakeback.
 
-    Finally, you can download a **Full PDF Report** with all of this information and more for offline viewing and sharing. Happy simulating!
+    Finally, you can download a **Full PDF Report** with all of this information, including the Automated Strategy Analysis, for offline viewing and sharing. Happy simulating!
     """)
 
 # --- Session State Initialization ---
