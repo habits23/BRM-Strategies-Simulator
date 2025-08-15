@@ -11,10 +11,10 @@ import simulation_engine as engine
 # --- Default Data for First Run ---
 DEFAULT_STAKES_DATA = pd.DataFrame([
     # Using more realistic win rates for today's online games, based on user feedback.
-    {"name": "NL20", "bb_size": 0.20, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 90.0, "sample_hands": 50000, "win_rate_drop": 0.0, "rake_bb_per_100": 10.0},
+    {"name": "NL20", "bb_size": 0.20, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 100.0, "sample_hands": 50000, "win_rate_drop": 0.0, "rake_bb_per_100": 10.0},
     {"name": "NL50", "bb_size": 0.50, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 100.0, "sample_hands": 40000, "win_rate_drop": 0.0, "rake_bb_per_100": 8.0},
     {"name": "NL100", "bb_size": 1.00, "bb_per_100": 1.0, "ev_bb_per_100": 1.0, "std_dev_per_100": 100.0, "sample_hands": 20000, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0},
-    {"name": "NL200", "bb_size": 2.00, "bb_per_100": 0.5, "ev_bb_per_100": 0.5, "std_dev_per_100": 110.0, "sample_hands": 0, "win_rate_drop": 0.5, "rake_bb_per_100": 5.0},
+    {"name": "NL200", "bb_size": 2.00, "bb_per_100": 0.5, "ev_bb_per_100": 0.5, "std_dev_per_100": 100.0, "sample_hands": 0, "win_rate_drop": 0.5, "rake_bb_per_100": 5.0},
 ])
 
 DEFAULT_STRATEGIES = {
