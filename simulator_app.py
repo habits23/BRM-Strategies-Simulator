@@ -76,6 +76,102 @@ st.set_page_config(layout="wide", page_title="Poker Bankroll Simulator")
 st.title("Poker Bankroll Simulator")
 st.write("An interactive tool to simulate poker bankroll progression based on your data and strategies. Based on the logic from `Final BR Simulator v1_5.py`.")
 
+with st.expander("Need Help? Click here for the User Guide"):
+    st.markdown("""
+    ## A User's Guide to the Poker Bankroll Simulator
+
+    Welcome! This tool is designed to help you test different bankroll management (BRM) strategies to see how they might perform over hundreds of thousands of hands. It's not a crystal ball, but by running thousands of simulations, it can give you powerful insights into the risks and rewards of your chosen approach.
+
+    This guide will walk you through every setting and show you how to make sense of the results.
+
+    ### Section 1: The Control Panel (Sidebar)
+
+    This is where you set the core parameters for the simulation.
+
+    #### General Settings
+    *   **Starting Bankroll**: How much money you're starting with.
+    *   **Target Bankroll**: Your goal. The simulation will tell you the probability of hitting this target.
+    *   **Ruin Threshold**: Your "game over" point. If a simulated version of you drops to this amount, that run stops.
+    *   **Number of Simulations**: How many "alternate realities" to run. More is better (2,000+ is recommended for accurate results), but it takes longer. Think of it as running the same experiment thousands of times to get a reliable average.
+    *   **Total Hands to Simulate**: The time horizon for each simulation. How many hands will each "alternate you" play? 500,000 is a good long-term sample.
+
+    #### Gameplay & Rakeback Settings
+    *   **Hands per Bankroll Check**: How often the simulation checks your bankroll to decide if you should move up or down in stakes. 1,000 hands is a common choice.
+    *   **Rakeback (%)**: The percentage of rake you get back. This is free money that gets added to your bankroll during the simulation.
+
+    #### Advanced Statistical Settings
+    This is the "secret sauce" of the simulator that makes it more realistic than a simple variance calculator.
+
+    *   **Prior Sample Size**: This tells the model how much to trust your win rate data. Think of it as the model's "skepticism." A high value means the model is more skeptical of small sample sizes and will introduce more long-term "luck" (good and bad) into the simulation.
+        *   **Example**: If this is set to 50,000 and you provide a stake with a 5,000 hand sample, the model thinks, "This could just be a lucky streak," and will simulate futures where your true win rate is both higher and lower than what you've observed.
+    *   **Weight for 0-Hand Stake Estimates**: For stakes you've never played, this slider balances your own guess (1.0) vs. the model's guess based on the stakes below it (0.0). A value of 0.5 is a good middle ground.
+
+    #### Other Settings
+    *   **Random Seed**: This is like the specific shuffle of a deck of cards. Using the same seed will always give you the exact same results. Change the seed (or click the 🎲 button) to get a different "shuffle" and a new set of random outcomes.
+    *   **Save & Load Configuration**: Use these buttons to save all your settings to a file and load them back later. Very useful!
+
+    ---
+
+    ### Section 2: Your Data & Strategies (Main Tabs)
+
+    #### Tab 1: Stakes Data
+    This is where you tell the simulator about your performance.
+
+    *   **`EV Win Rate (bb/100)`**: **This is the most important number!** Use your "All-in Adj BB/100" from your poker tracker (like PokerTracker 4 or Hand2Note). This is the best measure of your true skill.
+    *   **`Std Dev (bb/100)`**: Your standard deviation. This measures how "swingy" your results are. You can find this in your tracker. 80-120 is typical for No-Limit Hold'em.
+    *   **`Sample Hands`**: How many hands of data you have for this stake. This is crucial! A large sample tells the model to be confident in your EV Win Rate. A small sample tells the model that your true win rate is uncertain, so it will simulate a wider range of possibilities (the "luck" factor).
+    *   **`Win Rate Drop`**: How much you expect your win rate to decrease when moving up from the stake *below* this one. This helps the model guess your win rate at stakes you haven't played much. The lowest stake should always have a drop of 0.
+    *   **`Rake (bb/100)`**: How much rake you pay at this stake. Used to calculate your rakeback profit.
+    *   **Save and Sort Stakes Button**: **Always click this after making changes!** It's required for some strategies to work correctly.
+
+    #### Tab 2: Bankroll Management Strategies
+    Here you define the rules for moving up and down stakes.
+
+    *   **Standard Strategy**:
+        *   You set bankroll `thresholds`. When your bankroll is above a threshold, the corresponding rule applies.
+        *   The `table mix` tells the simulator what games to play. You can use:
+            *   **Fixed Ratios**: `NL20: 1`, `NL50: 1` means you play 50% of your tables at NL20 and 50% at NL50.
+            *   **Percentages**: `NL100: "100%"` means you play only NL100.
+            *   **Percentage Ranges**: `NL200: "20-40%"` models uncertainty in your game selection.
+    *   **Hysteresis (Sticky) Strategy**:
+        *   This is a "move up fast, move down slow" strategy designed to prevent you from dropping stakes during small downswings.
+        *   **Moving Up**: You move up to a new stake (e.g., NL50) only when you have enough buy-ins for it (e.g., 30 BIs for NL50).
+        *   **Moving Down (The "Sticky" Part)**: Once you're playing NL50, you *only* move back down to NL20 if your bankroll drops below the requirement for NL20 (e.g., 30 BIs for NL20). This creates a "buffer zone" where you stick to the higher stake.
+
+    ---
+
+    ### Section 3: Interpreting the Results
+
+    This is where you see the outcome of thousands of possible poker careers.
+
+    #### Strategy Comparison
+    *   **Summary Table**: A quick overview of the most important metrics.
+        *   **Median Final BR**: The 50th percentile outcome. Half the time you do better, half the time you do worse. It's a good measure of the "typical" result.
+        *   **Risk of Ruin (RoR)**: Your chance of going broke according to your ruin threshold. A critical risk metric.
+        *   **Target Prob**: Your chance of hitting your goal.
+        *   **P95 Max Drawdown**: A measure of a "worst-case" downswing. 5% of the time, you will have a downswing even bigger than this number.
+    *   **Comparison Plots**:
+        *   **Median Bankroll Progression**: Shows the typical journey of your bankroll over time for each strategy.
+        *   **Final Bankroll Distribution**: A key plot. A tall, narrow peak means a strategy is very consistent. A short, wide curve means the strategy is higher risk/higher reward.
+
+    #### Detailed Analysis (Per Strategy)
+    This section gives you a deep dive into each strategy.
+
+    *   **Visuals**:
+        *   **Bankroll Progression**: Shows the median path (blue line), the 25th-75th percentile range (shaded area), and 50 random individual simulations (grey lines) to give you a feel for the variance.
+        *   **Distribution of Assigned Luck (WR)**: This chart visualizes the "luck" factor. It shows the range of "true skill + long-term luck" the simulation assigns to different runs. The width of this curve is determined by your `Sample Hands` input—less data means more uncertainty and a wider curve.
+        *   **Maximum Drawdown Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
+    *   **Key Insights**:
+        *   **Hands Distribution**: Shows where you'll spend most of your time. The `Avg. WR` here is the average of all the "assigned luck" win rates for that stake, which is why it might differ slightly from your input.
+        *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
+    *   **Percentile Win Rate Analysis**: This explains *why* some runs did well and others did poorly.
+        *   **Assigned WR**: The "true" win rate (skill + long-term luck) the simulator assigned to the entire run. A high number here means this simulated "you" was on a long-term heater.
+        *   **Play WR**: The actual result from playing the hands, including both the `Assigned WR` and normal session-to-session variance.
+        *   **Rakeback WR**: The extra win rate you got from rakeback.
+
+    Finally, you can download a **Full PDF Report** with all of this information and more for offline viewing and sharing. Happy simulating!
+    """)
+
 # --- Session State Initialization ---
 # This block ensures all necessary keys are in the session state with default values
 # on the first run. This prevents Streamlit warnings about setting a widget's value
