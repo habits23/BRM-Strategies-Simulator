@@ -362,6 +362,36 @@ def sync_strategy_rules(strategy_name):
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
 
+# Inject custom CSS to style the primary button green.
+st.sidebar.markdown("""
+<style>
+    /* Target the primary button used for 'Run Simulation' */
+    button[data-testid="baseButton-primary"] {
+        background-color: #4CAF50 !important; /* A nice green */
+        color: white !important;
+        border: 1px solid #4CAF50 !important;
+    }
+    button[data-testid="baseButton-primary"]:hover {
+        background-color: #45a049 !important; /* A slightly darker green on hover */
+        border: 1px solid #45a049 !important;
+        color: white !important;
+    }
+    button[data-testid="baseButton-primary"]:active {
+        background-color: #3e8e41 !important; /* An even darker green for when clicked */
+        border: 1px solid #3e8e41 !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.sidebar.button(
+    "**Run Simulation**",
+    on_click=click_run_button,
+    use_container_width=True,
+    type="primary",
+    help="Click to run the simulation with the current settings."
+)
+
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
     st.number_input("Target Bankroll (€)", min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
@@ -739,42 +769,6 @@ with tab2:
                     on_click=sync_strategy_rules, args=(name,),
                     help="Click to save any changes and sort the rules by 'Bankroll Threshold'."
                 )
-
-st.divider()
-
-# Inject custom CSS to style the primary button green.
-st.markdown("""
-<style>
-    /* Target the primary button used for 'Run Simulation' */
-    button[data-testid="baseButton-primary"] {
-        background-color: #4CAF50 !important; /* A nice green */
-        color: white !important;
-        border: 1px solid #4CAF50 !important;
-    }
-    button[data-testid="baseButton-primary"]:hover {
-        background-color: #45a049 !important; /* A slightly darker green on hover */
-        border: 1px solid #45a049 !important;
-        color: white !important;
-    }
-    button[data-testid="baseButton-primary"]:active {
-        background-color: #3e8e41 !important; /* An even darker green for when clicked */
-        border: 1px solid #3e8e41 !important;
-        color: white !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Use columns to create an even smaller, centered button
-_, col2, _ = st.columns([3, 2, 3])
-with col2:
-    st.button(
-        "**Run Simulation**",
-        on_click=click_run_button,
-        use_container_width=True,
-        type="primary",
-        help="Click to run the simulation with the current settings."
-    )
-st.divider()
 
 # --- Main Logic to Run Simulation and Display Results ---
 
