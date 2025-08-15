@@ -148,15 +148,18 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Strategy Comparison
     *   **Summary Table**: A quick overview of the most important metrics.
         *   **Median Final BR**: The 50th percentile outcome. Half the time you do better, half the time you do worse. It's a good measure of the "typical" result.
+        *   **Mode Final BR**: The most frequently occurring final bankroll outcome.
+        *   **Median Growth**: The median percentage growth from the starting bankroll.
         *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
         *   **Median Profit (Play)**: The median profit from gameplay only, excluding rakeback.
         *   **Median Rakeback**: The median rakeback earned. Compare this to "Median Profit (Play)" to see how much your strategy relies on rakeback.
         *   **Risk of Ruin (RoR)**: Your chance of going broke according to your ruin threshold. A critical risk metric.
         *   **Target Prob**: Your chance of hitting your goal.
+        *   **5th %ile BR**: The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value.
         *   **P95 Max Downswing**: A measure of a "worst-case" downswing. 5% of the time, you will have a downswing even bigger than this number.
     *   **Comparison Plots**:
         *   **Median Bankroll Progression**: Shows the typical journey of your bankroll over time for each strategy.
-        *   **Final Bankroll Distribution**: A key plot. A tall, narrow peak means a strategy is very consistent. A short, wide curve means the strategy is higher risk/higher reward.
+        *   **Final Bankroll Distribution**: A key plot. A tall, narrow peak means a strategy is very consistent. A short, wide curve means the strategy has a wider range of outcomes (higher risk/reward).
         *   **Psychological Cost: Time Spent Below Bankroll Peak**: A bar chart showing the median percentage of hands a strategy spends 'underwater'. A lower percentage indicates a smoother, less stressful journey.
         *   **Risk vs. Reward Analysis**: A scatter plot showing the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward).
 
@@ -172,7 +175,13 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
         *   **Median Stop-Losses**: If enabled, this metric shows the typical number of times a stop-loss was triggered during a simulation run. It's a good indicator of session volatility.
         *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
-    *   **Percentile Win Rate Analysis**: This explains *why* some runs did well and others did poorly.
+    *   **Percentile Win Rate Analysis**: This section is crucial for understanding *why* some runs did well and others did poorly. It shows a five-number summary (5th, 25th, Median, 75th, 95th) of outcomes, giving you a detailed look at the full spectrum of possibilities.
+        *   **5th Percentile**: A typical "bad run" or unlucky outcome.
+        *   **25th Percentile**: A "mildly bad" run. Not a disaster, but a common losing scenario.
+        *   **Median (50th)**: The outcome for the run that finished with the median final bankroll.
+        *   **75th Percentile**: A "mildly good" run. A common winning scenario.
+        *   **95th Percentile**: A typical "good run" or heater.
+    *   For each percentile, you'll see these metrics:
         *   **Assigned WR**: The "true" win rate (skill + long-term luck) the simulator assigned to the entire run. A high number here means this simulated "you" was on a long-term heater.
         *   **Play WR**: The actual result from playing the hands, including both the `Assigned WR` and normal session-to-session variance.
         *   **Rakeback WR**: The extra win rate you got from rakeback.
@@ -404,7 +413,7 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
     if st.session_state.rb_percent == 0:
         st.info("Note: Setting rakeback to 0% can significantly reduce profitability and increase Risk of Ruin, especially for aggressive strategies.")
-    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block. The loss is calculated based on gameplay profit before rakeback. This reduces session volatility but can increase long-term Risk of Ruin by increasing total exposure to variance over the simulation's time horizon.")
+    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block after losing more than the specified amount in a single block. This simulates taking a break after a big losing session. The loss is calculated based on gameplay profit (before rakeback).")
     if st.session_state.enable_stop_loss:
         st.number_input(
             "Stop-Loss (in big blinds)",
@@ -705,7 +714,7 @@ with tab2:
 
                     st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
                         "Buy-in Buffer (BIs)", value=num_buy_ins_config, min_value=1, key=f"bi_{name}",
-                        help="The number of buy-ins (100 bbs) required to move up/down stakes."
+                        help="The number of buy-ins (100 bbs) used to calculate the bankroll thresholds for moving between stakes. See the info box above for a detailed explanation of the 'sticky' logic."
                     )
 
                 if 'rules' in st.session_state.strategy_configs[name]:
