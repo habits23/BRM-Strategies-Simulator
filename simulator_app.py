@@ -421,6 +421,7 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     if st.session_state.enable_stop_loss:
         st.number_input(
             "Stop-Loss (in big blinds)",
+            value=st.session_state.stop_loss_bb,
             min_value=1,
             step=10,
             key="stop_loss_bb",
