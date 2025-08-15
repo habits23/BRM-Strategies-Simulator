@@ -212,6 +212,7 @@ def setup_sanity_check():
     st.session_state.total_hands = 100000
     st.session_state.rb_percent = 0 # Turn off rakeback for simplicity
     st.session_state.prior_sample = 10_000_000 # Effectively disable Bayesian model
+    st.session_state.ruin_thresh = 0 # Set ruin to 0 to avoid truncating results
     st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
 
 def add_strategy():
@@ -947,12 +948,16 @@ if st.session_state.get("simulation_output"):
                     actual_median_br = result['median_final_bankroll']
                     actual_std_dev_br = np.std(result['final_bankrolls'])
 
+                    # Calculate percentage differences
+                    median_diff_pct = ((actual_median_br - expected_final_br) / expected_final_br) * 100 if expected_final_br != 0 else 0
+                    std_dev_diff_pct = ((actual_std_dev_br - expected_std_dev_eur) / expected_std_dev_eur) * 100 if expected_std_dev_eur != 0 else 0
+
                     st.markdown("This mode compares the simulation's output against known mathematical formulas for a simple, single-stake scenario. The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.")
                     col1, col2 = st.columns(2)
                     col1.metric("Expected Median Final Bankroll", f"€{expected_final_br:,.2f}", help="Calculated as: Start BR + (EV Win Rate * Total Hands * bb Size)")
-                    col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f}")
+                    col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f} ({median_diff_pct:+.2f}%)")
                     col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
-                    col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f}")
+                    col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5, col6 = st.columns(6)
