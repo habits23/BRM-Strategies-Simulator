@@ -345,8 +345,6 @@ def sync_strategy_rules(strategy_name):
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
 
-st.sidebar.button("Run Simulation", on_click=click_run_button, use_container_width=True)
-
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
     st.number_input("Target Bankroll (€)", min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
@@ -721,6 +719,10 @@ with tab2:
                     on_click=sync_strategy_rules, args=(name,),
                     help="Click to save any changes and sort the rules by 'Bankroll Threshold'."
                 )
+
+st.divider()
+st.button("Run Simulation", on_click=click_run_button, use_container_width=True, type="primary", help="Click to run the simulation with the current settings.")
+st.divider()
 
 # --- Main Logic to Run Simulation and Display Results ---
 
