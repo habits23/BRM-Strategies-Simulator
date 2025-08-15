@@ -797,7 +797,7 @@ if st.session_state.get("simulation_output"):
     st.header("Simulation Results")
 
     if analysis_report:
-        with st.expander("Automated Strategy Analysis", expanded=True):
+        with st.expander("Automated Strategy Analysis", expanded=False):
             st.markdown(analysis_report)
 
     st.subheader("Strategy Comparison")

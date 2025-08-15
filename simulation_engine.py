@@ -1140,13 +1140,13 @@ def generate_qualitative_analysis(all_results, config):
     if best_median:
         insights.append(f"\n**🏆 Best Typical Outcome:** The **'{best_median}'** strategy achieved the highest median final bankroll (€{all_results[best_median]['median_final_bankroll']:,.0f}). This suggests it provides the most consistent growth for the average simulation run.")
     if worst_median and best_median != worst_median:
-         insights.append(f"**📉 Worst Typical Outcome:** The **'{worst_median}'** strategy had the lowest median result (€{all_results[worst_median]['median_final_bankroll']:,.0f}). Check its Risk of Ruin and Downswing metrics to understand why.")
+         insights.append(f"\n**📉 Worst Typical Outcome:** The **'{worst_median}'** strategy had the lowest median result (€{all_results[worst_median]['median_final_bankroll']:,.0f}). Check its Risk of Ruin and Downswing metrics to understand why.")
 
     best_ror, worst_ror = find_best_worst('risk_of_ruin', higher_is_better=False)
     if best_ror:
         insights.append(f"\n**🛡️ Safest Strategy:** With a Risk of Ruin of only {all_results[best_ror]['risk_of_ruin']:.2f}%, **'{best_ror}'** was the least likely to go broke. This is ideal for risk-averse players.")
     if worst_ror and best_ror != worst_ror:
-        insights.append(f"**🎲 Riskiest Strategy:** **'{worst_ror}'** had the highest Risk of Ruin at {all_results[worst_ror]['risk_of_ruin']:.2f}%. This strategy is significantly more volatile.")
+        insights.append(f"\n**🎲 Riskiest Strategy:** **'{worst_ror}'** had the highest Risk of Ruin at {all_results[worst_ror]['risk_of_ruin']:.2f}%. This strategy is significantly more volatile.")
 
     best_target, _ = find_best_worst('target_prob', higher_is_better=True)
     if best_target:
@@ -1156,7 +1156,7 @@ def generate_qualitative_analysis(all_results, config):
     if best_downswing:
         insights.append(f"\n**😌 Smoothest Ride:** The **'{best_downswing}'** strategy had the smallest median downswing (€{all_results[best_downswing]['median_max_downswing']:,.0f}), making it the least stressful to play.")
     if worst_downswing and best_downswing != worst_downswing:
-        insights.append(f"**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
+        insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
 
     insights.append("\n### Why Did They Perform This Way?")
 
