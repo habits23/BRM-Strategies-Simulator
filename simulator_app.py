@@ -10,26 +10,15 @@ import simulation_engine as engine
 
 # --- Default Data for First Run ---
 DEFAULT_STAKES_DATA = pd.DataFrame([
-    {
-        "name": "NL20", "bb_size": 0.20, "bb_per_100": 8.0, "ev_bb_per_100": 8.0, "std_dev_per_100": 90.0,
-        "sample_hands": 40000, "win_rate_drop": 0.0, "rake_bb_per_100": 16.0
-    },
-    {
-        "name": "NL50", "bb_size": 0.50, "bb_per_100": 4.0, "ev_bb_per_100": 4.0, "std_dev_per_100": 100.0,
-        "sample_hands": 25000, "win_rate_drop": 2.0, "rake_bb_per_100": 10.0
-    },
-    {
-        "name": "NL100", "bb_size": 1.00, "bb_per_100": 2.5, "ev_bb_per_100": 2.5, "std_dev_per_100": 100.0,
-        "sample_hands": 20000, "win_rate_drop": 1.5, "rake_bb_per_100": 7.0
-    },
-    {
-        "name": "NL200", "bb_size": 2.00, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 100.0,
-        "sample_hands": 0, "win_rate_drop": 1.0, "rake_bb_per_100": 5.0
-    },
+    # Using more realistic win rates for today's online games, based on user feedback.
+    {"name": "NL20", "bb_size": 0.20, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 90.0, "sample_hands": 50000, "win_rate_drop": 0.0, "rake_bb_per_100": 10.0},
+    {"name": "NL50", "bb_size": 0.50, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 100.0, "sample_hands": 40000, "win_rate_drop": 0.0, "rake_bb_per_100": 8.0},
+    {"name": "NL100", "bb_size": 1.00, "bb_per_100": 1.0, "ev_bb_per_100": 1.0, "std_dev_per_100": 100.0, "sample_hands": 20000, "win_rate_drop": 1.0, "rake_bb_per_100": 7.0},
+    {"name": "NL200", "bb_size": 2.00, "bb_per_100": 0.5, "ev_bb_per_100": 0.5, "std_dev_per_100": 110.0, "sample_hands": 0, "win_rate_drop": 0.5, "rake_bb_per_100": 5.0},
 ])
 
 DEFAULT_STRATEGIES = {
-    "Balanced (50 BI Progressive)": { # 50 BI for 100% mix, ~35-40 BI for shot-taking
+    "Balanced (50 BI)": { # 50 BI for 100% mix, ~37.5 BI for shot-taking
         "type": "standard",
         "rules": [
             {"threshold": 10000, "tables": {"NL200": "100%"}},
@@ -37,11 +26,11 @@ DEFAULT_STRATEGIES = {
             {"threshold": 5000, "tables": {"NL100": "100%"}},
             {"threshold": 3750, "tables": {"NL50": "50%", "NL100": "50%"}},
             {"threshold": 2500, "tables": {"NL50": "100%"}},
-            {"threshold": 1750, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 1875, "tables": {"NL20": "50%", "NL50": "50%"}},
             {"threshold": 1000, "tables": {"NL20": "100%"}},
         ]
     },
-    "Aggressive (30 BI Shot-Take)": { # 30 BI for 100% mix, ~22.5 BI for shot-taking
+    "Aggressive (30 BI)": { # 30 BI for 100% mix, ~22.5 BI for shot-taking
         "type": "standard",
         "rules": [
             {"threshold": 6000, "tables": {"NL200": "100%"}},
@@ -49,11 +38,11 @@ DEFAULT_STRATEGIES = {
             {"threshold": 3000, "tables": {"NL100": "100%"}},
             {"threshold": 2250, "tables": {"NL50": "50%", "NL100": "50%"}},
             {"threshold": 1500, "tables": {"NL50": "100%"}},
-            {"threshold": 900, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 1125, "tables": {"NL20": "50%", "NL50": "50%"}},
             {"threshold": 600, "tables": {"NL20": "100%"}},
         ]
     },
-    "Conservative (100 BI Rule)": { # 100 BI for 100% mix, ~70-75 BI for shot-taking
+    "Conservative (100 BI)": { # 100 BI for 100% mix, ~75 BI for shot-taking
         "type": "standard",
         "rules": [
             {"threshold": 20000, "tables": {"NL200": "100%"}},
@@ -61,13 +50,13 @@ DEFAULT_STRATEGIES = {
             {"threshold": 10000, "tables": {"NL100": "100%"}},
             {"threshold": 7500, "tables": {"NL50": "50%", "NL100": "50%"}},
             {"threshold": 5000, "tables": {"NL50": "100%"}},
-            {"threshold": 3500, "tables": {"NL20": "50%", "NL50": "50%"}},
+            {"threshold": 3750, "tables": {"NL20": "50%", "NL50": "50%"}},
             {"threshold": 2000, "tables": {"NL20": "100%"}},
         ]
     },
-    "Hysteresis (Sticky)": {
+    "Hysteresis (Sticky 40 BI)": {
         "type": "hysteresis",
-        "num_buy_ins": 30
+        "num_buy_ins": 40
     }
 }
 
