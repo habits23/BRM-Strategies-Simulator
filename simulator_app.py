@@ -909,7 +909,7 @@ if st.session_state.get("simulation_output"):
             ),
             "Median Rakeback": st.column_config.TextColumn(
                 "Median Rakeback",
-                help="The median amount of rakeback earned in Euros across all simulations."
+                help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
             ),
             "Risk of Ruin (%)": st.column_config.TextColumn(
                 "Risk of Ruin (%)",
@@ -974,18 +974,19 @@ if st.session_state.get("simulation_output"):
                     col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
             st.subheader(f"Key Metrics for '{strategy_name}'")
-            num_metrics = 8 if config.get("STOP_LOSS_BB", 0) > 0 else 7
+            num_metrics = 9 if config.get("STOP_LOSS_BB", 0) > 0 else 8
             metric_cols = st.columns(num_metrics)
-            col1, col2, col3, col4, col5, col6, col7 = metric_cols[:7]
+            col1, col2, col3, col4, col5, col6, col7, col8 = metric_cols[:8]
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
             col2.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
-            col3.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
-            col4.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
-            col5.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col6.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col7.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
-            if num_metrics == 8:
-                metric_cols[7].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
+            col3.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
+            col4.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
+            col5.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+            col6.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+            col7.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col8.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+            if num_metrics == 9:
+                metric_cols[8].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
 
             st.subheader("Visual Analysis")
             row1_col1, row1_col2 = st.columns(2)
@@ -1079,12 +1080,12 @@ if st.session_state.get("simulation_output"):
                 st.markdown("**Risk of Demotion**", help="The percentage of simulations that were forced to move down after reaching a specific stake.")
                 stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                 sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
-                
-                demotion_text = []
+
+                demotion_markdown = ""
                 for stake, data in sorted_demotions:
                     if data['reached_count'] > 0: # Only show relevant stakes
-                        demotion_text.append(f"From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_")
-                st.write(" / ".join(demotion_text))
+                        demotion_markdown += f"- From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_\n"
+                st.markdown(demotion_markdown)
 
             # --- Percentile Win Rate Analysis Section ---
             if result.get('percentile_win_rates'):
