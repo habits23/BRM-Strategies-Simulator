@@ -750,13 +750,17 @@ def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name
         plt.close(fig)
     return fig
 
-def plot_median_progression_comparison(all_results, config, pdf=None):
+def plot_median_progression_comparison(all_results, config, color_map=None, pdf=None):
     """Compares the median bankroll progression for all strategies on a single plot."""
     fig, ax = plt.subplots(figsize=(8, 5)) # Made consistent with other compact plots
-    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+    if color_map is None:
+        # Fallback for generating colors internally if no map is provided
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
-    for i, (strategy_name, result) in enumerate(all_results.items()):
-        ax.plot(result['hands_history'], result['median_history'], label=strategy_name, linewidth=2.5, color=colors[i])
+    for strategy_name, result in all_results.items():
+        color = color_map.get(strategy_name)
+        ax.plot(result['hands_history'], result['median_history'], label=strategy_name, linewidth=2.5, color=color)   
 
     ax.axhline(config['STARTING_BANKROLL_EUR'], color='gray', linestyle='--', label='Starting Bankroll')
     ax.axhline(config['TARGET_BANKROLL'], color='gold', linestyle='-.', label=f"Target: €{config['TARGET_BANKROLL']}")
@@ -771,18 +775,23 @@ def plot_median_progression_comparison(all_results, config, pdf=None):
         plt.close(fig)
     return fig
 
-def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, config, pdf=None):
+def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, config, pdf=None, color_map=None):
     """Creates a histogram of final bankrolls with key metrics highlighted."""
     # Filter out bankrolls that are too high to improve the visibility of the main data cluster.
     max_x_limit = np.percentile(final_bankrolls, 99.0)
     filtered_bankrolls = final_bankrolls[final_bankrolls <= max_x_limit]
+
+    # Use the strategy's assigned color if a map is provided
+    hist_color = 'skyblue'
+    if color_map and strategy_name in color_map:
+        hist_color = color_map[strategy_name]
 
     median_val = result['median_final_bankroll']
     # We only need the 5th and 95th percentiles for this cleaner plot.
     percentiles = {p: np.percentile(final_bankrolls, p) for p in [5, 95]}
 
     fig, ax = plt.subplots(figsize=(8, 5)) # Further reduced size for a more compact app layout
-    ax.hist(filtered_bankrolls, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
+    ax.hist(filtered_bankrolls, bins=50, color=hist_color, edgecolor='black', alpha=0.7)
 
     # Key metrics
     ax.axvline(median_val, color='red', linestyle='dashed', linewidth=2, label=f'Median: €{median_val:,.2f}')
@@ -842,12 +851,16 @@ def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_w
         plt.close(fig)
     return fig
 
-def plot_final_bankroll_comparison(all_results, config, pdf=None):
+def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None):
     """
     Creates an overlapping density plot to compare the final bankroll distributions of all strategies.
     """
     fig, ax = plt.subplots(figsize=(8, 5))
-    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+
+    if color_map is None:
+        # Fallback for generating colors internally if no map is provided
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
     # --- Dynamically determine the x-axis range for a clearer plot --- #
     # Combine all results to find a global range that fits all strategies well. #
@@ -880,26 +893,27 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
 
     x_grid = np.linspace(x_min, x_max, 1000)
 
-    for i, (strategy_name, result) in enumerate(all_results.items()):
+    for strategy_name, result in all_results.items():
         final_bankrolls = result['final_bankrolls']
+        color = color_map.get(strategy_name)
         if len(final_bankrolls) > 1:
             try:
                 # FIX: Filter the data before calculating the KDE.
                 # This prevents extreme outliers (the top 1% we've already
                 # excluded from the x-axis) from skewing the density plot.
                 # The result is a plot that better represents the main body of the distribution.
-                filtered_bankrolls = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max)]
+                filtered_bankrolls = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max) & (final_bankrolls > config['RUIN_THRESHOLD'])]
                 if len(filtered_bankrolls) < 2: # Need at least 2 points for KDE
-                    ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)")
+                    ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=color)
                     continue
 
                 kde = gaussian_kde(filtered_bankrolls)
                 density = kde(x_grid)
-                ax.plot(x_grid, density, label=strategy_name, color=colors[i], linewidth=2)
-                ax.fill_between(x_grid, density, color=colors[i], alpha=0.1)
+                ax.plot(x_grid, density, label=strategy_name, color=color, linewidth=2)
+                ax.fill_between(x_grid, density, color=color, alpha=0.1)
             except (np.linalg.LinAlgError, ValueError):
                 # Fallback for datasets that are not suitable for KDE
-                ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)")
+                ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=color)
 
     ax.set_title('Comparison of Final Bankroll Distributions', fontsize=16)
     ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
@@ -912,10 +926,15 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
         plt.close(fig)
     return fig
 
-def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=None):
+def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=None, color_map=None):
     """Creates a histogram of maximum downswings with key metrics highlighted."""
     if max_downswings is None or len(max_downswings) == 0:
         return plt.figure() # Return an empty figure if no data
+
+    # Use the strategy's assigned color if a map is provided
+    hist_color = 'salmon'
+    if color_map and strategy_name in color_map:
+        hist_color = color_map[strategy_name]
 
     # Filter out extreme outliers for better visibility
     max_x_limit = np.percentile(max_downswings, 99.0)
@@ -925,7 +944,7 @@ def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=N
     p95_downswing = result['p95_max_downswing']
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(filtered_downswings, bins=50, color='salmon', edgecolor='black', alpha=0.7)
+    ax.hist(filtered_downswings, bins=50, color=hist_color, edgecolor='black', alpha=0.7)
 
     ax.axvline(median_downswing, color='darkred', linestyle='dashed', linewidth=2, label=f'Median Downswing: €{median_downswing:,.2f}')
     ax.axvline(p95_downswing, color='purple', linestyle=':', linewidth=2, label=f'95th Pct. Downswing: €{p95_downswing:,.2f}')
@@ -941,7 +960,7 @@ def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=N
         plt.close(fig)
     return fig
 
-def plot_time_underwater_comparison(all_results, config, pdf=None):
+def plot_time_underwater_comparison(all_results, config, color_map=None, pdf=None):
     """
     Creates a bar chart comparing the median percentage of time each strategy
     spends 'underwater' (below a previous bankroll peak).
@@ -949,13 +968,21 @@ def plot_time_underwater_comparison(all_results, config, pdf=None):
     strategy_names = list(all_results.keys())
     underwater_pcts = [res.get('median_time_underwater_pct', 0) for res in all_results.values()]
 
+    if color_map is None:
+        # Fallback for generating colors internally if no map is provided
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
+    # Get colors in the correct order for the plot
+    plot_colors = [color_map.get(name) for name in strategy_names]
+
     if not strategy_names:
         return plt.figure()
 
     fig, ax = plt.subplots(figsize=(8, 5))
     
     # Horizontal bar chart for better readability of strategy names
-    bars = ax.barh(strategy_names, underwater_pcts, color=plt.cm.cividis(np.linspace(0.4, 0.9, len(strategy_names))))
+    bars = ax.barh(strategy_names, underwater_pcts, color=plot_colors)
     
     ax.set_xlabel('Median Time Spent "Underwater" (%)', fontsize=12)
     ax.set_title('Psychological Cost: Time Spent Below Bankroll Peak', fontsize=16)
@@ -974,7 +1001,7 @@ def plot_time_underwater_comparison(all_results, config, pdf=None):
         plt.close(fig)
     return fig
 
-def plot_risk_reward_scatter(all_results, config, pdf=None):
+def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     """
     Creates a scatter plot to visualize the risk vs. reward trade-off for each strategy.
     """
@@ -995,9 +1022,15 @@ def plot_risk_reward_scatter(all_results, config, pdf=None):
         return plt.figure() # Don't plot if there's nothing to compare
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    colors = plt.cm.viridis(np.linspace(0, 1, len(strategy_names)))
-    
-    ax.scatter(risk_values, reward_values, s=150, c=colors, alpha=0.7, edgecolors='w', zorder=10)
+
+    if color_map is None:
+        # Fallback for generating colors internally if no map is provided
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
+    plot_colors = [color_map.get(name) for name in strategy_names]
+
+    ax.scatter(risk_values, reward_values, s=150, c=plot_colors, alpha=0.7, edgecolors='w', zorder=10)
 
     # Annotate each point with the strategy name
     for i, name in enumerate(strategy_names):
@@ -1274,6 +1307,10 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         # Fallback if no sample hands are provided
         weighted_input_wr = config['STAKES_DATA'][0]['ev_bb_per_100'] if config['STAKES_DATA'] else 1.5
 
+    # Create the color map once for the entire PDF generation process
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+    color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
     with PdfPages(pdf_buffer) as pdf:
         create_title_page(pdf, timestamp_str)
         save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
@@ -1281,10 +1318,10 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         if analysis_report:
             write_analysis_report_to_pdf(pdf, analysis_report)
 
-        plot_median_progression_comparison(all_results, config, pdf=pdf)
-        plot_final_bankroll_comparison(all_results, config, pdf=pdf)
-        plot_time_underwater_comparison(all_results, config, pdf=pdf)
-        plot_risk_reward_scatter(all_results, config, pdf=pdf)
+        plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
 
         for strategy_name, result in all_results.items():
             strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
@@ -1293,14 +1330,14 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
             report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
             write_strategy_report_to_pdf(pdf, report_lines_for_writing, start_page_num=page_num)
             plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
-            plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf)
+            plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf, color_map=color_map)
             plot_assigned_wr_distribution(
                 result['avg_assigned_wr_per_sim'],
                 result['median_run_assigned_wr'],
                 weighted_input_wr,
                 strategy_name,
                 pdf=pdf)
-            plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf)
+            plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf, color_map=color_map)
 
     pdf_buffer.seek(0)
     return pdf_buffer

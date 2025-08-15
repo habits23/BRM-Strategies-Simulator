@@ -938,15 +938,20 @@ if st.session_state.get("simulation_output"):
     )
     # --- Display Comparison Plots in a 2-column layout ---
     st.subheader("Strategy Comparison Visuals")
+
+    # Create a consistent, colorblind-friendly color map for all comparison plots
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+    color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
     comp_col1, comp_col2 = st.columns(2)
     with comp_col1:
         st.markdown("###### Median Bankroll Progression")
-        fig = engine.plot_median_progression_comparison(all_results, config)
+        fig = engine.plot_median_progression_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
     with comp_col2:
         st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
-        fig = engine.plot_final_bankroll_comparison(all_results, config)
+        fig = engine.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
 
@@ -954,12 +959,12 @@ if st.session_state.get("simulation_output"):
     comp_col3, comp_col4 = st.columns(2)
     with comp_col3:
         st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
-        fig = engine.plot_time_underwater_comparison(all_results, config)
+        fig = engine.plot_time_underwater_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
     with comp_col4:
         st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
-        fig = engine.plot_risk_reward_scatter(all_results, config)
+        fig = engine.plot_risk_reward_scatter(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
 
@@ -1022,7 +1027,7 @@ if st.session_state.get("simulation_output"):
                 plt.close(fig)
             with row1_col2:
                 st.markdown("###### Final Bankroll Distribution")
-                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config)
+                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
                 st.pyplot(fig)
                 plt.close(fig)
 
@@ -1046,7 +1051,7 @@ if st.session_state.get("simulation_output"):
             with row2_col2:
                 st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
                 if 'max_downswings' in result:
-                    fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name)
+                    fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
                     st.pyplot(fig)
                     plt.close(fig)
 
