@@ -721,7 +721,7 @@ with tab2:
                 )
 
 st.divider()
-st.button("Run Simulation", on_click=click_run_button, use_container_width=True, type="primary", help="Click to run the simulation with the current settings.")
+st.button("Run Simulation", on_click=click_run_button, use_container_width=True, help="Click to run the simulation with the current settings.")
 st.divider()
 
 # --- Main Logic to Run Simulation and Display Results ---
