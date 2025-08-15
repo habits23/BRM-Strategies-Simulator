@@ -747,19 +747,19 @@ st.markdown("""
 <style>
     /* Target the primary button used for 'Run Simulation' */
     button[data-testid="baseButton-primary"] {
-        background-color: #4CAF50; /* A nice green */
-        color: white;
-        border: 1px solid #4CAF50;
+        background-color: #4CAF50 !important; /* A nice green */
+        color: white !important;
+        border: 1px solid #4CAF50 !important;
     }
     button[data-testid="baseButton-primary"]:hover {
-        background-color: #45a049; /* A slightly darker green on hover */
-        border: 1px solid #45a049;
-        color: white;
+        background-color: #45a049 !important; /* A slightly darker green on hover */
+        border: 1px solid #45a049 !important;
+        color: white !important;
     }
     button[data-testid="baseButton-primary"]:active {
-        background-color: #3e8e41; /* An even darker green for when clicked */
-        border: 1px solid #3e8e41;
-        color: white;
+        background-color: #3e8e41 !important; /* An even darker green for when clicked */
+        border: 1px solid #3e8e41 !important;
+        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
