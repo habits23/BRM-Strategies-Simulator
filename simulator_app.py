@@ -117,7 +117,7 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Tab 1: Stakes Data
     This is where you tell the simulator about your performance.
 
-    *   **`EV Win Rate (bb/100)`**: **This is the most important number!** Use your "All-in Adj BB/100" from your poker tracker (like PokerTracker 4 or Hand2Note). This is the best measure of your true skill.
+    *   **`EV Win Rate (bb/100)`**: **This is the most important number!** Use your "All-in Adj bb/100" from your poker tracker (like PokerTracker 4 or Hand2Note). This is the best measure of your true skill.
     *   **`Std Dev (bb/100)`**: Your standard deviation. This measures how "swingy" your results are. You can find this in your tracker. 80-120 is typical for No-Limit Hold'em.
     *   **`Sample Hands`**: How many hands of data you have for this stake. This is crucial! A large sample tells the model to be confident in your EV Win Rate. A small sample tells the model that your true win rate is uncertain, so it will simulate a wider range of possibilities (the "luck" factor).
     *   **`Win Rate Drop`**: How much you expect your win rate to decrease when moving up from the stake *below* this one. This helps the model guess your win rate at stakes you haven't played much. The lowest stake should always have a drop of 0.
@@ -498,7 +498,7 @@ with tab1:
                 help="The name of the stake (e.g., 'NL20', 'NL50'). This must be unique."
             ),
             "bb_size": st.column_config.NumberColumn(
-                "BB Size (€)",
+                "bb Size (€)",
                 help="The size of the big blind in your currency (e.g., 0.20 for NL20).",
                 format="€ %.2f"
             ),
@@ -654,7 +654,7 @@ with tab2:
 
                     st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
                         "Buy-in Buffer (BIs)", value=num_buy_ins_config, min_value=1, key=f"bi_{name}",
-                        help="The number of buy-ins (100 BBs) required to move up/down stakes."
+                        help="The number of buy-ins (100 bbs) required to move up/down stakes."
                     )
 
                 if 'rules' in st.session_state.strategy_configs[name]:
