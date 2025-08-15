@@ -1260,6 +1260,14 @@ def generate_qualitative_analysis(all_results, config):
     if worst_downswing and worst_downswing not in best_downswings:
         insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
 
+    # Add insight for highest rakeback earner
+    if config.get("RAKEBACK_PERCENTAGE", 0) > 0:
+        best_rb_strats, _ = find_best_worst_with_ties('median_rakeback_eur', higher_is_better=True)
+        if best_rb_strats:
+            names = f"'{best_rb_strats[0]}'" if len(best_rb_strats) == 1 else f"'{', '.join(best_rb_strats)}'"
+            verb = "generated" if len(best_rb_strats) == 1 else "were tied for generating"
+            insights.append(f"\n**💰 Highest Rakeback Earner:** The **{names}** strategy {verb} the most rakeback (€{all_results[best_rb_strats[0]]['median_rakeback_eur']:,.0f}), often by playing more hands at higher stakes.")
+
     # Add insight for stop-loss triggers
     if config.get("STOP_LOSS_BB", 0) > 0:
         most_sl_strats, _ = find_best_worst_with_ties('median_stop_losses', higher_is_better=True)
@@ -1273,6 +1281,19 @@ def generate_qualitative_analysis(all_results, config):
 
     if worst_ror and best_targets and worst_ror in best_targets:
         insights.append(f"- The **'{worst_ror}'** strategy is a classic high-risk, high-reward approach. It achieved the highest probability of reaching the target, but also came with the highest Risk of Ruin. This is a trade-off between upside potential and safety.")
+    
+    # Analyze the contribution of rakeback to the best strategy's success
+    if config.get("RAKEBACK_PERCENTAGE", 0) > 0 and best_medians:
+        best_median_strat_name = best_medians[0]
+        best_median_res = all_results[best_median_strat_name]
+        median_profit = best_median_res['median_final_bankroll'] - config['STARTING_BANKROLL_EUR']
+        median_rakeback = best_median_res['median_rakeback_eur']
+        if median_profit > 0 and median_rakeback > 0:
+            rb_contribution = (median_rakeback / median_profit) * 100
+            if rb_contribution > 30:
+                insights.append(f"- Rakeback was a critical factor for the top-performing **'{best_median_strat_name}'** strategy, accounting for **{rb_contribution:.0f}%** of its median profit. This strategy's success may be highly dependent on the rakeback deal.")
+    elif config.get("RAKEBACK_PERCENTAGE", 0) == 0:
+        insights.append("- With **0% rakeback**, all strategies are handicapped. This significantly reduces profitability and increases risk, especially for aggressive strategies that rely on moving up to high-rake environments.")
     
     if worst_median:
         worst_median_res = all_results[worst_median]

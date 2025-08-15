@@ -87,7 +87,7 @@ with st.expander("Need Help? Click here for the User Guide"):
 
     #### Gameplay & Rakeback Settings
     *   **Hands per Bankroll Check**: How often the simulation checks your bankroll to decide if you should move up or down in stakes. 1,000 hands is a common choice.
-    *   **Rakeback (%)**: The percentage of rake you get back. This is free money that gets added to your bankroll during the simulation.
+    *   **Rakeback (%)**: The percentage of rake you get back. This is a critical, variance-free boost to your win rate. Setting it to 0% can make aggressive strategies unprofitable and significantly increase your Risk of Ruin.
     *   **Enable Stop-Loss**: If enabled, simulations will 'sit out' for the next hand block (defined by 'Hands per Bankroll Check') after losing more than the specified amount in a single block. This simulates taking a break after a big losing session.
 
     #### Advanced Statistical Settings
@@ -395,6 +395,8 @@ with st.sidebar.expander("General Settings", expanded=True):
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
+    if st.session_state.rb_percent == 0:
+        st.info("Note: Setting rakeback to 0% can significantly reduce profitability and increase Risk of Ruin, especially for aggressive strategies.")
     st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block. The loss is calculated based on gameplay profit before rakeback. This reduces session volatility but can increase long-term Risk of Ruin by increasing total exposure to variance over the simulation's time horizon.")
     if st.session_state.enable_stop_loss:
         st.number_input(
