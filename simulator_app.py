@@ -217,6 +217,7 @@ def setup_sanity_check():
     st.session_state.start_br = 1000
     st.session_state.total_hands = 100000
     st.session_state.rb_percent = 0 # Turn off rakeback for simplicity
+    st.session_state.num_sims = 10000 # Use a high number for an accurate check
     st.session_state.prior_sample = 10_000_000 # Effectively disable Bayesian model
     st.session_state.ruin_thresh = 0 # Set ruin to 0 to avoid truncating results
     st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
