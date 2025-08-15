@@ -4,6 +4,7 @@ import datetime
 import traceback
 import json
 import copy
+import numpy as np
 
 # Import the actual simulation engine we just built
 import simulation_engine as engine
@@ -197,6 +198,23 @@ def click_run_button():
     st.session_state.run_simulation = True
     st.session_state.simulation_output = None # Clear old results when a new run is requested
 
+def setup_sanity_check():
+    """Callback to load a simple config for validating the simulation engine."""
+    st.session_state.stakes_data = pd.DataFrame([
+        {"name": "NL20", "bb_size": 0.20, "bb_per_100": 5.0, "ev_bb_per_100": 5.0, "std_dev_per_100": 100.0, "sample_hands": 10_000_000, "win_rate_drop": 0.0, "rake_bb_per_100": 0.0},
+    ])
+    st.session_state.strategy_configs = {
+        "Sanity Check (NL20 Only)": {
+            "type": "standard",
+            "rules": [{"threshold": 0, "tables": {"NL20": "100%"}}]
+        }
+    }
+    st.session_state.start_br = 1000
+    st.session_state.total_hands = 100000
+    st.session_state.rb_percent = 0 # Turn off rakeback for simplicity
+    st.session_state.prior_sample = 10_000_000 # Effectively disable Bayesian model
+    st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
+
 def add_strategy():
     """Callback to add a new, blank strategy with a unique name."""
     i = st.session_state.get('strategy_counter', 0) + 1
@@ -380,6 +398,10 @@ with st.sidebar.expander("Plotting & Display Settings", expanded=False):
         help="Controls the 'zoom' on the Final Bankroll Distribution comparison plot. A value of 99 shows the 1st to 99th percentile of outcomes. A value of 95 shows the 5th to 95th, zooming in more on the central results but hiding more of the tails.",
         key="plot_percentile_limit"
     )
+
+with st.sidebar.expander("Model Validation", expanded=False):
+    st.button("Load Sanity Check Config", on_click=setup_sanity_check, help="Loads a simple configuration to validate the simulation engine against a standard variance calculator. This will overwrite your current settings.", use_container_width=True)
+
 
 def randomize_seed():
     """Generates a new random seed."""
@@ -891,6 +913,33 @@ if st.session_state.get("simulation_output"):
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():
         with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
+            # --- Special Sanity Check Analysis Box ---
+            if strategy_name == "Sanity Check (NL20 Only)":
+                with st.container(border=True):
+                    st.subheader("🔬 Sanity Check Analysis")
+                    start_br = config['STARTING_BANKROLL_EUR']
+                    total_hands = config['TOTAL_HANDS_TO_SIMULATE']
+                    stake_data = config['STAKES_DATA'][0]
+                    ev_wr = stake_data['ev_bb_per_100']
+                    std_dev = stake_data['std_dev_per_100']
+                    bb_size = stake_data['bb_size']
+
+                    # Analytical calculations
+                    expected_profit = (total_hands / 100) * ev_wr * bb_size
+                    expected_final_br = start_br + expected_profit
+                    expected_std_dev_eur = (std_dev / np.sqrt(100)) * np.sqrt(total_hands) * bb_size
+
+                    # Actual results from simulation
+                    actual_median_br = result['median_final_bankroll']
+                    actual_std_dev_br = np.std(result['final_bankrolls'])
+
+                    st.markdown("This mode compares the simulation's output against known mathematical formulas for a simple, single-stake scenario. The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.")
+                    col1, col2 = st.columns(2)
+                    col1.metric("Expected Median Final Bankroll", f"€{expected_final_br:,.2f}", help="Calculated as: Start BR + (EV Win Rate * Total Hands * bb Size)")
+                    col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f}")
+                    col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
+                    col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f}")
+
             st.subheader(f"Key Metrics for '{strategy_name}'")
             col1, col2, col3, col4, col5, col6 = st.columns(6)
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
