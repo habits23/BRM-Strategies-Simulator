@@ -88,6 +88,7 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Gameplay & Rakeback Settings
     *   **Hands per Bankroll Check**: How often the simulation checks your bankroll to decide if you should move up or down in stakes. 1,000 hands is a common choice.
     *   **Rakeback (%)**: The percentage of rake you get back. This is free money that gets added to your bankroll during the simulation.
+    *   **Enable Stop-Loss**: If enabled, simulations will 'sit out' for the next hand block after losing more than the specified amount in a single block. This simulates taking a break after a big losing session.
 
     #### Advanced Statistical Settings
     This is the "secret sauce" of the simulator that makes it more realistic than a simple variance calculator.
@@ -162,6 +163,7 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Maximum Downswing Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
     *   **Key Insights**:
         *   **Hands Distribution**: Shows where you'll spend most of your time. The `Avg. WR` here is the average of all the "assigned luck" win rates for that stake, which is why it might differ slightly from your input.
+        *   **Median Stop-Losses**: If enabled, this metric shows the typical number of times a stop-loss was triggered during a simulation run. It's a good indicator of session volatility.
         *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
     *   **Percentile Win Rate Analysis**: This explains *why* some runs did well and others did poorly.
         *   **Assigned WR**: The "true" win rate (skill + long-term luck) the simulator assigned to the entire run. A high number here means this simulated "you" was on a long-term heater.
@@ -185,6 +187,8 @@ if 'start_br' not in st.session_state:
     st.session_state.rb_percent = 20
     st.session_state.prior_sample = 50000
     st.session_state.zero_hands_weight = 0.5
+    st.session_state.enable_stop_loss = False
+    st.session_state.stop_loss_bb = 200
     st.session_state.seed = 98765
     st.session_state.plot_percentile_limit = 99
 
@@ -221,6 +225,7 @@ def setup_sanity_check():
     st.session_state.num_sims = 10000 # Use a high number for an accurate check
     st.session_state.prior_sample = 10_000_000 # Effectively disable Bayesian model
     st.session_state.ruin_thresh = 0 # Set ruin to 0 to avoid truncating results
+    st.session_state.enable_stop_loss = False # Ensure stop-loss is off for validation
     st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
 
 def add_strategy():
@@ -415,6 +420,10 @@ with st.sidebar.expander("General Settings", expanded=True):
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
+    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next block after losing more than the specified amount in a single block.")
+    if st.session_state.enable_stop_loss:
+        st.number_input("Stop-Loss (in big blinds)", min_value=1, step=10, key="stop_loss_bb", help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 200-300bb (2-3 buy-ins).")
+
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
     st.number_input(
@@ -463,6 +472,7 @@ def get_full_config_as_json():
             "ruin_thresh": st.session_state.ruin_thresh, "num_sims": st.session_state.num_sims, "total_hands": st.session_state.total_hands,
             "hands_per_check": st.session_state.hands_per_check,
             "rb_percent": st.session_state.rb_percent,
+            "enable_stop_loss": st.session_state.enable_stop_loss, "stop_loss_bb": st.session_state.stop_loss_bb,
             "prior_sample": st.session_state.prior_sample, "zero_hands_weight": st.session_state.zero_hands_weight, "plot_percentile_limit": st.session_state.plot_percentile_limit,
             "seed": st.session_state.seed,
         },
@@ -793,6 +803,7 @@ if st.session_state.run_simulation:
         "TOTAL_HANDS_TO_SIMULATE": st.session_state.total_hands,
         "HANDS_PER_CHECK": st.session_state.hands_per_check,
         "RAKEBACK_PERCENTAGE": st.session_state.rb_percent / 100.0,
+        "STOP_LOSS_BB": st.session_state.stop_loss_bb if st.session_state.enable_stop_loss else 0,
         "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
         "ZERO_HANDS_INPUT_WEIGHT": st.session_state.zero_hands_weight,
         "SEED": st.session_state.seed,
@@ -969,13 +980,17 @@ if st.session_state.get("simulation_output"):
                     col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
             st.subheader(f"Key Metrics for '{strategy_name}'")
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            num_metrics = 7 if config.get("STOP_LOSS_BB", 0) > 0 else 6
+            metric_cols = st.columns(num_metrics)
+            col1, col2, col3, col4, col5, col6 = metric_cols[:6]
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
             col2.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
             col3.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
             col4.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
             col5.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
             col6.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+            if num_metrics == 7:
+                metric_cols[6].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
 
             st.subheader("Visual Analysis")
             row1_col1, row1_col2 = st.columns(2)

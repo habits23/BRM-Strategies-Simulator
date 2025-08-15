@@ -318,7 +318,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
@@ -390,6 +390,9 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     final_rakeback = rakeback_histories[:, -1]
     median_rakeback_eur = np.median(final_rakeback)
 
+    # Calculate median stop-losses
+    median_stop_losses = np.median(stop_loss_triggers) if stop_loss_triggers is not None else 0
+
     final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
     target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
     busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
@@ -417,6 +420,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'p95_max_downswing': p95_max_downswing,
         'max_downswings': max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
+        'median_stop_losses': median_stop_losses,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
@@ -444,6 +448,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
     peak_stake_levels = np.full(num_sims, initial_level, dtype=int)
     demotion_flags = {level: np.zeros(num_sims, dtype=bool) for level in stake_level_map.values()}
 
+    stake_bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     thresholds, rules = strategy.get_rules_as_vectors()
 
     for i in range(num_checks):
@@ -504,6 +509,26 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
         )
 
+        # --- Stop-Loss Logic ---
+        if config.get("STOP_LOSS_BB", 0) > 0:
+            # Find the bb_size of the highest stake played in this block for each sim
+            highest_bb_size = np.zeros(num_sims)
+            for stake_name, bb_size in stake_bb_size_map.items():
+                played_this_stake_mask = proportions_per_stake[stake_name] > 0
+                highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
+            
+            stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
+            
+            # Only trigger for active simulations that have a valid stop-loss amount
+            valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
+            
+            # Note: block_profits_eur is already negative for losses
+            triggered_mask = (block_profits_eur < -stop_loss_eur) & valid_stop_loss_mask
+            
+            if np.any(triggered_mask):
+                is_stopped_out[triggered_mask] = True
+                stop_loss_triggers[triggered_mask] += 1
+
         new_bankrolls = current_bankrolls + block_profits_eur
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
@@ -545,6 +570,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     initial_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
     peak_stake_levels = initial_levels.copy()
     demotion_flags = {level: np.zeros(num_sims, dtype=bool) for level in stake_level_map.values()}
+    stake_bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
 
     for i in range(num_checks):
         current_bankrolls = bankroll_history[:, i]
@@ -599,6 +625,26 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
             current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
         )
+
+        # --- Stop-Loss Logic ---
+        if config.get("STOP_LOSS_BB", 0) > 0:
+            # Find the bb_size of the highest stake played in this block for each sim
+            highest_bb_size = np.zeros(num_sims)
+            for stake_name, bb_size in stake_bb_size_map.items():
+                played_this_stake_mask = proportions_per_stake[stake_name] > 0
+                highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
+            
+            stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
+            
+            # Only trigger for active simulations that have a valid stop-loss amount
+            valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
+            
+            # Note: block_profits_eur is already negative for losses
+            triggered_mask = (block_profits_eur < -stop_loss_eur) & valid_stop_loss_mask
+            
+            if np.any(triggered_mask):
+                is_stopped_out[triggered_mask] = True
+                stop_loss_triggers[triggered_mask] += 1
 
         new_bankrolls = current_bankrolls + block_profits_eur
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
@@ -1015,9 +1061,14 @@ def write_strategy_report_to_pdf(pdf, report_lines, start_page_num=None):
 def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     """Creates a table of the main summary results and saves it to a PDF page."""
     header = ['Strategy', 'Page', 'Median Final BR', 'Mode Final BR', 'Median Growth', 'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile', '2.5th %ile']
+    
+    # Conditionally add the stop-loss header
+    if config.get("STOP_LOSS_BB", 0) > 0:
+        header.insert(6, 'Median SL') # Insert after Median Rakeback
+
     cell_text = []
     for strategy_name, result in all_results.items():
-        cell_text.append([
+        row = [
             strategy_name,
             str(strategy_page_map.get(strategy_name, '-')),
             f"€{result['median_final_bankroll']:,.2f}",
@@ -1028,7 +1079,13 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
             f"{result['target_prob']:.2f}",
             f"€{result['p5']:,.2f}",
             f"€{result['p2_5']:,.2f}"
-        ])
+        ]
+        
+        # Conditionally add the stop-loss value to the row
+        if config.get("STOP_LOSS_BB", 0) > 0:
+            row.insert(6, f"{result.get('median_stop_losses', 0):.1f}")
+        
+        cell_text.append(row)
 
     if not cell_text: return
 
@@ -1175,6 +1232,15 @@ def generate_qualitative_analysis(all_results, config):
     if worst_downswing and worst_downswing not in best_downswings:
         insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
 
+    # Add insight for stop-loss triggers
+    if config.get("STOP_LOSS_BB", 0) > 0:
+        most_sl_strats, _ = find_best_worst_with_ties('median_stop_losses', higher_is_better=True)
+        if most_sl_strats and all_results[most_sl_strats[0]]['median_stop_losses'] > 0:
+            names = f"'{most_sl_strats[0]}'" if len(most_sl_strats) == 1 else f"'{', '.join(most_sl_strats)}'"
+            verb = "triggered" if len(most_sl_strats) == 1 else "were tied for triggering"
+            median_sl_val = all_results[most_sl_strats[0]]['median_stop_losses']
+            insights.append(f"\n**⚠️ Session Volatility:** The **{names}** strategy {verb} the stop-loss most often (median of {median_sl_val:.1f} times). This indicates it was more prone to large, single-session losses.")
+
     insights.append("\n### Why Did They Perform This Way?")
 
     if worst_ror and best_targets and worst_ror in best_targets:
@@ -1254,14 +1320,14 @@ def run_full_analysis(config):
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analyze_strategy_results(
             strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng,
-            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, config
+            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, config
         )
 
     # Generate the final qualitative analysis report
