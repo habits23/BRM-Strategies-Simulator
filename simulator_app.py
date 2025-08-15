@@ -419,7 +419,13 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
     st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block. The loss is calculated based on gameplay profit before rakeback. This reduces session volatility but can increase long-term Risk of Ruin by increasing total exposure to variance over the simulation's time horizon.")
     if st.session_state.enable_stop_loss:
-        st.number_input("Stop-Loss (in big blinds)", min_value=1, step=10, key="stop_loss_bb", help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 300-500bb (3-5 buy-ins).")
+        st.number_input(
+            "Stop-Loss (in big blinds)",
+            min_value=1,
+            step=10,
+            key="stop_loss_bb",
+            help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 300-500bb (3-5 buy-ins)."
+        )
 
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
