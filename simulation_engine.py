@@ -397,6 +397,9 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     # Calculate median stop-losses
     median_stop_losses = np.median(stop_loss_triggers) if stop_loss_triggers is not None else 0
 
+    # Calculate median hands played
+    median_hands_played = np.median(total_hands_per_sim)
+
     final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
     target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
     busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
@@ -424,6 +427,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'p95_max_downswing': p95_max_downswing,
         'max_downswings': max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
+        'median_hands_played': median_hands_played,
         'median_stop_losses': median_stop_losses,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,

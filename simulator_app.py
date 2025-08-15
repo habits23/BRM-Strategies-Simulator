@@ -417,7 +417,7 @@ with st.sidebar.expander("General Settings", expanded=True):
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
-    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block (defined by 'Hands per Bankroll Check') after losing more than the specified amount in a single block.")
+    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block. This reduces session volatility but can increase long-term Risk of Ruin by increasing total exposure to variance over the simulation's time horizon.")
     if st.session_state.enable_stop_loss:
         st.number_input("Stop-Loss (in big blinds)", min_value=1, step=10, key="stop_loss_bb", help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 300-500bb (3-5 buy-ins).")
 
@@ -878,6 +878,7 @@ if st.session_state.get("simulation_output"):
             "Median Final BR": res['median_final_bankroll'],
             "Mode Final BR": res['final_bankroll_mode'],
             "Median Growth": res['growth_rate'],
+            "Median Hands Played": res.get('median_hands_played', 0),
             "Median Rakeback": res.get('median_rakeback_eur', 0.0),
             "Risk of Ruin (%)": res['risk_of_ruin'],
             "Target Prob (%)": res['target_prob'],
@@ -889,7 +890,7 @@ if st.session_state.get("simulation_output"):
     st.dataframe(
         summary_df.style.format({
             "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
-            "Median Growth": "{:.2%}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
+            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
             "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
             "P95 Max Downswing": "€{:,.2f}"
         }).hide(axis="index"),
@@ -909,6 +910,10 @@ if st.session_state.get("simulation_output"):
             "Median Growth": st.column_config.TextColumn(
                 "Median Growth",
                 help="The median percentage growth from the starting bankroll."
+            ),
+            "Median Hands Played": st.column_config.TextColumn(
+                "Median Hands Played",
+                help="The median number of hands played. This can be lower than the 'Total Hands to Simulate' if a stop-loss is frequently triggered."
             ),
             "Median Rakeback": st.column_config.TextColumn(
                 "Median Rakeback",
@@ -977,17 +982,18 @@ if st.session_state.get("simulation_output"):
                     col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
             st.subheader(f"Key Metrics for '{strategy_name}'")
-            num_metrics = 7 if config.get("STOP_LOSS_BB", 0) > 0 else 6
+            num_metrics = 8 if config.get("STOP_LOSS_BB", 0) > 0 else 7
             metric_cols = st.columns(num_metrics)
-            col1, col2, col3, col4, col5, col6 = metric_cols[:6]
+            col1, col2, col3, col4, col5, col6, col7 = metric_cols[:7]
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
-            col2.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
-            col3.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
-            col4.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col5.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col6.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
-            if num_metrics == 7:
-                metric_cols[6].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
+            col2.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
+            col3.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
+            col4.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+            col5.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+            col6.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col7.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+            if num_metrics == 8:
+                metric_cols[7].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
 
             st.subheader("Visual Analysis")
             row1_col1, row1_col2 = st.columns(2)
