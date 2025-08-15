@@ -96,6 +96,12 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Example**: If this is set to 50,000 and you provide a stake with a 5,000 hand sample, the model thinks, "This could just be a lucky streak," and will simulate futures where your true win rate is both higher and lower than what you've observed.
     *   **Weight for 0-Hand Stake Estimates**: For stakes you've never played, this slider balances your own guess (1.0) vs. the model's guess based on the stakes below it (0.0). A value of 0.5 is a good middle ground.
 
+    #### Plotting & Display Settings
+    *   **Distribution Plot Percentile Range**: Controls the 'zoom' on the Final Bankroll Distribution comparison plot. A value of 99 shows the 1st to 99th percentile of outcomes. A value of 95 shows the 5th to 95th, zooming in more on the central results.
+
+    #### Model Validation
+    *   **Load Sanity Check Config**: This is an advanced feature for validating the simulation engine. It loads a simple, single-stake scenario that can be compared against standard variance calculator results to confirm the core math is sound. This will overwrite your current settings.
+
     #### Other Settings
     *   **Random Seed**: This is like the specific shuffle of a deck of cards. Using the same seed will always give you the exact same results. Change the seed (or click the 🎲 button) to get a different "shuffle" and a new set of random outcomes.
     *   **Save & Load Configuration**: Use these buttons to save all your settings to a file and load them back later. Very useful!
@@ -107,7 +113,7 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Tab 1: Stakes Data
     This is where you tell the simulator about your performance.
 
-    *   **`EV Win Rate (bb/100)`**: **This is the most important number!** Use your "All-in Adj bb/100" from your poker tracker (like PokerTracker 4 or Hand2Note). This is the best measure of your true skill.
+    *   **`EV Win Rate (bb/100)`**: **This is the most important input for the simulation!** Use your "All-in Adj bb/100" from your poker tracker. This is the best measure of your true skill and is used for all core calculations.
     *   **`Std Dev (bb/100)`**: Your standard deviation. This measures how "swingy" your results are. You can find this in your tracker. 80-120 is typical for No-Limit Hold'em.
     *   **`Sample Hands`**: How many hands of data you have for this stake. This is crucial! A large sample tells the model to be confident in your EV Win Rate. A small sample tells the model that your true win rate is uncertain, so it will simulate a wider range of possibilities (the "luck" factor).
     *   **`Win Rate Drop`**: The estimated change in your win rate (in bb/100) when moving up from the *previous* stake. Use a positive value for a drop (e.g., 1.5) and a negative value for an expected increase (e.g., -1.0). The lowest stake should have a value of 0.
@@ -124,7 +130,7 @@ with st.expander("Need Help? Click here for the User Guide"):
             *   **Percentages**: `NL100: "100%"` means you play only NL100.
             *   **Percentage Ranges**: `NL200: "20-40%"` models uncertainty in your game selection.
     *   **Hysteresis (Sticky) Strategy**:
-        *   This is a "move up fast, move down slow" strategy designed to prevent you from dropping stakes during small downswings. You can set a single buy-in buffer for all stakes or check the box to define a unique buffer for each stake individually.
+        *   This is a "move up fast, move down slow" strategy designed to prevent you from dropping stakes during small downswings. You can set a single buy-in buffer for all stakes or check the **"Use per-stake buy-in buffers"** box to define a unique buffer for each stake individually.
         *   **Moving Up**: You move up to a new stake (e.g., NL50) only when you have enough buy-ins for it (e.g., 40 BIs for NL50).
         *   **Moving Down (The "Sticky" Part)**: Once you're playing NL50, you *only* move back down to NL20 if your bankroll drops below the requirement for NL20 (e.g., 40 BIs for NL20). This creates a "buffer zone" where you stick to the higher stake.
 
@@ -417,7 +423,8 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
             "**Intuition:** With the default of 50,000, if you provide a stake with a 50,000 hand sample, the model will weigh your win rate and its own prior estimate equally (50/50).\n\n"
             "For stakes with smaller samples, the model adds significant random noise to reflect real-world variance, which can sometimes result in an assigned win rate that is negative, even if your input was positive."
         ),  
-        key="prior_sample")
+        key="prior_sample"
+    )    
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
 
 with st.sidebar.expander("Plotting & Display Settings", expanded=False):
