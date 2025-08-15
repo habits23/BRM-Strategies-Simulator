@@ -539,8 +539,9 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             # Only trigger for active simulations that have a valid stop-loss amount
             valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
             
-            # Note: block_profits_eur is already negative for losses
-            triggered_mask = (block_profits_eur < -stop_loss_eur) & valid_stop_loss_mask
+            # Calculate profit from play only (excluding rakeback) for the stop-loss check.
+            profit_from_play = block_profits_eur - block_rakeback_eur
+            triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
             
             if np.any(triggered_mask):
                 is_stopped_out[triggered_mask] = True
@@ -665,8 +666,9 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             # Only trigger for active simulations that have a valid stop-loss amount
             valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
             
-            # Note: block_profits_eur is already negative for losses
-            triggered_mask = (block_profits_eur < -stop_loss_eur) & valid_stop_loss_mask
+            # Calculate profit from play only (excluding rakeback) for the stop-loss check.
+            profit_from_play = block_profits_eur - block_rakeback_eur
+            triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
             
             if np.any(triggered_mask):
                 is_stopped_out[triggered_mask] = True
