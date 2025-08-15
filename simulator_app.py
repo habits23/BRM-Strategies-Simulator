@@ -13,21 +13,21 @@ import simulation_engine as engine
 # This is placed at the top to ensure it's loaded before widgets are rendered.
 st.markdown("""
 <style>
-    /* Target the primary button specifically inside the sidebar for higher specificity */
-    [data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
-        background-color: #4CAF50 !important;
-        color: white !important;
-        border: 1px solid #4CAF50 !important;
+    /* Create a custom class for our green button */
+    .green-button button {
+        background-color: #4CAF50;
+        color: white;
+        border: 1px solid #4CAF50;
     }
-    [data-testid="stSidebar"] button[data-testid="baseButton-primary"]:hover {
-        background-color: #45a049 !important;
-        border: 1px solid #45a049 !important;
-        color: white !important;
+    .green-button button:hover {
+        background-color: #45a049;
+        border: 1px solid #45a049;
+        color: white;
     }
-    [data-testid="stSidebar"] button[data-testid="baseButton-primary"]:active {
-        background-color: #3e8e41 !important;
-        border: 1px solid #3e8e41 !important;
-        color: white !important;
+    .green-button button:active {
+        background-color: #3e8e41;
+        border: 1px solid #3e8e41;
+        color: white;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -396,13 +396,10 @@ def sync_strategy_rules(strategy_name):
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
 
-st.sidebar.button(
-    "**Run Simulation**",
-    on_click=click_run_button,
-    use_container_width=True,
-    type="primary",
-    help="Click to run the simulation with the current settings."
-)
+# Wrap the button in a div with the custom class to apply the style
+st.sidebar.markdown('<div class="green-button">', unsafe_allow_html=True)
+st.sidebar.button("**Run Simulation**", on_click=click_run_button, use_container_width=True, help="Click to run the simulation with the current settings.")
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
