@@ -743,8 +743,31 @@ with tab2:
                 )
 
 st.divider()
-# Use columns to create a smaller, centered, and more prominent button
-_, col2, _ = st.columns([2, 3, 2])
+
+# Inject custom CSS to style the primary button green.
+st.markdown("""
+<style>
+    /* Target the primary button used for 'Run Simulation' */
+    button[data-testid="baseButton-primary"] {
+        background-color: #4CAF50; /* A nice green */
+        color: white;
+        border: 1px solid #4CAF50;
+    }
+    button[data-testid="baseButton-primary"]:hover {
+        background-color: #45a049; /* A slightly darker green on hover */
+        border: 1px solid #45a049;
+        color: white;
+    }
+    button[data-testid="baseButton-primary"]:active {
+        background-color: #3e8e41; /* An even darker green for when clicked */
+        border: 1px solid #3e8e41;
+        color: white;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Use columns to create an even smaller, centered button
+_, col2, _ = st.columns([3, 2, 3])
 with col2:
     st.button(
         "**Run Simulation**",
