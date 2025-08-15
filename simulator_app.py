@@ -174,23 +174,20 @@ with st.expander("Need Help? Click here for the User Guide"):
     """)
 
 # --- Session State Initialization ---
-# This block ensures all necessary keys are in the session state with default values
-# on the first run. This prevents Streamlit warnings about setting a widget's value
-# both from its `value` parameter and from the session state.
-if 'start_br' not in st.session_state:
-    st.session_state.start_br = 2500
-    st.session_state.target_br = 3000
-    st.session_state.ruin_thresh = 750
-    st.session_state.num_sims = 2000
-    st.session_state.total_hands = 50000
-    st.session_state.hands_per_check = 1000
-    st.session_state.rb_percent = 20
-    st.session_state.prior_sample = 50000
-    st.session_state.zero_hands_weight = 0.5
-    st.session_state.enable_stop_loss = False
-    st.session_state.stop_loss_bb = 300
-    st.session_state.seed = 98765
-    st.session_state.plot_percentile_limit = 99
+# Initialize each key separately to ensure new features work for users with old session states.
+if 'start_br' not in st.session_state: st.session_state.start_br = 2500
+if 'target_br' not in st.session_state: st.session_state.target_br = 3000
+if 'ruin_thresh' not in st.session_state: st.session_state.ruin_thresh = 750
+if 'num_sims' not in st.session_state: st.session_state.num_sims = 2000
+if 'total_hands' not in st.session_state: st.session_state.total_hands = 50000
+if 'hands_per_check' not in st.session_state: st.session_state.hands_per_check = 1000
+if 'rb_percent' not in st.session_state: st.session_state.rb_percent = 20
+if 'prior_sample' not in st.session_state: st.session_state.prior_sample = 50000
+if 'zero_hands_weight' not in st.session_state: st.session_state.zero_hands_weight = 0.5
+if 'enable_stop_loss' not in st.session_state: st.session_state.enable_stop_loss = False
+if 'stop_loss_bb' not in st.session_state: st.session_state.stop_loss_bb = 300
+if 'seed' not in st.session_state: st.session_state.seed = 98765
+if 'plot_percentile_limit' not in st.session_state: st.session_state.plot_percentile_limit = 99
 
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
@@ -422,7 +419,7 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
     st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block (defined by 'Hands per Bankroll Check') after losing more than the specified amount in a single block.")
     if st.session_state.enable_stop_loss:
-        st.number_input("Stop-Loss (in big blinds)", min_value=1, step=10, key="stop_loss_bb", help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 200-300bb (2-3 buy-ins).")
+        st.number_input("Stop-Loss (in big blinds)", min_value=1, step=10, key="stop_loss_bb", help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 300-500bb (3-5 buy-ins).")
 
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
