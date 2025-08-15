@@ -376,18 +376,18 @@ st.sidebar.header("Simulation Parameters")
 # Inject custom CSS to style the primary button green.
 st.sidebar.markdown("""
 <style>
-    /* Target the primary button used for 'Run Simulation' */
-    button[data-testid="baseButton-primary"] {
+    /* Target the primary button specifically inside the sidebar for higher specificity */
+    [data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
         background-color: #4CAF50 !important; /* A nice green */
         color: white !important;
         border: 1px solid #4CAF50 !important;
     }
-    button[data-testid="baseButton-primary"]:hover {
+    [data-testid="stSidebar"] button[data-testid="baseButton-primary"]:hover {
         background-color: #45a049 !important; /* A slightly darker green on hover */
         border: 1px solid #45a049 !important;
         color: white !important;
     }
-    button[data-testid="baseButton-primary"]:active {
+    [data-testid="stSidebar"] button[data-testid="baseButton-primary"]:active {
         background-color: #3e8e41 !important; /* An even darker green for when clicked */
         border: 1px solid #3e8e41 !important;
         color: white !important;
