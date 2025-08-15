@@ -721,7 +721,16 @@ with tab2:
                 )
 
 st.divider()
-st.button("Run Simulation", on_click=click_run_button, use_container_width=True, help="Click to run the simulation with the current settings.")
+# Use columns to create a smaller, centered, and more prominent button
+_, col2, _ = st.columns([2, 3, 2])
+with col2:
+    st.button(
+        "**Run Simulation**",
+        on_click=click_run_button,
+        use_container_width=True,
+        type="primary",
+        help="Click to run the simulation with the current settings."
+    )
 st.divider()
 
 # --- Main Logic to Run Simulation and Display Results ---
