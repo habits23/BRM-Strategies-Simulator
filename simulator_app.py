@@ -82,7 +82,7 @@ with st.expander("Need Help? Click here for the User Guide"):
     *   **Target Bankroll**: Your goal. The simulation will tell you the probability of hitting this target.
     *   **Ruin Threshold**: Your "game over" point. If a simulated version of you drops to this amount, that run stops.
     *   **Number of Simulations**: How many "alternate realities" to run. More is better (2,000+ is recommended for accurate results), but it takes longer. Think of it as running the same experiment thousands of times to get a reliable average.
-    *   **Total Hands to Simulate**: The time horizon for each simulation. How many hands will each "alternate you" play? 500,000 is a good long-term sample.
+    *   **Total Hands to Simulate**: The time horizon for each simulation. How many hands will each "alternate you" play? 50,000 is a good starting point.
 
     #### Gameplay & Rakeback Settings
     *   **Hands per Bankroll Check**: How often the simulation checks your bankroll to decide if you should move up or down in stakes. 1,000 hands is a common choice.
@@ -170,7 +170,7 @@ if 'start_br' not in st.session_state:
     st.session_state.target_br = 3000
     st.session_state.ruin_thresh = 750
     st.session_state.num_sims = 2000
-    st.session_state.total_hands = 500000
+    st.session_state.total_hands = 50000
     st.session_state.hands_per_check = 1000
     st.session_state.target_tables_pct = 4
     st.session_state.rb_percent = 20
@@ -513,7 +513,7 @@ with tab1:
             ),
             "win_rate_drop": st.column_config.NumberColumn(
                 "Win Rate Drop",
-                help="The estimated drop in your win rate (in bb/100) when moving up from the *previous* stake. This helps the model estimate your win rate at stakes with few or no hands. The lowest stake should have a drop of 0.",
+                help="The estimated change in your win rate (in bb/100) when moving up from the *previous* stake. Use a positive value for a drop (e.g., 1.5) and a negative value for an expected increase (e.g., -1.0). The lowest stake should have a value of 0.",
                 format="%.2f"
             ),
             "rake_bb_per_100": st.column_config.NumberColumn(
