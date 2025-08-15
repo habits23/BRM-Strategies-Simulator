@@ -181,7 +181,7 @@ if 'start_br' not in st.session_state:
 
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
-    st.session_state.results = None
+    st.session_state.simulation_output = None
 
 if 'stakes_data' not in st.session_state:
     st.session_state.stakes_data = DEFAULT_STAKES_DATA
@@ -192,7 +192,7 @@ if 'strategy_configs' not in st.session_state:
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
     st.session_state.run_simulation = True
-    st.session_state.results = None # Clear old results when a new run is requested
+    st.session_state.simulation_output = None # Clear old results when a new run is requested
 
 def add_strategy():
     """Callback to add a new, blank strategy with a unique name."""
@@ -435,7 +435,7 @@ def process_uploaded_config():
                     st.session_state[key] = value
         else:
             st.error("Invalid config file: 'parameters' section is missing or malformed.")
-            return
+            return #
 
         # --- Validate and load stakes data ---
         if "stakes_data" in loaded_data and isinstance(loaded_data["stakes_data"], list):
@@ -452,7 +452,7 @@ def process_uploaded_config():
             return
 
         st.success("Configuration loaded successfully! The app has been updated with the new settings.")
-        st.session_state.results = None  # Clear results from any previous run
+        st.session_state.simulation_output = None  # Clear results from any previous run
 
     except json.JSONDecodeError:
         st.error("Error: The uploaded file is not a valid JSON file.")
@@ -754,7 +754,7 @@ if st.session_state.run_simulation:
     except Exception as e: # Catch any other potential errors during config assembly
         st.error(f"Error preparing simulation configuration. Details: {e}")
         inputs_are_valid = False
-        st.session_state.results = None
+        st.session_state.simulation_output = None
 
     # --- 3. Run the simulation if inputs are valid ---
     if inputs_are_valid:
@@ -763,22 +763,23 @@ if st.session_state.run_simulation:
             with st.spinner("Running thousands of simulations... this may take a moment."):
                 # THIS IS WHERE WE CALL OUR REFACTORED ENGINE
                 # Store results in session state so they persist across reruns
-                st.session_state.results = engine.run_full_analysis(config)
+                st.session_state.simulation_output = engine.run_full_analysis(config)
         except ValueError as e:
             st.error(f"A configuration error prevented the simulation from running: {e}")
             st.info("Please check your strategy rules and stake definitions for issues.")
-            st.session_state.results = None # Clear results on error
+            st.session_state.simulation_output = None # Clear results on error
         except Exception as e:
             st.error("An error occurred during the simulation.")
             st.exception(e)
-            st.session_state.results = None # Clear results on error
+            st.session_state.simulation_output = None # Clear results on error
 
     # --- 4. Reset the run flag so it doesn't run again on the next interaction ---
     st.session_state.run_simulation = False
 
 # This block displays the results if they exist in the session state
-if st.session_state.results:
-    all_results = st.session_state.results
+if st.session_state.get("simulation_output"):
+    all_results = st.session_state.simulation_output['results']
+    analysis_report = st.session_state.simulation_output['analysis_report']
     config = st.session_state.get('config_for_display', {}) # Get the config used for the run
 
     # Calculate a representative input win rate for the plot's label
@@ -794,6 +795,11 @@ if st.session_state.results:
 
 
     st.header("Simulation Results")
+
+    if analysis_report:
+        with st.expander("Automated Strategy Analysis", expanded=True):
+            st.markdown(analysis_report)
+
     st.subheader("Strategy Comparison")
 
     # --- Display Summary Table ---

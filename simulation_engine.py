@@ -1062,6 +1062,83 @@ def generate_pdf_report(all_results, config, timestamp_str):
     pdf_buffer.seek(0)
     return pdf_buffer
 # =================================================================================
+#   QUALITATIVE ANALYSIS FUNCTIONS
+# =================================================================================
+
+def generate_qualitative_analysis(all_results, config):
+    """Generates a human-readable analysis comparing the performance of different strategies."""
+    insights = []
+    num_strategies = len(all_results)
+
+    if num_strategies < 2:
+        insights.append("### Overall Summary")
+        insights.append("Run at least two strategies to generate a comparative analysis.")
+        return "\n".join(insights)
+
+    def find_best_worst(metric_key, higher_is_better=True):
+        """Helper to find the best and worst performing strategy for a given metric."""
+        valid_results = {name: res for name, res in all_results.items() if metric_key in res}
+        if not valid_results: return None, None
+        
+        sorted_strategies = sorted(valid_results.items(), key=lambda item: item[1][metric_key], reverse=higher_is_better)
+        best_name = sorted_strategies[0][0]
+        worst_name = sorted_strategies[-1][0]
+        
+        if len(sorted_strategies) == 1: return best_name, best_name
+        if sorted_strategies[0][1][metric_key] == sorted_strategies[-1][1][metric_key]: return best_name, None
+        return best_name, worst_name
+
+    insights.append("### Automated Strategy Analysis")
+    insights.append("This analysis compares your strategies based on key performance indicators from the simulation.")
+    
+    best_median, worst_median = find_best_worst('median_final_bankroll', higher_is_better=True)
+    if best_median:
+        insights.append(f"\n**🏆 Best Typical Outcome:** The **'{best_median}'** strategy achieved the highest median final bankroll (€{all_results[best_median]['median_final_bankroll']:,.0f}). This suggests it provides the most consistent growth for the average simulation run.")
+    if worst_median and best_median != worst_median:
+         insights.append(f"**📉 Worst Typical Outcome:** The **'{worst_median}'** strategy had the lowest median result (€{all_results[worst_median]['median_final_bankroll']:,.0f}). Check its Risk of Ruin and Downswing metrics to understand why.")
+
+    best_ror, worst_ror = find_best_worst('risk_of_ruin', higher_is_better=False)
+    if best_ror:
+        insights.append(f"\n**🛡️ Safest Strategy:** With a Risk of Ruin of only {all_results[best_ror]['risk_of_ruin']:.2f}%, **'{best_ror}'** was the least likely to go broke. This is ideal for risk-averse players.")
+    if worst_ror and best_ror != worst_ror:
+        insights.append(f"**🎲 Riskiest Strategy:** **'{worst_ror}'** had the highest Risk of Ruin at {all_results[worst_ror]['risk_of_ruin']:.2f}%. This strategy is significantly more volatile.")
+
+    best_target, _ = find_best_worst('target_prob', higher_is_better=True)
+    if best_target:
+        insights.append(f"\n**🚀 Highest Upside:** If your main goal is to reach the target bankroll, the **'{best_target}'** strategy gave the best chance at {all_results[best_target]['target_prob']:.2f}%. This often comes with higher risk, so check its RoR.")
+
+    best_downswing, worst_downswing = find_best_worst('median_max_downswing', higher_is_better=False)
+    if best_downswing:
+        insights.append(f"\n**😌 Smoothest Ride:** The **'{best_downswing}'** strategy had the smallest median downswing (€{all_results[best_downswing]['median_max_downswing']:,.0f}), making it the least stressful to play.")
+    if worst_downswing and best_downswing != worst_downswing:
+        insights.append(f"**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
+
+    insights.append("\n### Why Did They Perform This Way?")
+    
+    if worst_median:
+        worst_median_res = all_results[worst_median]
+        hands_dist = worst_median_res.get('hands_distribution_pct', {})
+        if hands_dist:
+            stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+            played_stakes = [s for s, p in hands_dist.items() if p > 5]
+            if played_stakes:
+                highest_played_stake = max(played_stakes, key=lambda s: stake_order_map.get(s, -1))
+                demotion_risks = worst_median_res.get('risk_of_demotion', {})
+                if highest_played_stake in demotion_risks and demotion_risks[highest_played_stake]['prob'] > 40:
+                    insights.append(f"- The **'{worst_median}'** strategy likely underperformed due to instability. It had a high **Risk of Demotion of {demotion_risks[highest_played_stake]['prob']:.1f}%** from {highest_played_stake}. This 'yo-yo effect' of moving up and down frequently is inefficient and can hurt long-term growth.")
+
+    hysteresis_strats = [name for name in all_results if 'Hysteresis' in name or 'Sticky' in name]
+    if hysteresis_strats:
+        h_strat_name = hysteresis_strats[0]
+        demotion_risks = all_results[h_strat_name].get('risk_of_demotion', {})
+        if demotion_risks:
+            avg_demotion_risk = np.mean([v['prob'] for v in demotion_risks.values()]) if demotion_risks else 100
+            if avg_demotion_risk < 20:
+                insights.append(f"- The **'{h_strat_name}'** strategy likely performed well by minimizing demotions. Its 'sticky' nature prevented players from dropping stakes during minor downswings, leading to more stable growth at higher limits.")
+
+    return "\n".join(insights)
+
+# =================================================================================
 #   MAIN CONTROLLER FUNCTIONS
 # =================================================================================
 
@@ -1106,4 +1183,10 @@ def run_full_analysis(config):
             peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, config
         )
 
-    return all_results
+    # Generate the final qualitative analysis report
+    analysis_report = generate_qualitative_analysis(all_results, config)
+
+    return {
+        "results": all_results,
+        "analysis_report": analysis_report
+    }
