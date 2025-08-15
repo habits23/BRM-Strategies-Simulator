@@ -1017,7 +1017,7 @@ if st.session_state.get("simulation_output"):
     st.subheader("Download Full Report")
     with st.spinner("Generating PDF report..."):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        pdf_buffer = engine.generate_pdf_report(all_results, config, timestamp)
+        pdf_buffer = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
         st.download_button(
             label="Download Full PDF Report",
             data=pdf_buffer,

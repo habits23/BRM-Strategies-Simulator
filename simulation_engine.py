@@ -833,6 +833,43 @@ def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=N
         plt.close(fig)
     return fig
 
+
+def write_analysis_report_to_pdf(pdf, analysis_report):
+    """Writes the qualitative analysis report to a PDF page."""
+    fig = plt.figure(figsize=(11, 8.5))
+    
+    lines = analysis_report.split('\n')
+    y_pos = 0.90
+    
+    for line in lines:
+        line = line.strip()
+        if not line: # Add vertical space for empty lines
+            y_pos -= 0.02
+            continue
+
+        font_size = 11
+        font_weight = 'normal'
+        x_pos = 0.05
+        
+        # Simple markdown parsing for PDF
+        if line.startswith('### '):
+            font_size = 16
+            font_weight = 'bold'
+            line = line[4:]
+            y_pos -= 0.02 # Extra space before header
+        elif line.startswith('- '):
+            x_pos = 0.07
+            line = f"• {line[2:]}" # Use a bullet point character
+        
+        # Strip emoji and bold markers for cleaner text
+        line = line.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','').replace('🚀','').replace('😌','').replace('🎢','')
+
+        fig.text(x_pos, y_pos, line, transform=fig.transFigure, size=font_size, weight=font_weight, va='top', ha='left', wrap=True)
+        y_pos -= 0.04 # Fixed spacing between lines
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
 def create_title_page(pdf, timestamp):
     """Creates a title page for the PDF report."""
     fig = plt.figure(figsize=(11, 8.5))
@@ -957,7 +994,7 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
         report_lines.extend(_write_win_rate_analysis(result))
     return report_lines
 
-def write_strategy_report_to_pdf(pdf, report_lines, page_number_info=None):
+def write_strategy_report_to_pdf(pdf, report_lines, start_page_num=None):
     """Writes the detailed text report for a single strategy to a PDF page, handling pagination."""
     lines_per_page = 45
     pages_of_lines = [report_lines[i:i + lines_per_page] for i in range(0, len(report_lines), lines_per_page)]
@@ -965,8 +1002,8 @@ def write_strategy_report_to_pdf(pdf, report_lines, page_number_info=None):
     for i, page_lines in enumerate(pages_of_lines):
         report_text = "\n".join(page_lines)
         fig = plt.figure(figsize=(11, 8.5))
-        if page_number_info:
-            fig.text(0.95, 0.05, f"Page {page_number_info['current'] + i}", transform=fig.transFigure, size=8, va='bottom', ha='right', color='gray')
+        if start_page_num is not None:
+            fig.text(0.95, 0.05, f"Page {start_page_num + i}", transform=fig.transFigure, size=8, va='bottom', ha='right', color='gray')
         fig.text(0.05, 0.95, report_text, transform=fig.transFigure, size=10, va='top', ha='left', fontfamily='monospace')
         pdf.savefig(fig)
         plt.close(fig)
@@ -1010,24 +1047,28 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
 
-def generate_pdf_report(all_results, config, timestamp_str):
+def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     """
     Generates the entire multi-page PDF report, writing to an in-memory buffer.
     """
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
-    current_page_count = 3
+    
+    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(2) = 5 pages before details
+    page_counter_for_map = 5
     lines_per_page = 45
 
     for strategy_name, result in all_results.items():
         strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
-        strategy_page_map[strategy_name] = current_page_count + 1
+        
+        # The page this strategy's report starts on
+        strategy_page_map[strategy_name] = page_counter_for_map + 1
+        
         report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
         num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page # Ceiling division
-        # There are now 4 plots per strategy
         num_plot_pages = 4
-        current_page_count += num_text_pages + num_plot_pages
+        page_counter_for_map += num_text_pages + num_plot_pages
 
     # Calculate a representative input win rate for the plot's label
     total_sample_hands = sum(s['sample_hands'] for s in config['STAKES_DATA'])
@@ -1040,6 +1081,10 @@ def generate_pdf_report(all_results, config, timestamp_str):
     with PdfPages(pdf_buffer) as pdf:
         create_title_page(pdf, timestamp_str)
         save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
+        
+        if analysis_report:
+            write_analysis_report_to_pdf(pdf, analysis_report)
+
         plot_median_progression_comparison(all_results, config, pdf=pdf)
         plot_final_bankroll_comparison(all_results, config, pdf=pdf)
 
@@ -1048,7 +1093,7 @@ def generate_pdf_report(all_results, config, timestamp_str):
             strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
             page_num = strategy_page_map.get(strategy_name, 0)
             report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
-            write_strategy_report_to_pdf(pdf, report_lines_for_writing, page_number_info={'current': page_num})
+            write_strategy_report_to_pdf(pdf, report_lines_for_writing, start_page_num=page_num)
             plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
             plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf)
             plot_assigned_wr_distribution(
@@ -1114,6 +1159,9 @@ def generate_qualitative_analysis(all_results, config):
         insights.append(f"**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
 
     insights.append("\n### Why Did They Perform This Way?")
+
+    if worst_ror and best_target and worst_ror == best_target:
+        insights.append(f"- The **'{worst_ror}'** strategy is a classic high-risk, high-reward approach. It achieved the highest probability of reaching the target, but also came with the highest Risk of Ruin. This is a trade-off between upside potential and safety.")
     
     if worst_median:
         worst_median_res = all_results[worst_median]
@@ -1135,6 +1183,19 @@ def generate_qualitative_analysis(all_results, config):
             avg_demotion_risk = np.mean([v['prob'] for v in demotion_risks.values()]) if demotion_risks else 100
             if avg_demotion_risk < 20:
                 insights.append(f"- The **'{h_strat_name}'** strategy likely performed well by minimizing demotions. Its 'sticky' nature prevented players from dropping stakes during minor downswings, leading to more stable growth at higher limits.")
+
+    # Insight for overly conservative strategies
+    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+    conservative_strats = [name for name, res in all_results.items() if 'Conservative' in name]
+    if conservative_strats:
+        c_strat_name = conservative_strats[0]
+        c_res = all_results[c_strat_name]
+        if c_res['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - 10: # If target prob is >10% below average
+            hands_dist = c_res.get('hands_distribution_pct', {})
+            if hands_dist:
+                lowest_stake_played = min(hands_dist.keys(), key=lambda s: stake_order_map.get(s, float('inf')))
+                if hands_dist.get(lowest_stake_played, 0) > 80: # If it spends >80% of time at the lowest stake
+                    insights.append(f"- The **'{c_strat_name}'** strategy may be too conservative. It spent over {hands_dist[lowest_stake_played]:.0f}% of its time at {lowest_stake_played}, which significantly limited its growth and ability to reach the target.")
 
     return "\n".join(insights)
 
