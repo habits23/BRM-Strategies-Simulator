@@ -209,7 +209,11 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
 
     # For a true sanity check, we can bypass the luck factor entirely to get a perfect match.
     if config.get('PRIOR_SAMPLE_SIZE') >= 10_000_000:
-        return shrunk_win_rate
+        # The issue is that for the first stake, shrunk_win_rate is a float.
+        # We must ensure it's an array of the correct size for all simulations.
+        if isinstance(shrunk_win_rate, (int, float)):
+            return np.full_like(luck_factor, shrunk_win_rate)
+        return shrunk_win_rate # It's already an array for subsequent stakes
 
     effective_sample_size_for_variance = sample_hands + config['PRIOR_SAMPLE_SIZE']
     N_blocks = max(1.0, effective_sample_size_for_variance / 100.0)
