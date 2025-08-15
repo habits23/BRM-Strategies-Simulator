@@ -1132,9 +1132,11 @@ if st.session_state.get("simulation_output"):
 
                 percentile_wrs = result.get('percentile_win_rates', {})
                 percentiles_to_show = {
-                    "5th": "5th Percentile",
+                    "5th": "5th Percentile", # Unlucky Run
+                    "25th": "25th Percentile", # Mildly Bad Run
                     "Median": "Median Percentile",
-                    "95th": "95th Percentile"
+                    "75th": "75th Percentile", # Mildly Good Run
+                    "95th": "95th Percentile" # Lucky Run
                 }
 
                 cols = st.columns(len(percentiles_to_show))

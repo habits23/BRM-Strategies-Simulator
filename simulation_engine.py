@@ -1355,6 +1355,18 @@ def generate_qualitative_analysis(all_results, config):
         insights.append("Run at least two strategies to generate a comparative analysis.")
         return "\n".join(insights)
 
+    # --- New Metric Calculation: Efficiency Score ---
+    for name, res in all_results.items():
+        # Calculate a risk-adjusted return score (Growth-to-Pain Ratio). Higher is better.
+        growth = res['median_final_bankroll'] - config['STARTING_BANKROLL_EUR']
+        pain = res['p95_max_downswing']
+        if pain > 1: # Avoid division by zero or tiny numbers
+            # We add 1 to growth to avoid issues with 0 growth and to slightly penalize negative growth.
+            res['efficiency_score'] = (growth + 1) / pain
+        else:
+            # If there's no significant downswing, it's extremely efficient. Give it a very high score, proportional to growth.
+            res['efficiency_score'] = growth if growth > 0 else 1.0
+
     def find_best_worst_with_ties(metric_key, higher_is_better=True):
         """Helper to find the best and worst performing strategies, handling ties for 'best'."""
         valid_results = {name: res for name, res in all_results.items() if metric_key in res}
@@ -1405,6 +1417,12 @@ def generate_qualitative_analysis(all_results, config):
         insights.append(f"\n**😌 Smoothest Ride:** The **{names}** strategy {verb} the smallest median downswing (€{all_results[best_downswings[0]]['median_max_downswing']:,.0f}), making it the least stressful to play.")
     if worst_downswing and worst_downswing not in best_downswings:
         insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
+
+    best_efficiency, _ = find_best_worst_with_ties('efficiency_score', higher_is_better=True)
+    if best_efficiency:
+        names = f"'{best_efficiency[0]}'" if len(best_efficiency) == 1 else f"'{', '.join(best_efficiency)}'"
+        verb = "demonstrated" if len(best_efficiency) == 1 else "were tied for demonstrating"
+        insights.append(f"\n**⚡ Most Efficient:** The **{names}** strategy {verb} the best risk-adjusted return. It generated the most 'growth' for the amount of 'pain' (downswing) it caused, making it a highly efficient choice.")
 
     # Add insight for highest rakeback earner
     if config.get("RAKEBACK_PERCENTAGE", 0) > 0:
@@ -1485,6 +1503,51 @@ def generate_qualitative_analysis(all_results, config):
                     if percent_at_lowest > 80: # If it spends >80% of time at the lowest stake
                         display_percent = "over 99" if percent_at_lowest > 99 else f"over {percent_at_lowest:.0f}"
                         insights.append(f"- The **'{c_strat_name}'** strategy may be too conservative. It spent {display_percent}% of its time at {lowest_stake_played}, which significantly limited its growth and ability to reach the target.")
+
+    # --- New Section: Actionable Recommendations ---
+    insights.append("\n### Actionable Recommendations")
+    recommendations_made = False
+
+    # 1. Identify Dominated Strategies
+    dominated_strategies = {}
+    strategy_names = list(all_results.keys())
+    for i in range(len(strategy_names)):
+        for j in range(len(strategy_names)):
+            if i == j: continue
+            strat_a_name, strat_b_name = strategy_names[i], strategy_names[j]
+            res_a, res_b = all_results[strat_a_name], all_results[strat_b_name]
+            
+            # Strategy B dominates A if it's better/equal on all key metrics, and strictly better on at least one.
+            b_is_better = (res_b['median_final_bankroll'] >= res_a['median_final_bankroll'] and
+                           res_b['risk_of_ruin'] <= res_a['risk_of_ruin'] and
+                           res_b['p95_max_downswing'] <= res_a['p95_max_downswing'])
+            b_is_strictly_better = (res_b['median_final_bankroll'] > res_a['median_final_bankroll'] or
+                                    res_b['risk_of_ruin'] < res_a['risk_of_ruin'] or
+                                    res_b['p95_max_downswing'] < res_a['p95_max_downswing'])
+            if b_is_better and b_is_strictly_better:
+                dominated_strategies.setdefault(strat_a_name, []).append(strat_b_name)
+
+    if dominated_strategies:
+        insights.append("\n**Consider Retiring Dominated Strategies:**")
+        for dominated, dominators in dominated_strategies.items():
+            dominator_str = f"'{dominators[0]}'" if len(dominators) == 1 else f"'{', '.join(dominators)}'"
+            insights.append(f"- The **'{dominated}'** strategy appears to be inefficient. It is outperformed by **{dominator_str}**, which offer(s) a better combination of reward and safety. There is likely no reason to choose '{dominated}'.")
+        recommendations_made = True
+
+    # 2. Provide Prescriptive Advice
+    advice_given = set() # To avoid giving the same advice twice
+    if worst_ror and worst_ror not in best_rors and 'risky' not in advice_given:
+        insights.append(f"\n**Tuning the Riskiest Strategy:**\n- To make the **'{worst_ror}'** strategy safer, consider increasing its bankroll thresholds. This will make it move up stakes more slowly, reducing its high Risk of Ruin ({all_results[worst_ror]['risk_of_ruin']:.2f}%).")
+        advice_given.add('risky'); recommendations_made = True
+
+    if conservative_strats and 'conservative' not in advice_given:
+        c_strat_name = conservative_strats[0]
+        if all_results[c_strat_name]['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - 10:
+            insights.append(f"\n**Tuning the Most Conservative Strategy:**\n- The **'{c_strat_name}'** strategy may be too conservative and limiting your growth. Consider lowering its bankroll thresholds to allow it to move up to more profitable stakes sooner.")
+            advice_given.add('conservative'); recommendations_made = True
+
+    if not recommendations_made:
+        insights.append("\nAll strategies appear to be well-balanced with clear trade-offs. Your choice depends on your personal risk tolerance.")
 
     return "\n".join(insights)
 
