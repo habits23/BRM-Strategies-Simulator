@@ -506,7 +506,12 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
         total_proportions = sum(proportions_per_stake.values())
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0)
+        # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
+        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0) & ~is_stopped_out
+
+        # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
+        is_stopped_out.fill(False)
+
         if not np.any(active_mask):
             bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
             for stake_name in hands_per_stake_histories:
@@ -627,8 +632,12 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
                 proportions_per_stake[stake_name][at_this_stake_mask] = prop
 
         total_proportions = sum(proportions_per_stake.values())
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0)
+        # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
+        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0) & ~is_stopped_out
 
+        # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
+        is_stopped_out.fill(False)
+        
         if not np.any(active_mask):
             bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
             for stake_name in hands_per_stake_histories:
