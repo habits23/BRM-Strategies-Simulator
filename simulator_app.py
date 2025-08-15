@@ -394,7 +394,6 @@ st.sidebar.button(
     on_click=click_run_button,
     use_container_width=True,
     type="primary",
-    style={"background-color": "#00FF00"},  # green background color
     help="Click to run the simulation with the current settings."
 )
 
