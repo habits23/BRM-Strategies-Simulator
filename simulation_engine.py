@@ -1120,47 +1120,60 @@ def generate_qualitative_analysis(all_results, config):
         insights.append("Run at least two strategies to generate a comparative analysis.")
         return "\n".join(insights)
 
-    def find_best_worst(metric_key, higher_is_better=True):
-        """Helper to find the best and worst performing strategy for a given metric."""
+    def find_best_worst_with_ties(metric_key, higher_is_better=True):
+        """Helper to find the best and worst performing strategies, handling ties for 'best'."""
         valid_results = {name: res for name, res in all_results.items() if metric_key in res}
-        if not valid_results: return None, None
+        if not valid_results: return [], None
         
         sorted_strategies = sorted(valid_results.items(), key=lambda item: item[1][metric_key], reverse=higher_is_better)
-        best_name = sorted_strategies[0][0]
+        
+        best_value = sorted_strategies[0][1][metric_key]
+        best_strategies = [name for name, res in sorted_strategies if res[metric_key] == best_value]
+        
         worst_name = sorted_strategies[-1][0]
         
-        if len(sorted_strategies) == 1: return best_name, best_name
-        if sorted_strategies[0][1][metric_key] == sorted_strategies[-1][1][metric_key]: return best_name, None
-        return best_name, worst_name
+        # If all strategies have the same value, there is no "worst"
+        if best_value == sorted_strategies[-1][1][metric_key]:
+            return best_strategies, None
+            
+        return best_strategies, worst_name
 
     insights.append("### Automated Strategy Analysis")
     insights.append("This analysis compares your strategies based on key performance indicators from the simulation.")
     
-    best_median, worst_median = find_best_worst('median_final_bankroll', higher_is_better=True)
-    if best_median:
-        insights.append(f"\n**🏆 Best Typical Outcome:** The **'{best_median}'** strategy achieved the highest median final bankroll (€{all_results[best_median]['median_final_bankroll']:,.0f}). This suggests it provides the most consistent growth for the average simulation run.")
-    if worst_median and best_median != worst_median:
+    best_medians, worst_median = find_best_worst_with_ties('median_final_bankroll', higher_is_better=True)
+    if best_medians:
+        names = f"'{best_medians[0]}'" if len(best_medians) == 1 else f"'{', '.join(best_medians)}'"
+        verb = "achieved" if len(best_medians) == 1 else "were tied for"
+        insights.append(f"\n**🏆 Best Typical Outcome:** The **{names}** strategy {verb} the highest median final bankroll (€{all_results[best_medians[0]]['median_final_bankroll']:,.0f}). This suggests it provides the most consistent growth for the average simulation run.")
+    if worst_median and worst_median not in best_medians:
          insights.append(f"\n**📉 Worst Typical Outcome:** The **'{worst_median}'** strategy had the lowest median result (€{all_results[worst_median]['median_final_bankroll']:,.0f}). Check its Risk of Ruin and Downswing metrics to understand why.")
 
-    best_ror, worst_ror = find_best_worst('risk_of_ruin', higher_is_better=False)
-    if best_ror:
-        insights.append(f"\n**🛡️ Safest Strategy:** With a Risk of Ruin of only {all_results[best_ror]['risk_of_ruin']:.2f}%, **'{best_ror}'** was the least likely to go broke. This is ideal for risk-averse players.")
-    if worst_ror and best_ror != worst_ror:
+    best_rors, worst_ror = find_best_worst_with_ties('risk_of_ruin', higher_is_better=False)
+    if best_rors:
+        names = f"'{best_rors[0]}'" if len(best_rors) == 1 else f"'{', '.join(best_rors)}'"
+        verb = "was" if len(best_rors) == 1 else "were tied for"
+        insights.append(f"\n**🛡️ Safest Strategy:** With a Risk of Ruin of only {all_results[best_rors[0]]['risk_of_ruin']:.2f}%, **{names}** {verb} the least likely to go broke. This is ideal for risk-averse players.")
+    if worst_ror and worst_ror not in best_rors:
         insights.append(f"\n**🎲 Riskiest Strategy:** **'{worst_ror}'** had the highest Risk of Ruin at {all_results[worst_ror]['risk_of_ruin']:.2f}%. This strategy is significantly more volatile.")
 
-    best_target, _ = find_best_worst('target_prob', higher_is_better=True)
-    if best_target:
-        insights.append(f"\n**🚀 Highest Upside:** If your main goal is to reach the target bankroll, the **'{best_target}'** strategy gave the best chance at {all_results[best_target]['target_prob']:.2f}%. This often comes with higher risk, so check its RoR.")
+    best_targets, _ = find_best_worst_with_ties('target_prob', higher_is_better=True)
+    if best_targets:
+        names = f"'{best_targets[0]}'" if len(best_targets) == 1 else f"'{', '.join(best_targets)}'"
+        verb = "gave" if len(best_targets) == 1 else "were tied for giving"
+        insights.append(f"\n**🚀 Highest Upside:** If your main goal is to reach the target bankroll, the **{names}** strategy {verb} the best chance at {all_results[best_targets[0]]['target_prob']:.2f}%. This often comes with higher risk, so check its RoR.")
 
-    best_downswing, worst_downswing = find_best_worst('median_max_downswing', higher_is_better=False)
-    if best_downswing:
-        insights.append(f"\n**😌 Smoothest Ride:** The **'{best_downswing}'** strategy had the smallest median downswing (€{all_results[best_downswing]['median_max_downswing']:,.0f}), making it the least stressful to play.")
-    if worst_downswing and best_downswing != worst_downswing:
+    best_downswings, worst_downswing = find_best_worst_with_ties('median_max_downswing', higher_is_better=False)
+    if best_downswings:
+        names = f"'{best_downswings[0]}'" if len(best_downswings) == 1 else f"'{', '.join(best_downswings)}'"
+        verb = "had" if len(best_downswings) == 1 else "were tied for having"
+        insights.append(f"\n**😌 Smoothest Ride:** The **{names}** strategy {verb} the smallest median downswing (€{all_results[best_downswings[0]]['median_max_downswing']:,.0f}), making it the least stressful to play.")
+    if worst_downswing and worst_downswing not in best_downswings:
         insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
 
     insights.append("\n### Why Did They Perform This Way?")
 
-    if worst_ror and best_target and worst_ror == best_target:
+    if worst_ror and best_targets and worst_ror in best_targets:
         insights.append(f"- The **'{worst_ror}'** strategy is a classic high-risk, high-reward approach. It achieved the highest probability of reaching the target, but also came with the highest Risk of Ruin. This is a trade-off between upside potential and safety.")
     
     if worst_median:
@@ -1193,9 +1206,12 @@ def generate_qualitative_analysis(all_results, config):
         if c_res['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - 10: # If target prob is >10% below average
             hands_dist = c_res.get('hands_distribution_pct', {})
             if hands_dist:
-                lowest_stake_played = min(hands_dist.keys(), key=lambda s: stake_order_map.get(s, float('inf')))
-                if hands_dist.get(lowest_stake_played, 0) > 80: # If it spends >80% of time at the lowest stake
-                    insights.append(f"- The **'{c_strat_name}'** strategy may be too conservative. It spent over {hands_dist[lowest_stake_played]:.0f}% of its time at {lowest_stake_played}, which significantly limited its growth and ability to reach the target.")
+                lowest_stake_played = min(hands_dist.keys(), key=lambda s: stake_order_map.get(s, float('inf'))) if hands_dist else None
+                if lowest_stake_played:
+                    percent_at_lowest = hands_dist.get(lowest_stake_played, 0)
+                    if percent_at_lowest > 80: # If it spends >80% of time at the lowest stake
+                        display_percent = "over 99" if percent_at_lowest > 99 else f"over {percent_at_lowest:.0f}"
+                        insights.append(f"- The **'{c_strat_name}'** strategy may be too conservative. It spent {display_percent}% of its time at {lowest_stake_played}, which significantly limited its growth and ability to reach the target.")
 
     return "\n".join(insights)
 
