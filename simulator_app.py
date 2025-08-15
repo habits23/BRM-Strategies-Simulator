@@ -214,6 +214,7 @@ def setup_sanity_check():
             "rules": [{"threshold": 0, "tables": {"NL20": "100%"}}]
         }
     }
+    st.session_state.target_br = 11000 # Set to the expected final BR (10k start + 1k profit)
     st.session_state.start_br = 10000 # Use a large BR to make ruin effectively impossible
     st.session_state.total_hands = 100000
     st.session_state.rb_percent = 0 # Turn off rakeback for simplicity
