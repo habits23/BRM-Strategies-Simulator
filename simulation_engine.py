@@ -394,6 +394,11 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     final_rakeback = rakeback_histories[:, -1]
     median_rakeback_eur = np.median(final_rakeback)
 
+    # Calculate median profit from play
+    total_profit_per_sim = final_bankrolls - config['STARTING_BANKROLL_EUR']
+    profit_from_play_per_sim = total_profit_per_sim - final_rakeback
+    median_profit_from_play_eur = np.median(profit_from_play_per_sim)
+
     # Calculate median stop-losses
     median_stop_losses = np.median(stop_loss_triggers) if stop_loss_triggers is not None else 0
 
@@ -427,6 +432,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'p95_max_downswing': p95_max_downswing,
         'max_downswings': max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
+        'median_profit_from_play_eur': median_profit_from_play_eur,
         'median_hands_played': median_hands_played,
         'median_stop_losses': median_stop_losses,
         'average_assigned_win_rates': average_assigned_win_rates,

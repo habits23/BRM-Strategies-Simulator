@@ -866,6 +866,7 @@ if st.session_state.get("simulation_output"):
             "Mode Final BR": res['final_bankroll_mode'],
             "Median Growth": res['growth_rate'],
             "Median Hands Played": res.get('median_hands_played', 0),
+            "Median Profit (Play)": res.get('median_profit_from_play_eur', 0.0),
             "Median Rakeback": res.get('median_rakeback_eur', 0.0),
             "Risk of Ruin (%)": res['risk_of_ruin'],
             "Target Prob (%)": res['target_prob'],
@@ -877,7 +878,7 @@ if st.session_state.get("simulation_output"):
     st.dataframe(
         summary_df.style.format({
             "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
-            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
+            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}", "Median Profit (Play)": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
             "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
             "P95 Max Downswing": "€{:,.2f}"
         }).hide(axis="index"),
@@ -901,6 +902,10 @@ if st.session_state.get("simulation_output"):
             "Median Hands Played": st.column_config.TextColumn(
                 "Median Hands Played",
                 help="The median number of hands played. This can be lower than the 'Total Hands to Simulate' if a stop-loss is frequently triggered."
+            ),
+            "Median Profit (Play)": st.column_config.TextColumn(
+                "Median Profit (Play)",
+                help="The median profit from gameplay only, excluding rakeback. This shows how much was won or lost at the tables."
             ),
             "Median Rakeback": st.column_config.TextColumn(
                 "Median Rakeback",
