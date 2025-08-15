@@ -545,7 +545,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers
 
 def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -667,7 +667,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
