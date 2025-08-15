@@ -149,7 +149,7 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Median Final BR**: The 50th percentile outcome. Half the time you do better, half the time you do worse. It's a good measure of the "typical" result.
         *   **Risk of Ruin (RoR)**: Your chance of going broke according to your ruin threshold. A critical risk metric.
         *   **Target Prob**: Your chance of hitting your goal.
-        *   **P95 Max Drawdown**: A measure of a "worst-case" downswing. 5% of the time, you will have a downswing even bigger than this number.
+        *   **P95 Max Downswing**: A measure of a "worst-case" downswing. 5% of the time, you will have a downswing even bigger than this number.
     *   **Comparison Plots**:
         *   **Median Bankroll Progression**: Shows the typical journey of your bankroll over time for each strategy.
         *   **Final Bankroll Distribution**: A key plot. A tall, narrow peak means a strategy is very consistent. A short, wide curve means the strategy is higher risk/higher reward.
@@ -160,7 +160,7 @@ with st.expander("Need Help? Click here for the User Guide"):
     *   **Visuals**:
         *   **Bankroll Progression**: Shows the median path (blue line), the 25th-75th percentile range (shaded area), and 50 random individual simulations (grey lines) to give you a feel for the variance.
         *   **Distribution of Assigned Luck (WR)**: This chart visualizes the "luck" factor. It shows the range of "true skill + long-term luck" the simulation assigns to different runs. The width of this curve is determined by your `Sample Hands` input—less data means more uncertainty and a wider curve.
-        *   **Maximum Drawdown Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
+        *   **Maximum Downswing Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
     *   **Key Insights**:
         *   **Hands Distribution**: Shows where you'll spend most of your time. The `Avg. WR` here is the average of all the "assigned luck" win rates for that stake, which is why it might differ slightly from your input.
         *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
@@ -819,7 +819,7 @@ if st.session_state.results:
             "Risk of Ruin (%)": res['risk_of_ruin'],
             "Target Prob (%)": res['target_prob'],
             "5th %ile BR": res['p5'],
-            "P95 Max Drawdown": res['p95_max_drawdown']
+            "P95 Max Downswing": res['p95_max_downswing']
         })
     summary_df = pd.DataFrame(summary_data)
 
@@ -828,7 +828,7 @@ if st.session_state.results:
             "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
             "Median Growth": "{:.2%}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
             "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
-            "P95 Max Drawdown": "€{:,.2f}"
+            "P95 Max Downswing": "€{:,.2f}"
         }).hide(axis="index"),
         column_config={
             "Strategy": st.column_config.TextColumn(
@@ -863,9 +863,9 @@ if st.session_state.results:
                 "5th %ile BR",
                 help="The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value."
             ),
-            "P95 Max Drawdown": st.column_config.TextColumn(
-                "P95 Max Drawdown",
-                help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value."
+            "P95 Max Downswing": st.column_config.TextColumn(
+                "P95 Max Downswing",
+                help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value."
             ),
         }
     )
@@ -888,8 +888,8 @@ if st.session_state.results:
             col2.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
             col3.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
             col4.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col5.metric("Median Max Drawdown", f"€{result['median_max_drawdown']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col6.metric("95th Pct. Drawdown", f"€{result['p95_max_drawdown']:,.2f}", help="The 95th percentile of the maximum drawdown. 5% of simulations experienced a larger peak-to-trough loss than this value.")
+            col5.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col6.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
 
             st.subheader("Visual Analysis")
             row1_col1, row1_col2 = st.columns(2)
@@ -919,9 +919,9 @@ if st.session_state.results:
                     )
                     st.pyplot(fig3)
             with row2_col2:
-                st.markdown("###### Maximum Drawdown Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
-                if 'max_drawdowns' in result:
-                    fig4 = engine.plot_max_drawdown_distribution(result['max_drawdowns'], result, strategy_name)
+                st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
+                if 'max_downswings' in result:
+                    fig4 = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name)
                     st.pyplot(fig4)
 
             st.subheader("Key Strategy Insights")

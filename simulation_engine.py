@@ -379,8 +379,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
 
     percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map)
 
-    median_max_drawdown = np.median(max_drawdowns)
-    p95_max_drawdown = np.percentile(max_drawdowns, 95)
+    median_max_downswing = np.median(max_drawdowns)
+    p95_max_downswing = np.percentile(max_drawdowns, 95)
 
     # Calculate median rakeback
     final_rakeback = rakeback_histories[:, -1]
@@ -409,9 +409,9 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'hands_distribution_pct': hands_distribution_pct,
         'final_stake_distribution': final_stake_distribution,
         'final_highest_stake_distribution': final_highest_stake_distribution,
-        'median_max_drawdown': median_max_drawdown,
-        'p95_max_drawdown': p95_max_drawdown,
-        'max_drawdowns': max_drawdowns,
+        'median_max_downswing': median_max_downswing,
+        'p95_max_downswing': p95_max_downswing,
+        'max_downswings': max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
@@ -804,26 +804,26 @@ def plot_final_bankroll_comparison(all_results, config, pdf=None):
         plt.close(fig)
     return fig
 
-def plot_max_drawdown_distribution(max_drawdowns, result, strategy_name, pdf=None):
-    """Creates a histogram of maximum drawdowns with key metrics highlighted."""
-    if max_drawdowns is None or len(max_drawdowns) == 0:
+def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=None):
+    """Creates a histogram of maximum downswings with key metrics highlighted."""
+    if max_downswings is None or len(max_downswings) == 0:
         return plt.figure() # Return an empty figure if no data
 
     # Filter out extreme outliers for better visibility
-    max_x_limit = np.percentile(max_drawdowns, 99.0)
-    filtered_drawdowns = max_drawdowns[max_drawdowns <= max_x_limit]
+    max_x_limit = np.percentile(max_downswings, 99.0)
+    filtered_downswings = max_downswings[max_downswings <= max_x_limit]
 
-    median_mdd = result['median_max_drawdown']
-    p95_mdd = result['p95_max_drawdown']
+    median_downswing = result['median_max_downswing']
+    p95_downswing = result['p95_max_downswing']
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(filtered_drawdowns, bins=50, color='salmon', edgecolor='black', alpha=0.7)
+    ax.hist(filtered_downswings, bins=50, color='salmon', edgecolor='black', alpha=0.7)
 
-    ax.axvline(median_mdd, color='darkred', linestyle='dashed', linewidth=2, label=f'Median MDD: €{median_mdd:,.2f}')
-    ax.axvline(p95_mdd, color='purple', linestyle=':', linewidth=2, label=f'95th Pct. MDD: €{p95_mdd:,.2f}')
+    ax.axvline(median_downswing, color='darkred', linestyle='dashed', linewidth=2, label=f'Median Downswing: €{median_downswing:,.2f}')
+    ax.axvline(p95_downswing, color='purple', linestyle=':', linewidth=2, label=f'95th Pct. Downswing: €{p95_downswing:,.2f}')
 
-    ax.set_title(f'Maximum Drawdown Distribution for {strategy_name}')
-    ax.set_xlabel('Maximum Drawdown (EUR)')
+    ax.set_title(f'Maximum Downswing Distribution for {strategy_name}')
+    ax.set_xlabel('Maximum Downswing (EUR)')
     ax.set_ylabel('Frequency')
     ax.legend()
     ax.grid(True)
@@ -886,15 +886,15 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
                 lines.append(f"   - From {stake_name}: {data['prob']:.2f}% (based on {data['reached_count']} simulations reaching this peak)")
         return lines
 
-    def _write_drawdown_analysis(res):
+    def _write_downswing_analysis(res):
         lines = []
-        if 'median_max_drawdown' in res:
-            lines.extend(["", "--- Maximum Drawdown (MDD) Analysis ---"])
-            lines.append("MDD is the largest single peak-to-trough drop in bankroll during a simulation.")
-            median_mdd = res['median_max_drawdown']
-            p95_mdd = res['p95_max_drawdown']
-            lines.append(f"   - Median MDD: €{median_mdd:.2f}")
-            lines.append(f"   - 95th Percentile MDD: €{p95_mdd:.2f} (5% of runs had a worse drawdown)")
+        if 'median_max_downswing' in res:
+            lines.extend(["", "--- Maximum Downswing Analysis ---"])
+            lines.append("A downswing is the largest single peak-to-trough drop in bankroll during a simulation.")
+            median_downswing = res['median_max_downswing']
+            p95_downswing = res['p95_max_downswing']
+            lines.append(f"   - Median Downswing: €{median_downswing:.2f}")
+            lines.append(f"   - 95th Percentile Downswing: €{p95_downswing:.2f} (5% of runs had a worse downswing)")
         return lines
 
     def _write_final_stake_distribution(res):
@@ -949,7 +949,7 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
     report_lines.extend(_write_threshold_analysis(result))
     report_lines.extend(_write_hands_distribution(result))
     report_lines.extend(_write_demotion_analysis(result))
-    report_lines.extend(_write_drawdown_analysis(result))
+    report_lines.extend(_write_downswing_analysis(result))
     report_lines.extend(_write_final_bankroll_metrics(result))
     report_lines.extend(_write_final_stake_distribution(result))
     report_lines.extend(_write_final_highest_stake_distribution(result))
@@ -1057,7 +1057,7 @@ def generate_pdf_report(all_results, config, timestamp_str):
                 weighted_input_wr,
                 strategy_name,
                 pdf=pdf)
-            plot_max_drawdown_distribution(result['max_drawdowns'], result, strategy_name, pdf=pdf)
+            plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf)
 
     pdf_buffer.seek(0)
     return pdf_buffer
