@@ -440,6 +440,10 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
     peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
     max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
 
+    # --- Stop-Loss Initialization ---
+    # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
+    is_stopped_out = np.zeros(num_sims, dtype=bool)
+    stop_loss_triggers = np.zeros(num_sims, dtype=int)
 
     # --- Demotion Tracking Initialization ---
     initial_rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
@@ -557,6 +561,11 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     # --- Maximum Drawdown Initialization ---
     peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
     max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
+
+    # --- Stop-Loss Initialization ---
+    # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
+    is_stopped_out = np.zeros(num_sims, dtype=bool)
+    stop_loss_triggers = np.zeros(num_sims, dtype=int)
 
     # --- Demotion Tracking Initialization ---
     stake_rules = sorted(strategy.rules, key=lambda r: r['threshold'])
