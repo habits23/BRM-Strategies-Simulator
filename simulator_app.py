@@ -9,6 +9,29 @@ import numpy as np
 # Import the actual simulation engine we just built
 import simulation_engine as engine
 
+# --- Custom CSS Injection ---
+# This is placed at the top to ensure it's loaded before widgets are rendered.
+st.markdown("""
+<style>
+    /* Target the primary button specifically inside the sidebar for higher specificity */
+    [data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
+        background-color: #4CAF50 !important;
+        color: white !important;
+        border: 1px solid #4CAF50 !important;
+    }
+    [data-testid="stSidebar"] button[data-testid="baseButton-primary"]:hover {
+        background-color: #45a049 !important;
+        border: 1px solid #45a049 !important;
+        color: white !important;
+    }
+    [data-testid="stSidebar"] button[data-testid="baseButton-primary"]:active {
+        background-color: #3e8e41 !important;
+        border: 1px solid #3e8e41 !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Default Data for First Run ---
 DEFAULT_STAKES_DATA = pd.DataFrame([
     # Using more realistic win rates for today's online games, based on user feedback.
@@ -373,32 +396,13 @@ def sync_strategy_rules(strategy_name):
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
 
-# Inject custom CSS to style the primary button green.
-st.sidebar.markdown("""
-<style>
-    /* Create a custom class for our green button */
-    .green-button button {
-        background-color: #4CAF50; /* A nice green */
-        color: white;
-        border: 1px solid #4CAF50;
-    }
-    .green-button button:hover {
-        background-color: #45a049; /* A slightly darker green on hover */
-        border: 1px solid #45a049;
-        color: white;
-    }
-    .green-button button:active {
-        background-color: #3e8e41; /* An even darker green for when clicked */
-        border: 1px solid #3e8e41;
-        color: white;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Wrap the button in a div with the custom class to apply the style
-st.sidebar.markdown('<div class="green-button">', unsafe_allow_html=True)
-st.sidebar.button("**Run Simulation**", on_click=click_run_button, use_container_width=True, help="Click to run the simulation with the current settings.")
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
+st.sidebar.button(
+    "**Run Simulation**",
+    on_click=click_run_button,
+    use_container_width=True,
+    type="primary",
+    help="Click to run the simulation with the current settings."
+)
 
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
