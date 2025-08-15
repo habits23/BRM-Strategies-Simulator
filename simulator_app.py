@@ -88,7 +88,7 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Gameplay & Rakeback Settings
     *   **Hands per Bankroll Check**: How often the simulation checks your bankroll to decide if you should move up or down in stakes. 1,000 hands is a common choice.
     *   **Rakeback (%)**: The percentage of rake you get back. This is free money that gets added to your bankroll during the simulation.
-    *   **Enable Stop-Loss**: If enabled, simulations will 'sit out' for the next hand block after losing more than the specified amount in a single block. This simulates taking a break after a big losing session.
+    *   **Enable Stop-Loss**: If enabled, simulations will 'sit out' for the next hand block (defined by 'Hands per Bankroll Check') after losing more than the specified amount in a single block. This simulates taking a break after a big losing session.
 
     #### Advanced Statistical Settings
     This is the "secret sauce" of the simulator that makes it more realistic than a simple variance calculator.
@@ -420,7 +420,7 @@ with st.sidebar.expander("General Settings", expanded=True):
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
     st.slider("Rakeback (%)", 0, 100, help="The percentage of rake you get back from the poker site. This is added to your profit at the end of each 'hand block' (the interval defined by 'Hands per Bankroll Check').", key="rb_percent")
-    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next block after losing more than the specified amount in a single block.")
+    st.checkbox("Enable Stop-Loss", key="enable_stop_loss", help="If enabled, simulations will 'sit out' for the next hand block (defined by 'Hands per Bankroll Check') after losing more than the specified amount in a single block.")
     if st.session_state.enable_stop_loss:
         st.number_input("Stop-Loss (in big blinds)", min_value=1, step=10, key="stop_loss_bb", help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 200-300bb (2-3 buy-ins).")
 
