@@ -188,7 +188,7 @@ if 'start_br' not in st.session_state:
     st.session_state.prior_sample = 50000
     st.session_state.zero_hands_weight = 0.5
     st.session_state.enable_stop_loss = False
-    st.session_state.stop_loss_bb = 200
+    st.session_state.stop_loss_bb = 300
     st.session_state.seed = 98765
     st.session_state.plot_percentile_limit = 99
 
