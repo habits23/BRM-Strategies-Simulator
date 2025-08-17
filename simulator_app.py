@@ -429,11 +429,10 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
     st.number_input(
         "Prior Sample Size (for Bayesian model)",
         min_value=1000, step=1000,
-        help=(  
-            "Represents the model's 'skepticism' of your win rate data. A larger value means the model relies more on its own extrapolated estimates.\n\n"
-            "**Intuition:** With the default of 50,000, if you provide a stake with a 50,000 hand sample, the model will weigh your win rate and its own prior estimate equally (50/50).\n\n"
-            "For stakes with smaller samples, the model adds significant random noise to reflect real-world variance, which can sometimes result in an assigned win rate that is negative, even if your input was positive."
-        ),  
+        help=(
+            "Controls the model's confidence in your win rate data. Think of it as a 'benchmark' sample size against which your own sample is compared.\n\n"
+            "**Intuition:** If this is 50,000 and your stake has a 50,000 hand sample, the model is confident. If your sample is only 5,000 hands, the model is uncertain and will simulate a wider range of long-term luck (both good and bad heaters) for your 'true' win rate."
+        ),
         key="prior_sample"
     )    
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
@@ -1120,7 +1119,7 @@ if st.session_state.get("simulation_output"):
             # --- Risk of Demotion Section ---
             if result.get('risk_of_demotion'):
                 st.markdown("---")
-                st.markdown("**Risk of Demotion**", help="The percentage of simulations that were forced to move down after reaching a specific stake.")
+                st.markdown("**Risk of Demotion**", help="The probability of being demoted from a stake after you've reached it. Calculated as: (Simulations demoted from Stake X) / (Simulations that ever reached Stake X). A high percentage indicates an unstable strategy.")
                 stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                 sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
 
