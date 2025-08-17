@@ -94,8 +94,11 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Advanced Statistical Settings
     This is the "secret sauce" of the simulator that makes it more realistic than a simple variance calculator.
 
-    *   **Prior Sample Size**: This tells the model how much to trust your win rate data. Think of it as the model's "skepticism." A high value means the model is more skeptical of small sample sizes and will introduce more long-term "luck" (good and bad) into the simulation.
-        *   **Example**: If this is set to 50,000 and you provide a stake with a 5,000 hand sample, the model thinks, "This could just be a lucky streak," and will simulate futures where your true win rate is both higher and lower than what you've observed.
+    *   **Prior Sample Size**: This setting controls the model's **uncertainty** about your true skill level. It's a subtle but powerful concept.
+        *   **Analogy**: Think of your `Sample Hands` as a single poll you conducted. The `Prior Sample Size` is like a large collection of historical data from a professional polling firm. The simulation combines both to make a final prediction.
+        *   **Low Prior (e.g., 5,000)**: The total "pool of evidence" (your hands + the prior) is small. This makes the model **uncertain**, so it creates a *wide* range of long-term luck outcomes (`Assigned WR`s) to reflect that uncertainty.
+        *   **High Prior (e.g., 50,000)**: The total "pool of evidence" is large. This makes the model very **certain**, so it creates a *narrow* range of long-term luck outcomes. The `Assigned WR`s will be very consistent across simulations.
+        *   **In short**: To get a wider, more "lucky" distribution of outcomes, use a lower prior. To get a more consistent, less "lucky" distribution, use a higher prior.
     *   **Weight for 0-Hand Stake Estimates**: For stakes you've never played, this slider balances your own guess (1.0) vs. the model's guess based on the stakes below it (0.0). A value of 0.5 is a good middle ground.
 
     #### Plotting & Display Settings
@@ -171,7 +174,10 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Distribution of Assigned Luck (WR)**: This chart visualizes the "luck" factor. It shows the range of "true skill + long-term luck" the simulation assigns to different runs. The width of this curve is determined by your `Sample Hands` input—less data means more uncertainty and a wider curve.
         *   **Maximum Downswing Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
     *   **Key Insights**:
-        *   **Hands Distribution**: Shows where you'll spend most of your time. The `Avg. WR` here is the average of all the "assigned luck" win rates for that stake, which is why it might differ slightly from your input.
+        *   **Hands Distribution**: Shows where you'll spend most of your time. For each stake, it provides:
+            *   **Percentage**: The share of total hands played at this stake across all simulations.
+            *   **Avg. WR**: The average win rate the simulation used for this stake. This includes the "luck" factor, so it will differ slightly from your input. It represents the average "true skill" assigned to players at this stake.
+            *   **Trust**: A percentage showing how much the model "trusts" your input `EV Win Rate`. It's calculated based on your `Sample Hands` versus the `Prior Sample Size`. A high trust percentage means the model is confident in your data and will apply less long-term luck (variance) to your win rate. A low trust percentage means the model is uncertain and will simulate a wider range of good and bad luck.
         *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
         *   **Median Stop-Losses**: If enabled, this metric shows the typical number of times a stop-loss was triggered during a simulation run. It's a good indicator of session volatility.
         *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
@@ -1091,25 +1097,37 @@ if st.session_state.get("simulation_output"):
                 st.markdown(
                     "**Hands Distribution**",
                     help=(
-                        "This section shows two key metrics:\n\n"
-                        "1.  **Percentage:** The share of total hands played at this stake.\n"
-                        "2.  **Avg. WR (Average Win Rate):** The average win rate the simulation used for this stake across all runs.\n\n"
-                        "**Why isn't this just my input win rate?**\n\n"
-                        "To be realistic, the simulation models luck and uncertainty. For each of the 1000+ simulation runs, it uses a slightly different win rate based on your sample size and a random factor to simulate running hot or cold. "
-                        "The `Avg. WR` is the average of all these slightly different win rates."
-                    )
+                        "This section shows three key metrics for each stake:\n\n"
+                        "1.  **Percentage:** The share of total hands played at this stake.\n\n"
+                        "2.  **Avg. WR:** The average win rate the simulation used for this stake across all runs. This includes the 'luck' factor, so it will differ from your input. It represents the average 'true skill' assigned to players at this stake.\n\n"
+                        "3.  **Trust:** A percentage showing how much the model 'trusts' your input `EV Win Rate`. It's calculated from your `Sample Hands` vs. the `Prior Sample Size`. A higher trust percentage means the model is more confident in your data and will apply less long-term luck (variance) to your win rate."
+                    ),
                 )
                 if result.get('hands_distribution_pct'):
+                    # Create a map for easy lookup of sample hands
+                    stakes_data_list = config.get('STAKES_DATA', [])
+                    sample_hands_map = {s['name']: s.get('sample_hands', 0) for s in stakes_data_list}
+                    prior_sample_size = config.get('PRIOR_SAMPLE_SIZE', 50000)
+
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                     sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
                     avg_win_rates = result.get('average_assigned_win_rates', {})
+                    
                     for stake, pct in sorted_stakes:
                         if pct > 0.01:
-                            wr_str = ""
+                            # Calculate data weight (trust factor)
+                            sample_hands = sample_hands_map.get(stake, 0)
+                            trust_factor = 0.0
+                            if sample_hands > 0 and (sample_hands + prior_sample_size) > 0:
+                                trust_factor = sample_hands / (sample_hands + prior_sample_size)
+
+                            details_parts = []
                             if stake in avg_win_rates:
-                                wr = avg_win_rates[stake]
-                                wr_str = f" (Avg. WR: {wr:.2f} bb/100)"
-                            st.write(f"- {stake}: {pct:.2f}%{wr_str}")
+                                details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
+                            details_parts.append(f"Trust: {trust_factor:.0%}")
+                            
+                            details_str = f" ({', '.join(details_parts)})"
+                            st.write(f"- {stake}: {pct:.2f}%{details_str}")
                 else:
                     st.write("No hands played.")
 
