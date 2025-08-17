@@ -213,9 +213,23 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
     # 3. It applies the `long_term_luck_factors` (one persistent random number per simulation) scaled by the uncertainty.
     # The result is the "true" win rate for a given simulation run.
 
+    # The `PRIOR_SAMPLE_SIZE` has two distinct effects:
+    # 1. The "Shrinkage" Effect: It determines how much weight to give the user's input vs. the prior (the model's extrapolation).
+    #    A high prior means the model is more skeptical of the user's input if the `sample_hands` is low.
+    # 2. The "Uncertainty" Effect: It's added to the user's `sample_hands` to form a total "pool of evidence".
+    #    A larger total pool results in a smaller `std_error`, meaning less long-term luck is applied.
+
+    # --- A Note on a Common Point of Confusion ---
+    # It may seem that a low prior (more trust in user input) should lead to less variance in Assigned WR.
+    # This is not the case. The two effects work differently:
+    # - "Trust" (Shrinkage) affects the *center* of the Assigned WR distribution. A low prior centers the distribution on the user's input.
+    # - "Uncertainty" (Variance) affects the *width* of the distribution. A low prior creates a small "pool of evidence",
+    #   which means the model is very uncertain about its estimate, resulting in a *wider* distribution of long-term luck.
+    # Conversely, a high prior creates a large evidence pool, high certainty, and a *narrower* distribution.
+
     if sample_hands > 0:
+        # Effect 1: Calculate the weight for the "shrinkage" effect.
         data_weight = sample_hands / (sample_hands + config['PRIOR_SAMPLE_SIZE'])
-        # This is the model's best guess at your "true skill" win rate, adjusted for sample size.
         skill_estimate_wr = (data_weight * ev_bb_per_100) + ((1 - data_weight) * prior_win_rate)
     else:
         model_extrapolation = prior_win_rate
@@ -231,6 +245,7 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
             return np.full_like(long_term_luck_factors, skill_estimate_wr)
         return skill_estimate_wr # It's already an array for subsequent stakes
 
+    # Effect 2: Calculate the total "pool of evidence" to determine uncertainty.
     effective_sample_size_for_variance = sample_hands + config['PRIOR_SAMPLE_SIZE']
     N_blocks = max(1.0, effective_sample_size_for_variance / 100.0)
     std_error = std_dev_per_100 / np.sqrt(N_blocks)
