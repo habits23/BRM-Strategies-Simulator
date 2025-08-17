@@ -772,7 +772,7 @@ with tab2:
                         "threshold": st.column_config.NumberColumn(
                             "Bankroll Threshold (€)",
                             help="The bankroll amount at which this rule applies.",
-                            min_value=0,
+                            min_value=1,
                             format="€ %d",
                         ),
                         **{
