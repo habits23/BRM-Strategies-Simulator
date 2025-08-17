@@ -1135,7 +1135,7 @@ if st.session_state.get("simulation_output"):
                 st.markdown("---")
                 st.markdown(
                     "**Percentile Win Rate Analysis (bb/100)**",
-                    help="Shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n- **Assigned WR:** The 'true' win rate the simulation assigned for this entire run (models long-term luck).\n- **Play WR:** The actual, realized win rate from gameplay after session-to-session variance.\n- **Rakeback WR:** The effective win rate gained from rakeback."
+                    help="Shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n- **Assigned WR:** The 'true' win rate the simulation assigned for this entire run (models long-term luck).\n- **Play WR:** The actual, realized win rate from gameplay after session-to-session variance.\n- **Rakeback WR:** The effective win rate gained from rakeback.\n- **Variance Impact:** The difference between Play WR and Assigned WR, showing the effect of short-term variance."
                 )
                 st.caption(
                     "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
@@ -1162,6 +1162,7 @@ if st.session_state.get("simulation_output"):
                             st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}")
                             st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}")
                             st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}")
+                            st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}")
 
 
     # --- PDF Download Button ---

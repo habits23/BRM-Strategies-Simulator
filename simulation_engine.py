@@ -313,12 +313,18 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
             if avg_bb_size > 0:
                 total_profit_eur = final_bankrolls[closest_sim_index] - config['STARTING_BANKROLL_EUR']
                 profit_from_play_eur = total_profit_eur - final_rakeback[closest_sim_index]
-                stake_wrs['Realized WR (Play)'] = f"{(profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
+                realized_wr_val = (profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100)
+                assigned_wr_val = assigned_weighted_wr_sum / total_hands_for_sim
+                variance_impact_val = realized_wr_val - assigned_wr_val
+
+                stake_wrs['Realized WR (Play)'] = f"{realized_wr_val:.2f}"
                 stake_wrs['Rakeback (bb/100)'] = f"{(final_rakeback[closest_sim_index] / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
+                stake_wrs['Variance Impact'] = f"{variance_impact_val:+.2f}" # Use + to show positive/negative impact
             else: # Handle case where avg_bb_size is 0
                 stake_wrs['Realized WR (Play)'] = "N/A"
                 stake_wrs['Rakeback (bb/100)'] = "N/A"
-        
+                stake_wrs['Variance Impact'] = "N/A"
+
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
