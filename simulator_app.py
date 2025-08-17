@@ -1137,8 +1137,12 @@ if st.session_state.get("simulation_output"):
                     "**Percentile Win Rate Analysis (bb/100)**",
                     help="Shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n- **Assigned WR:** The 'true' win rate the simulation assigned for this entire run (models long-term luck).\n- **Play WR:** The actual, realized win rate from gameplay after session-to-session variance.\n- **Rakeback WR:** The effective win rate gained from rakeback."
                 )
-                st.caption("Note: The 'Median' column shows the win rate for the simulation that had the median *final bankroll*, not necessarily median *luck*. If most runs are successful, the median run will often be one that was assigned an above-average win rate.")
-
+                st.caption(
+                    "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
+                    "The `Realized WR (Play)` includes short-term variance, so it will naturally differ from the `Assigned WR` even for this median-outcome run. "
+                    "This is expected statistical noise."
+                )
+                
                 percentile_wrs = result.get('percentile_win_rates', {})
                 percentiles_to_show = {
                     "5th": "5th Percentile",
