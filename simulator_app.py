@@ -1146,7 +1146,7 @@ if st.session_state.get("simulation_output"):
                     help=(
                         "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
                         "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
-                        "- **Play WR:** The actual win rate realized from gameplay after adding session-to-session variance. This is the Assigned WR plus the outcome of all short-term luck (e.g., coolers, bad beats, heaters within a session).\n\n"
+                        "- **Play WR:** The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
                         "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
                         "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
                     )
@@ -1174,7 +1174,11 @@ if st.session_state.get("simulation_output"):
                         if long_name in percentile_wrs:
                             data = percentile_wrs[long_name]
                             st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
-                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}", help="The actual win rate realized from gameplay after adding session-to-session variance. This is the Assigned WR plus the outcome of all short-term luck.")
+                            st.metric(
+                                label="Play WR",
+                                value=f"{data.get('Realized WR (Play)', 'N/A')}",
+                                help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length)."
+                            )
                             st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
                             st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
 
