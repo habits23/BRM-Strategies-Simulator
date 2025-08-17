@@ -183,7 +183,16 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **95th Percentile**: A typical "good run" or heater.
     *   For each percentile, you'll see these metrics:
         *   **Assigned WR**: The "true" win rate (skill + long-term luck) the simulator assigned to the entire run. A high number here means this simulated "you" was on a long-term heater.
-        *   **Play WR**: The actual result from playing the hands, including both the `Assigned WR` and normal session-to-session variance.
+            It is influenced by:
+            *   **`EV Win Rate (bb/100)`**: Your stated skill level, which is the starting point.
+            *   **`Sample Hands`**: The more hands you have, the more the model trusts your EV Win Rate, and the smaller the "luck" adjustment will be.
+            *   **`Std Dev (bb/100)`**: Higher volatility means more uncertainty, which allows for a wider range of possible long-term luck adjustments.
+            *   **`Prior Sample Size`**: The model's "skepticism." A high value here makes the model more skeptical of small samples, leading to a wider luck distribution.
+        *   **Play WR**: This is the actual, realized win rate from playing the hands. It's the final result after all the session-to-session variance is accounted for. It's calculated by taking the `Assigned WR` and adding random variance for every block of hands played.
+            It is influenced by:
+            *   **`Assigned WR`**: The baseline skill + long-term luck for the run.
+            *   **`Std Dev (bb/100)`**: Directly determines the magnitude of the upswings and downswings in each session.
+            *   **`Hands per Bankroll Check`**: The length of the "session" being simulated.
         *   **Rakeback WR**: The extra win rate you got from rakeback.
 
     Finally, you can download a **Full PDF Report** with all of this information, including the Automated Strategy Analysis, for offline viewing and sharing. Happy simulating!
@@ -1134,7 +1143,13 @@ if st.session_state.get("simulation_output"):
                 st.markdown("---")
                 st.markdown(
                     "**Percentile Win Rate Analysis (bb/100)**",
-                    help="Shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n- **Assigned WR:** The 'true' win rate the simulation assigned for this entire run (models long-term luck).\n- **Play WR:** The actual, realized win rate from gameplay after session-to-session variance.\n- **Rakeback WR:** The effective win rate gained from rakeback.\n- **Variance Impact:** The difference between Play WR and Assigned WR, showing the effect of short-term variance."
+                    help=(
+                        "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
+                        "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
+                        "- **Play WR:** The actual win rate realized from gameplay after adding session-to-session variance. This is the Assigned WR plus the outcome of all short-term luck (e.g., coolers, bad beats, heaters within a session).\n\n"
+                        "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
+                        "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
+                    )
                 )
                 st.caption(
                     "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
@@ -1158,10 +1173,10 @@ if st.session_state.get("simulation_output"):
                         st.markdown(f"**{short_name} %ile**")
                         if long_name in percentile_wrs:
                             data = percentile_wrs[long_name]
-                            st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}")
-                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}")
-                            st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}")
-                            st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}")
+                            st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
+                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}", help="The actual win rate realized from gameplay after adding session-to-session variance. This is the Assigned WR plus the outcome of all short-term luck.")
+                            st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
+                            st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
 
 
     # --- PDF Download Button ---

@@ -134,8 +134,8 @@ def setup_simulation_parameters(config, seed):
     """Initializes and returns common parameters needed for simulations."""
     rng = np.random.default_rng(seed)
     all_win_rates = {}
-    # This is the critical fix: Generate one "luck factor" per simulation run.
-    luck_factor = rng.normal(loc=0.0, scale=1.0, size=config['NUMBER_OF_SIMULATIONS'])
+    # This is the critical step: Generate one "long-term luck factor" per simulation run.
+    long_term_luck_factors = rng.normal(loc=0.0, scale=1.0, size=config['NUMBER_OF_SIMULATIONS'])
 
     for i, stake in enumerate(config['STAKES_DATA']):
         name = stake["name"]
@@ -152,13 +152,19 @@ def setup_simulation_parameters(config, seed):
         else:
             prior_win_rate = ev_bb_per_100
 
-        all_win_rates[name] = calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, luck_factor, prior_win_rate, config)
+        all_win_rates[name] = calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, long_term_luck_factors, prior_win_rate, config)
 
     return all_win_rates, rng
 
 
 def calculate_hand_block_outcome(current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config):
     """Calculates the profit and hands played for a block of hands across all simulations."""
+    # This function models SHORT-TERM LUCK (session-to-session variance).
+    # It takes the pre-calculated `all_win_rates` (the Assigned WR, which includes long-term luck)
+    # and adds a new random variance component for this specific block of hands.
+    # The final result of the simulation, after accumulating all these short-term results,
+    # is the "Play WR" or "Realized WR".
+
     session_profits_eur = np.zeros_like(current_bankrolls)
     hands_per_stake_this_session = {stake["name"]: np.zeros_like(current_bankrolls, dtype=int) for stake in config['STAKES_DATA']}
 
@@ -176,11 +182,12 @@ def calculate_hand_block_outcome(current_bankrolls, proportions_per_stake, all_w
             
             num_100_hand_blocks = hands_for_stake / 100.0
 
-            # Separate EV and Variance components
-            # EV scales linearly with volume
+            # 1. Profit from Skill + Long-Term Luck (the pre-calculated Assigned WR)
+            # This component is deterministic for a given simulation run.
             profit_from_ev_bb = all_win_rates[name][proportions_mask] * num_100_hand_blocks
 
-            # Variance scales with sqrt(volume)
+            # 2. Profit from Short-Term Variance (the "Session Luck Factor")
+            # A new random number is generated for every block to simulate session-to-session luck.
             random_noise_component = rng.normal(loc=0.0, scale=1.0, size=np.sum(proportions_mask))
             profit_from_variance_bb = random_noise_component * std_dev_per_100 * np.sqrt(num_100_hand_blocks)
 
@@ -197,30 +204,42 @@ def calculate_hand_block_outcome(current_bankrolls, proportions_per_stake, all_w
     final_session_profit = session_profits_eur + total_rakeback_eur
     return final_session_profit, hands_per_stake_this_session, total_rakeback_eur
 
-def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, luck_factor, prior_win_rate, config):
+def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, long_term_luck_factors, prior_win_rate, config):
     """Adjusts the observed EV win rate using a Bayesian-inspired 'shrinkage' method."""
+    # This function calculates the "Assigned WR" which includes LONG-TERM LUCK.
+    # It's called once per stake at the beginning of the simulation.
+    # 1. It creates a "skill_estimate_wr" by blending the user's input with a prior, weighted by sample size.
+    # 2. It calculates the uncertainty ("std_error") in that skill estimate.
+    # 3. It applies the `long_term_luck_factors` (one persistent random number per simulation) scaled by the uncertainty.
+    # The result is the "true" win rate for a given simulation run.
+
     if sample_hands > 0:
         data_weight = sample_hands / (sample_hands + config['PRIOR_SAMPLE_SIZE'])
-        shrunk_win_rate = (data_weight * ev_bb_per_100) + ((1 - data_weight) * prior_win_rate)
+        # This is the model's best guess at your "true skill" win rate, adjusted for sample size.
+        skill_estimate_wr = (data_weight * ev_bb_per_100) + ((1 - data_weight) * prior_win_rate)
     else:
         model_extrapolation = prior_win_rate
         user_estimate = ev_bb_per_100
-        shrunk_win_rate = (config['ZERO_HANDS_INPUT_WEIGHT'] * user_estimate) + ((1 - config['ZERO_HANDS_INPUT_WEIGHT']) * model_extrapolation)
+        # This is the model's best guess at your "true skill" for a stake with no data.
+        skill_estimate_wr = (config['ZERO_HANDS_INPUT_WEIGHT'] * user_estimate) + ((1 - config['ZERO_HANDS_INPUT_WEIGHT']) * model_extrapolation)
 
-    # For a true sanity check, we can bypass the luck factor entirely to get a perfect match.
+    # For a true sanity check, we can bypass the luck factor entirely.
     if config.get('PRIOR_SAMPLE_SIZE') >= 10_000_000:
-        # The issue is that for the first stake, shrunk_win_rate is a float.
+        # The issue is that for the first stake, skill_estimate_wr is a float.
         # We must ensure it's an array of the correct size for all simulations.
-        if isinstance(shrunk_win_rate, (int, float)):
-            return np.full_like(luck_factor, shrunk_win_rate)
-        return shrunk_win_rate # It's already an array for subsequent stakes
+        if isinstance(skill_estimate_wr, (int, float)):
+            return np.full_like(long_term_luck_factors, skill_estimate_wr)
+        return skill_estimate_wr # It's already an array for subsequent stakes
 
     effective_sample_size_for_variance = sample_hands + config['PRIOR_SAMPLE_SIZE']
     N_blocks = max(1.0, effective_sample_size_for_variance / 100.0)
     std_error = std_dev_per_100 / np.sqrt(N_blocks)
-    # Apply the same luck factor to each stake, scaled by the stake's specific standard error.
-    adjustment = luck_factor * std_error
-    return shrunk_win_rate + adjustment
+    
+    # This is the "long-term luck" component for the entire simulation run.
+    long_term_luck_adjustment = long_term_luck_factors * std_error
+    
+    # The final Assigned WR is the skill estimate plus the long-term luck.
+    return skill_estimate_wr + long_term_luck_adjustment
 
 def calculate_binned_mode(data, ruin_threshold):
     """Calculates the mode of a continuous distribution using Kernel Density Estimation (KDE)."""
