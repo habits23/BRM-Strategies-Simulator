@@ -9,6 +9,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 from collections import defaultdict
 import io
 
+from . import analysis
+from . import reporting
+
 # =================================================================================
 #   BANKROLL MANAGEMENT STRATEGY CLASS
 # =================================================================================
@@ -256,25 +259,6 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
     # The final Assigned WR is the skill estimate plus the long-term luck.
     return skill_estimate_wr + long_term_luck_adjustment
 
-def calculate_binned_mode(data, ruin_threshold):
-    """Calculates the mode of a continuous distribution using Kernel Density Estimation (KDE)."""
-    successful_runs = data[data > ruin_threshold]
-    if len(successful_runs) < 2:
-        return np.median(data)
-
-    p99 = np.percentile(successful_runs, 99)
-    filtered_data = successful_runs[successful_runs <= p99]
-    if len(filtered_data) < 2:
-        return np.median(successful_runs)
-
-    try:
-        kde = gaussian_kde(filtered_data)
-        grid = np.linspace(min(filtered_data), max(filtered_data), 1000)
-        density = kde(grid)
-        return grid[np.argmax(density)]
-    except (np.linalg.LinAlgError, ValueError):
-        return np.median(filtered_data)
-
 def sample_percentage_range(range_str, rng):
     """Given a range string like "40-60", return a random float in that range."""
     parts = range_str.split('-')
@@ -311,196 +295,6 @@ def resolve_proportions(rule, rng):
         return normalize_percentages(percentages)
     return {}
 
-def get_initial_table_mix_string(strategy, config):
-    """Helper function to describe the starting table mix as a string."""
-    rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
-    if not rule:
-        return "No Play"
-    mix_parts = [f"{stake}: {value}" for stake, value in sorted(rule.items())]
-    return ", ".join(mix_parts) if mix_parts else "No Play"
-
-def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map):
-    """Calculates assigned and realized win rates for simulations closest to key percentiles."""
-    percentile_win_rates = {}
-    percentiles_to_find = {'2.5th': 2.5, '5th': 5, '25th': 25, 'Median': 50, '75th': 75, '95th': 95, '97.5th': 97.5}
-    final_rakeback = rakeback_histories[:, -1]
-
-    for name, p_val in sorted(percentiles_to_find.items(), key=lambda item: item[1]):
-        percentile_bankroll = np.percentile(final_bankrolls, p_val)
-        closest_sim_index = np.argmin(np.abs(final_bankrolls - percentile_bankroll))
-
-        stake_wrs = {'p_val': p_val}
-        total_hands_for_sim, assigned_weighted_wr_sum, weighted_bb_size_sum = 0, 0, 0
-
-        for stake_name, wr_array in all_win_rates.items():
-            exact_wr = wr_array[closest_sim_index]
-            stake_wrs[stake_name] = f"{exact_wr:.2f}"
-            hands_at_stake = hands_per_stake_histories[stake_name][closest_sim_index, -1]
-            total_hands_for_sim += hands_at_stake
-            assigned_weighted_wr_sum += exact_wr * hands_at_stake
-            weighted_bb_size_sum += hands_at_stake * bb_size_map[stake_name]
-
-        if total_hands_for_sim > 0:
-            stake_wrs['Assigned WR'] = f"{assigned_weighted_wr_sum / total_hands_for_sim:.2f}"
-            avg_bb_size = weighted_bb_size_sum / total_hands_for_sim
-
-            if avg_bb_size > 0:
-                total_profit_eur = final_bankrolls[closest_sim_index] - config['STARTING_BANKROLL_EUR']
-                profit_from_play_eur = total_profit_eur - final_rakeback[closest_sim_index]
-                realized_wr_val = (profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100)
-                assigned_wr_val = assigned_weighted_wr_sum / total_hands_for_sim
-                variance_impact_val = realized_wr_val - assigned_wr_val
-
-                stake_wrs['Realized WR (Play)'] = f"{realized_wr_val:.2f}"
-                stake_wrs['Rakeback (bb/100)'] = f"{(final_rakeback[closest_sim_index] / avg_bb_size) / (total_hands_for_sim / 100):.2f}"
-                stake_wrs['Variance Impact'] = f"{variance_impact_val:+.2f}" # Use + to show positive/negative impact
-            else: # Handle case where avg_bb_size is 0
-                stake_wrs['Realized WR (Play)'] = "N/A"
-                stake_wrs['Rakeback (bb/100)'] = "N/A"
-                stake_wrs['Variance Impact'] = "N/A"
-
-        percentile_win_rates[f"{name} Percentile"] = stake_wrs
-    return percentile_win_rates
-
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, config):
-    """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
-    bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-    total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
-    final_bankrolls = bankroll_histories[:, -1]
-
-    # --- Calculate Weighted Assigned WR for each simulation ---
-    # This is crucial for understanding the distribution of "luck" (assigned win rates)
-    final_hands_per_stake = {name: history[:, -1] for name, history in hands_per_stake_histories.items()}
-    total_hands_per_sim = np.sum(list(final_hands_per_stake.values()), axis=0)
-
-    weighted_assigned_wr_sum = np.zeros(config['NUMBER_OF_SIMULATIONS'])
-    for stake_name, wr_array in all_win_rates.items():
-        weighted_assigned_wr_sum += wr_array * final_hands_per_stake[stake_name]
-
-    # Avoid division by zero for sims with no hands played
-    avg_assigned_wr_per_sim = np.divide(
-        weighted_assigned_wr_sum,
-        total_hands_per_sim,
-        out=np.zeros_like(weighted_assigned_wr_sum),
-        where=total_hands_per_sim != 0
-    )
-
-    # Find the Assigned WR for the run that resulted in the median final bankroll
-    median_final_bankroll_val = np.percentile(final_bankrolls, 50)
-    median_sim_index = np.argmin(np.abs(final_bankrolls - median_final_bankroll_val))
-    median_run_assigned_wr = avg_assigned_wr_per_sim[median_sim_index]
-
-    average_assigned_win_rates = {name: np.mean(wr_array) for name, wr_array in all_win_rates.items()}
-
-    total_hands_per_stake = {name: np.sum(history[:, -1]) for name, history in hands_per_stake_histories.items()}
-    grand_total_hands = sum(total_hands_per_stake.values())
-    hands_distribution_pct = {name: (total / grand_total_hands) * 100 for name, total in total_hands_per_stake.items()} if grand_total_hands > 0 else {}
-
-    risk_of_demotion = {}
-    for level, stake_name in stake_name_map.items():
-        if level > 0:
-            sims_that_reached_peak = np.sum(peak_stake_levels >= level)
-            if sims_that_reached_peak > 0:
-                sims_demoted_from_peak = np.sum(demotion_flags[level])
-                demotion_prob = (sims_demoted_from_peak / sims_that_reached_peak) * 100
-                risk_of_demotion[stake_name] = {'prob': demotion_prob, 'reached_count': sims_that_reached_peak}
-
-    final_stake_counts = defaultdict(int)
-    final_highest_stake_counts = defaultdict(int)
-    stake_order_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
-
-    for br in final_bankrolls:
-        table_mix = strategy_obj.get_table_mix(br)
-        # This part is for the detailed PDF report, so it's still needed.
-        mix_str = ", ".join(f"{s}: {v}" for s, v in sorted(table_mix.items())) if table_mix else "No Play"
-        final_stake_counts[mix_str] += 1
-
-        # This is the more direct calculation for the UI summary.
-        if not table_mix:
-            final_highest_stake_counts["No Play"] += 1
-        else:
-            # Filter the mix to only include stakes that are actually played.
-            # This is critical for the Hysteresis strategy, which includes all stakes in its
-            # rules, with most set to "0%". The original code would incorrectly find the
-            # highest stake overall (e.g., NL200) instead of the one with a "100%" allocation.
-            active_stakes_in_mix = {
-                stake: value for stake, value in table_mix.items()
-                if (isinstance(value, str) and float(value.replace('%','').split('-')[0]) > 0) or (isinstance(value, int) and value > 0)
-            }
-
-            if not active_stakes_in_mix:
-                final_highest_stake_counts["No Play"] += 1
-            else:
-                highest_stake = max(active_stakes_in_mix.keys(), key=lambda s: stake_order_map.get(s, -1))
-                final_highest_stake_counts[highest_stake] += 1
-
-    final_stake_distribution = {mix_str: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for mix_str, count in final_stake_counts.items()}
-    final_highest_stake_distribution = {stake: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for stake, count in final_highest_stake_counts.items()}
-
-    percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map)
-
-    median_max_downswing = np.median(max_drawdowns)
-    p95_max_downswing = np.percentile(max_drawdowns, 95)
-
-    # Calculate median rakeback
-    final_rakeback = rakeback_histories[:, -1]
-    median_rakeback_eur = np.median(final_rakeback)
-
-    # Calculate median profit from play
-    total_profit_per_sim = final_bankrolls - config['STARTING_BANKROLL_EUR']
-    profit_from_play_per_sim = total_profit_per_sim - final_rakeback
-    median_profit_from_play_eur = np.median(profit_from_play_per_sim)
-
-    # Calculate median stop-losses
-    median_stop_losses = np.median(stop_loss_triggers) if stop_loss_triggers is not None else 0
-
-    # Calculate median hands played
-    median_hands_played = np.median(total_hands_per_sim)
-
-    # Calculate median time spent underwater
-    time_underwater_pct = np.divide(
-        underwater_hands_count,
-        total_hands_per_sim,
-        out=np.zeros_like(underwater_hands_count, dtype=float),
-        where=total_hands_per_sim != 0
-    ) * 100
-    median_time_underwater_pct = np.median(time_underwater_pct)
-
-    final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
-    target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
-    busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
-    risk_of_ruin_percent = (busted_runs / config['NUMBER_OF_SIMULATIONS']) * 100
-    percentiles = {p: np.percentile(final_bankrolls, p) for p in [2.5, 5, 25, 50, 75, 95, 97.5]}
-    median_growth_rate = (percentiles[50] - config['STARTING_BANKROLL_EUR']) / config['STARTING_BANKROLL_EUR'] if config['STARTING_BANKROLL_EUR'] > 0 else 0.0
-
-    return {
-        'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
-        'final_bankroll_mode': final_bankroll_mode, 'growth_rate': median_growth_rate,
-        'risk_of_ruin': risk_of_ruin_percent, 'p5': percentiles[5], 'p2_5': percentiles[2.5],
-        'bankroll_histories': bankroll_histories, 'hands_histories': total_hands_histories,
-        'median_history': np.median(bankroll_histories, axis=0),
-        'hands_history': np.mean(total_hands_histories, axis=0),
-        'target_prob': (target_achieved_count / config['NUMBER_OF_SIMULATIONS']) * 100,
-        'above_threshold_hit_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories >= rule["threshold"], axis=1))
-                                      for rule in strategy_obj.rules if rule["threshold"] > config['STARTING_BANKROLL_EUR']},
-        'below_threshold_drop_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories <= rule["threshold"], axis=1))
-                                       for rule in strategy_obj.rules if rule["threshold"] < config['STARTING_BANKROLL_EUR']},
-        'percentile_win_rates': percentile_win_rates, 'risk_of_demotion': risk_of_demotion,
-        'hands_distribution_pct': hands_distribution_pct,
-        'final_stake_distribution': final_stake_distribution,
-        'final_highest_stake_distribution': final_highest_stake_distribution,
-        'median_max_downswing': median_max_downswing,
-        'p95_max_downswing': p95_max_downswing,
-        'max_downswings': max_drawdowns,
-        'median_rakeback_eur': median_rakeback_eur,
-        'median_profit_from_play_eur': median_profit_from_play_eur,
-        'median_hands_played': median_hands_played,
-        'median_stop_losses': median_stop_losses,
-        'median_time_underwater_pct': median_time_underwater_pct,
-        'average_assigned_win_rates': average_assigned_win_rates,
-        'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
-        'median_run_assigned_wr': median_run_assigned_wr,
-    }
 def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
@@ -773,337 +567,6 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
 
-def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name, config, pdf=None):
-    """Plots the median progression with a shaded area for the 25th-75th percentile range."""
-    fig, ax = plt.subplots(figsize=(8, 5)) # Further reduced size for a more compact app layout
-    median_history = np.median(bankroll_histories, axis=0)
-    y_upper_limit = np.percentile(bankroll_histories, 95) * 1.1 # Add 10% for padding
-    lower_percentile = np.percentile(bankroll_histories, 25, axis=0)
-    upper_percentile = np.percentile(bankroll_histories, 75, axis=0)
-    median_hands = np.median(hands_histories, axis=0)
-
-    for i in range(min(50, len(bankroll_histories))):
-        ax.plot(hands_histories[i], bankroll_histories[i], color='gray', alpha=0.1)
-
-    ax.fill_between(median_hands, lower_percentile, upper_percentile,
-                     color='lightblue', alpha=0.4, label='25th-75th Percentile Range')
-    ax.plot(median_hands, median_history, 'b-', linewidth=3, label='Median Progression')
-    ax.axhline(config['STARTING_BANKROLL_EUR'], color='black', linewidth=2, label='Starting Bankroll')
-    ax.axhline(config['TARGET_BANKROLL'], color='gold', linestyle='-.', label=f"Target: €{config['TARGET_BANKROLL']}")
-    ax.set_title(f'Bankroll Progression: {strategy_name}', fontsize=14)
-    ax.set_xlabel('Total Hands Played', fontsize=12)
-    ax.set_ylabel('Bankroll (EUR)', fontsize=12)
-    ax.legend()
-    ax.grid(True)
-    ax.set_ylim(bottom=0, top=y_upper_limit)
-
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_median_progression_comparison(all_results, config, color_map=None, pdf=None):
-    """Compares the median bankroll progression for all strategies on a single plot."""
-    fig, ax = plt.subplots(figsize=(8, 5)) # Made consistent with other compact plots
-    if color_map is None:
-        # Fallback for generating colors internally if no map is provided
-        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
-
-    for strategy_name, result in all_results.items():
-        color = color_map.get(strategy_name)
-        ax.plot(result['hands_history'], result['median_history'], label=strategy_name, linewidth=2.5, color=color)
-
-    ax.axhline(config['STARTING_BANKROLL_EUR'], color='gray', linestyle='--', label='Starting Bankroll')
-    ax.axhline(config['TARGET_BANKROLL'], color='gold', linestyle='-.', label=f"Target: €{config['TARGET_BANKROLL']}")
-
-    ax.set_title('Median Bankroll Progression Comparison Across All Strategies', fontsize=16)
-    ax.set_xlabel('Total Hands Played', fontsize=12)
-    ax.set_ylabel('Bankroll (EUR)', fontsize=12)
-    ax.legend(loc='upper left', fontsize=10)
-    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, config, pdf=None, color_map=None):
-    """Creates a histogram of final bankrolls with key metrics highlighted."""
-    # Filter out bankrolls that are too high to improve the visibility of the main data cluster.
-    max_x_limit = np.percentile(final_bankrolls, 99.0)
-    filtered_bankrolls = final_bankrolls[final_bankrolls <= max_x_limit]
-
-    # Use the strategy's assigned color if a map is provided
-    hist_color = 'skyblue'
-    if color_map and strategy_name in color_map:
-        hist_color = color_map[strategy_name]
-
-    median_val = result['median_final_bankroll']
-    # We only need the 5th and 95th percentiles for this cleaner plot.
-    percentiles = {p: np.percentile(final_bankrolls, p) for p in [5, 95]}
-
-    fig, ax = plt.subplots(figsize=(8, 5)) # Further reduced size for a more compact app layout
-    ax.hist(filtered_bankrolls, bins=50, color=hist_color, edgecolor='black', alpha=0.7)
-
-    # Key metrics
-    ax.axvline(median_val, color='red', linestyle='dashed', linewidth=2, label=f'Median: €{median_val:,.2f}')
-    ax.axvline(percentiles[5], color='darkred', linestyle=':', linewidth=2, label=f'5th Percentile: €{percentiles[5]:,.2f}')
-    ax.axvline(percentiles[95], color='green', linestyle=':', linewidth=2, label=f'95th Percentile: €{percentiles[95]:,.2f}')
-
-    # Contextual lines
-    ax.axvline(config["STARTING_BANKROLL_EUR"], color='black', linewidth=2, label=f'Starting: €{config["STARTING_BANKROLL_EUR"]:,.0f}')
-    ax.axvline(config["TARGET_BANKROLL"], color='gold', linestyle='-.', linewidth=2, label=f'Target: €{config["TARGET_BANKROLL"]:,.0f}')
-    ax.set_title(f'Final Bankroll Distribution for {strategy_name}')
-    ax.set_xlabel('Final Bankroll (EUR)')
-    ax.set_ylabel('Frequency')
-    ax.legend()
-    ax.grid(True)
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_wr, average_input_wr, strategy_name, pdf=None):
-    """
-    Plots the distribution of the weighted average 'Assigned WR' for all simulations.
-    This visualizes the 'luck' distribution and highlights where the median-outcome run falls.
-    """
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    # Filter out extreme outliers for better visualization
-    p1 = np.percentile(avg_assigned_wr_per_sim, 1)
-    p99 = np.percentile(avg_assigned_wr_per_sim, 99)
-    filtered_data = avg_assigned_wr_per_sim[(avg_assigned_wr_per_sim >= p1) & (avg_assigned_wr_per_sim <= p99)]
-
-    ax.hist(filtered_data, bins=50, color='c', edgecolor='black', alpha=0.6, label='Distribution of All Runs\' Luck')
-
-    ax.axvline(average_input_wr, color='blue', linestyle='--', linewidth=2,
-               label=f'Your Avg. Input WR: {average_input_wr:.2f}')
-
-    ax.axvline(median_run_assigned_wr, color='red', linestyle='-', linewidth=2.5,
-               label=f'Luck of Median-Outcome Run: {median_run_assigned_wr:.2f}')
-
-    ax.set_title(f'Distribution of Assigned Luck (WR) for {strategy_name}', fontsize=14)
-    ax.set_xlabel('Weighted Average Assigned Win Rate (bb/100)', fontsize=12)
-    ax.set_ylabel('Frequency (Number of Simulations)', fontsize=12)
-    ax.legend()
-    ax.grid(True, linestyle='--', alpha=0.6)
-
-    # --- Ensure vertical lines are always visible ---
-    # Get the current limits and expand them if the lines are outside the visible range
-    xmin, xmax = ax.get_xlim()
-    new_xmin = min(xmin, median_run_assigned_wr, average_input_wr)
-    new_xmax = max(xmax, median_run_assigned_wr, average_input_wr)
-    padding = (new_xmax - new_xmin) * 0.05 # Add 5% padding
-    ax.set_xlim(new_xmin - padding, new_xmax + padding)
-
-
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None):
-    """
-    Creates an overlapping density plot to compare the final bankroll distributions of all strategies.
-    """
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    if color_map is None:
-        # Fallback for generating colors internally if no map is provided
-        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
-
-    # --- Dynamically determine the x-axis range for a clearer plot --- #
-    # Combine all results to find a global range that fits all strategies well. #
-    all_final_bankrolls = np.concatenate([res['final_bankrolls'] for res in all_results.values() if len(res['final_bankrolls']) > 0])
-
-    # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
-    successful_runs = all_final_bankrolls[all_final_bankrolls > config['RUIN_THRESHOLD']]
-
-    if len(successful_runs) > 5: # Need a few points to calculate percentiles robustly
-        # Use the user-defined percentile to control the plot's "zoom".
-        # This makes the zoom symmetrical (e.g., 95 shows 5th-95th, 99 shows 1st-99th).
-        upper_percentile = config.get('PLOT_PERCENTILE_LIMIT', 99)
-        lower_percentile = 100 - upper_percentile
-
-        x_min = np.percentile(successful_runs, lower_percentile)
-        x_max = np.percentile(successful_runs, upper_percentile)
-
-        # Ensure the starting bankroll is always visible for context.
-        x_min = min(x_min, config['STARTING_BANKROLL_EUR'])
-        x_max = max(x_max, config['STARTING_BANKROLL_EUR'])
-
-        # Add some visual padding to the limits.
-        padding = (x_max - x_min) * 0.05
-        x_min -= padding
-        x_max += padding
-    else:
-        # Fallback for cases with very few successful runs (e.g., high risk of ruin)
-        x_min = 0
-        x_max = config.get('TARGET_BANKROLL', 5000) * 1.5
-
-    x_grid = np.linspace(x_min, x_max, 1000)
-
-    for strategy_name, result in all_results.items():
-        final_bankrolls = result['final_bankrolls']
-        color = color_map.get(strategy_name)
-        if len(final_bankrolls) > 1:
-            try:
-                # FIX: Filter the data before calculating the KDE.
-                # This prevents extreme outliers (the top 1% we've already
-                # excluded from the x-axis) from skewing the density plot.
-                # The result is a plot that better represents the main body of the distribution.
-                filtered_bankrolls = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max) & (final_bankrolls > config['RUIN_THRESHOLD'])]
-                if len(filtered_bankrolls) < 2: # Need at least 2 points for KDE
-                    ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=color)
-                    continue
-
-                kde = gaussian_kde(filtered_bankrolls)
-                density = kde(x_grid)
-                ax.plot(x_grid, density, label=strategy_name, color=color, linewidth=2)
-                ax.fill_between(x_grid, density, color=color, alpha=0.1)
-            except (np.linalg.LinAlgError, ValueError):
-                # Fallback for datasets that are not suitable for KDE
-                ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=color)
-
-    ax.set_title('Comparison of Final Bankroll Distributions', fontsize=16)
-    ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
-    ax.set_ylabel('Probability Density', fontsize=12)
-    ax.legend()
-    ax.grid(True, linestyle='--', alpha=0.6)
-    ax.set_xlim(left=x_min, right=x_max)
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=None, color_map=None):
-    """Creates a histogram of maximum downswings with key metrics highlighted."""
-    if max_downswings is None or len(max_downswings) == 0:
-        return plt.figure() # Return an empty figure if no data
-
-    # Use the strategy's assigned color if a map is provided
-    hist_color = 'salmon'
-    if color_map and strategy_name in color_map:
-        hist_color = color_map[strategy_name]
-
-    # Filter out extreme outliers for better visibility
-    max_x_limit = np.percentile(max_downswings, 99.0)
-    filtered_downswings = max_downswings[max_downswings <= max_x_limit]
-
-    median_downswing = result['median_max_downswing']
-    p95_downswing = result['p95_max_downswing']
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(filtered_downswings, bins=50, color=hist_color, edgecolor='black', alpha=0.7)
-
-    ax.axvline(median_downswing, color='darkred', linestyle='dashed', linewidth=2, label=f'Median Downswing: €{median_downswing:,.2f}')
-    ax.axvline(p95_downswing, color='purple', linestyle=':', linewidth=2, label=f'95th Pct. Downswing: €{p95_downswing:,.2f}')
-
-    ax.set_title(f'Maximum Downswing Distribution for {strategy_name}')
-    ax.set_xlabel('Maximum Downswing (EUR)')
-    ax.set_ylabel('Frequency')
-    ax.legend()
-    ax.grid(True)
-
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_time_underwater_comparison(all_results, config, color_map=None, pdf=None):
-    """
-    Creates a bar chart comparing the median percentage of time each strategy
-    spends 'underwater' (below a previous bankroll peak).
-    """
-    strategy_names = list(all_results.keys())
-    underwater_pcts = [res.get('median_time_underwater_pct', 0) for res in all_results.values()]
-
-    if color_map is None:
-        # Fallback for generating colors internally if no map is provided
-        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
-
-    # Get colors in the correct order for the plot
-    plot_colors = [color_map.get(name) for name in strategy_names]
-
-    if not strategy_names:
-        return plt.figure()
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    # Horizontal bar chart for better readability of strategy names
-    bars = ax.barh(strategy_names, underwater_pcts, color=plot_colors)
-
-    ax.set_xlabel('Median Time Spent "Underwater" (%)', fontsize=12)
-    ax.set_title('Psychological Cost: Time Spent Below Bankroll Peak', fontsize=16)
-    ax.invert_yaxis()  # Puts the first strategy at the top
-    ax.grid(axis='x', linestyle='--', alpha=0.7)
-
-    # Add percentage labels to the bars
-    for bar in bars:
-        width = bar.get_width()
-        ax.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center')
-
-    ax.set_xlim(right=max(underwater_pcts) * 1.15 if underwater_pcts else 100)
-
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
-def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
-    """
-    Creates a scatter plot to visualize the risk vs. reward trade-off for each strategy.
-    """
-    strategy_names = list(all_results.keys())
-
-    # Define the metrics for the axes
-    # X-axis: Risk (lower is better)
-    risk_metric_key = 'risk_of_ruin'
-    risk_values = [res.get(risk_metric_key, 0) for res in all_results.values()]
-    risk_label = 'Risk of Ruin (%)'
-
-    # Y-axis: Reward (higher is better)
-    reward_metric_key = 'median_final_bankroll'
-    reward_values = [res.get(reward_metric_key, 0) for res in all_results.values()]
-    reward_label = f"Median Final Bankroll (€)"
-
-    if not strategy_names or len(strategy_names) < 2:
-        return plt.figure() # Don't plot if there's nothing to compare
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    if color_map is None:
-        # Fallback for generating colors internally if no map is provided
-        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
-
-    plot_colors = [color_map.get(name) for name in strategy_names]
-
-    ax.scatter(risk_values, reward_values, s=150, c=plot_colors, alpha=0.7, edgecolors='w', zorder=10)
-
-    # Annotate each point with the strategy name
-    for i, name in enumerate(strategy_names):
-        ax.text(risk_values[i], reward_values[i] + np.std(reward_values)*0.03, name, fontsize=9, ha='center')
-
-    # Add interpretation quadrants based on the average
-    avg_risk = np.mean(risk_values)
-    avg_reward = np.mean(reward_values)
-    ax.axvline(avg_risk, color='gray', linestyle='--', linewidth=0.8)
-    ax.axhline(avg_reward, color='gray', linestyle='--', linewidth=0.8)
-
-    ax.set_xlabel(risk_label, fontsize=12)
-    ax.set_ylabel(reward_label, fontsize=12)
-    ax.set_title('Risk vs. Reward Analysis', fontsize=16)
-    ax.grid(True, linestyle=':', alpha=0.5)
-
-    if pdf:
-        pdf.savefig(fig)
-        plt.close(fig)
-    return fig
-
 def write_analysis_report_to_pdf(pdf, analysis_report):
     """Writes the qualitative analysis report to a PDF page."""
     fig = plt.figure(figsize=(11, 8.5))
@@ -1155,7 +618,7 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
     """Gathers all the text lines for a strategy's detailed report."""
     report_lines = [
         f"--- Detailed Report for: {strategy_name} ---",
-        f"Initial Table Mix: {get_initial_table_mix_string(strategy_obj, config)}",
+        f"Initial Table Mix: {reporting.get_initial_table_mix_string(strategy_obj, config)}",
         ""
     ]
     # Helper functions for different sections of the report
@@ -1370,10 +833,10 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         if analysis_report:
             write_analysis_report_to_pdf(pdf, analysis_report)
 
-        plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
+        reporting.plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
 
         for strategy_name, result in all_results.items():
             strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
@@ -1381,15 +844,15 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
             page_num = strategy_page_map.get(strategy_name, 0)
             report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
             write_strategy_report_to_pdf(pdf, report_lines_for_writing, start_page_num=page_num)
-            plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
-            plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf, color_map=color_map)
-            plot_assigned_wr_distribution(
+            reporting.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
+            reporting.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf, color_map=color_map)
+            reporting.plot_assigned_wr_distribution(
                 result['avg_assigned_wr_per_sim'],
                 result['median_run_assigned_wr'],
                 weighted_input_wr,
                 strategy_name,
                 pdf=pdf)
-            plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf, color_map=color_map)
+            reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf, color_map=color_map)
 
     pdf_buffer.seek(0)
     return pdf_buffer
@@ -1643,7 +1106,7 @@ def run_full_analysis(config):
             bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
-        all_results[strategy_name] = analyze_strategy_results(
+        all_results[strategy_name] = analysis.analyze_strategy_results(
             strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng,
             peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, config
         )
