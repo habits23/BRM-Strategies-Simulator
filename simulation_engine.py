@@ -419,8 +419,20 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         if not table_mix:
             final_highest_stake_counts["No Play"] += 1
         else:
-            highest_stake = max(table_mix.keys(), key=lambda s: stake_order_map.get(s, -1))
-            final_highest_stake_counts[highest_stake] += 1
+            # Filter the mix to only include stakes that are actually played.
+            # This is critical for the Hysteresis strategy, which includes all stakes in its
+            # rules, with most set to "0%". The original code would incorrectly find the
+            # highest stake overall (e.g., NL200) instead of the one with a "100%" allocation.
+            active_stakes_in_mix = {
+                stake: value for stake, value in table_mix.items()
+                if (isinstance(value, str) and float(value.replace('%','').split('-')[0]) > 0) or (isinstance(value, int) and value > 0)
+            }
+
+            if not active_stakes_in_mix:
+                final_highest_stake_counts["No Play"] += 1
+            else:
+                highest_stake = max(active_stakes_in_mix.keys(), key=lambda s: stake_order_map.get(s, -1))
+                final_highest_stake_counts[highest_stake] += 1
 
     final_stake_distribution = {mix_str: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for mix_str, count in final_stake_counts.items()}
     final_highest_stake_distribution = {stake: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for stake, count in final_highest_stake_counts.items()}
