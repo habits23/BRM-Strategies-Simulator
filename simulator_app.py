@@ -449,7 +449,7 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
             "**Intuition:** If this is 50,000 and your stake has a 50,000 hand sample, the model is confident. If your sample is only 5,000 hands, the model is uncertain and will simulate a wider range of long-term luck (both good and bad heaters) for your 'true' win rate."
         ),
         key="prior_sample"
-    )    
+    )
     st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
 
 with st.sidebar.expander("Plotting & Display Settings", expanded=False):
@@ -628,7 +628,7 @@ with tab2:
     # This is crucial for creating the columns in the data editor
     # We filter out any empty/NaN names that can occur when a user adds a new row.
     available_stakes = [
-        name for name in st.session_state.stakes_data['name'] 
+        name for name in st.session_state.stakes_data['name']
         if pd.notna(name) and str(name).strip()
     ]
     strategy_names = list(st.session_state.strategy_configs.keys())
@@ -687,13 +687,13 @@ with tab2:
 
                 # Get the current config for buy-ins, which can be an int or a dict
                 num_buy_ins_config = current_config.get("num_buy_ins", 40)
-                
+
                 # Determine if we are in per-stake mode based on the data type
                 is_per_stake_mode = isinstance(num_buy_ins_config, dict)
 
                 use_per_stake_checkbox = st.checkbox(
-                    "Use per-stake buy-in buffers", 
-                    value=is_per_stake_mode, 
+                    "Use per-stake buy-in buffers",
+                    value=is_per_stake_mode,
                     key=f"per_stake_cb_{name}"
                 )
 
@@ -707,7 +707,7 @@ with tab2:
                         num_buy_ins_config = new_dict # update local var
 
                     st.write("Define the buy-in buffer required to play at each stake:")
-                    
+
                     cols = st.columns(len(available_stakes) if available_stakes else 1)
                     new_buy_ins_dict = {}
                     for i, stake_name in enumerate(available_stakes):
@@ -739,7 +739,7 @@ with tab2:
                     del st.session_state.strategy_configs[name]['num_buy_ins']
 
                 # --- Real-time Validation for Standard Strategy ---
-                rules = current_config.get("rules", []) 
+                rules = current_config.get("rules", [])
 
                 # --- Check for orphaned stake names in rules ---
                 orphaned_stakes = set()
@@ -750,7 +750,7 @@ with tab2:
                 if orphaned_stakes:
                     st.warning(f"**Warning:** The following stakes are referenced in this strategy's rules but no longer exist in the 'Stakes Data' tab: **{', '.join(sorted(list(orphaned_stakes)))}**. These rule parts will be ignored and removed upon saving.")
 
-                if not rules: 
+                if not rules:
                     st.warning("This strategy has no rules. Please add at least one rule below.")
                 else:
                     # Check if any rule applies to the starting bankroll
@@ -767,7 +767,7 @@ with tab2:
                 for r in rules_list:
                     tables_str = {k: str(v) for k, v in r.get('tables', {}).items()}
                     df_data.append({'threshold': r['threshold'], **tables_str})
-                
+
                 rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
 
                 # CRITICAL FIX: Convert any NaN (float) values in stake columns to empty
@@ -1112,7 +1112,7 @@ if st.session_state.get("simulation_output"):
                     stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
                     sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
                     avg_win_rates = result.get('average_assigned_win_rates', {})
-                    
+
                     for stake, pct in sorted_stakes:
                         if pct > 0.01:
                             # Calculate data weight (trust factor)
@@ -1125,7 +1125,7 @@ if st.session_state.get("simulation_output"):
                             if stake in avg_win_rates:
                                 details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
                             details_parts.append(f"Trust: {trust_factor:.0%}")
-                            
+
                             details_str = f" ({', '.join(details_parts)})"
                             st.write(f"- {stake}: {pct:.2f}%{details_str}")
                 else:
@@ -1174,7 +1174,7 @@ if st.session_state.get("simulation_output"):
                     "The `Realized WR (Play)` includes short-term variance, so it will naturally differ from the `Assigned WR` even for this median-outcome run. "
                     "This is expected statistical noise."
                 )
-                
+
                 percentile_wrs = result.get('percentile_win_rates', {})
                 percentiles_to_show = {
                     "5th": "5th Percentile",

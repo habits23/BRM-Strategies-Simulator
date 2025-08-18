@@ -179,7 +179,7 @@ def calculate_hand_block_outcome(current_bankrolls, proportions_per_stake, all_w
             proportions = proportions_per_stake[name][proportions_mask]
             hands_for_stake = (proportions * config['HANDS_PER_CHECK']).astype(int)
             hands_per_stake_this_session[name][proportions_mask] = hands_for_stake
-            
+
             num_100_hand_blocks = hands_for_stake / 100.0
 
             # 1. Profit from Skill + Long-Term Luck (the pre-calculated Assigned WR)
@@ -249,10 +249,10 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
     effective_sample_size_for_variance = sample_hands + config['PRIOR_SAMPLE_SIZE']
     N_blocks = max(1.0, effective_sample_size_for_variance / 100.0)
     std_error = std_dev_per_100 / np.sqrt(N_blocks)
-    
+
     # This is the "long-term luck" component for the entire simulation run.
     long_term_luck_adjustment = long_term_luck_factors * std_error
-    
+
     # The final Assigned WR is the skill estimate plus the long-term luck.
     return skill_estimate_wr + long_term_luck_adjustment
 
@@ -328,7 +328,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
     for name, p_val in sorted(percentiles_to_find.items(), key=lambda item: item[1]):
         percentile_bankroll = np.percentile(final_bankrolls, p_val)
         closest_sim_index = np.argmin(np.abs(final_bankrolls - percentile_bankroll))
-        
+
         stake_wrs = {'p_val': p_val}
         total_hands_for_sim, assigned_weighted_wr_sum, weighted_bb_size_sum = 0, 0, 0
 
@@ -343,7 +343,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         if total_hands_for_sim > 0:
             stake_wrs['Assigned WR'] = f"{assigned_weighted_wr_sum / total_hands_for_sim:.2f}"
             avg_bb_size = weighted_bb_size_sum / total_hands_for_sim
-            
+
             if avg_bb_size > 0:
                 total_profit_eur = final_bankrolls[closest_sim_index] - config['STARTING_BANKROLL_EUR']
                 profit_from_play_eur = total_profit_eur - final_rakeback[closest_sim_index]
@@ -367,29 +367,31 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
     final_bankrolls = bankroll_histories[:, -1]
-    
+
     # --- Calculate Weighted Assigned WR for each simulation ---
     # This is crucial for understanding the distribution of "luck" (assigned win rates)
     final_hands_per_stake = {name: history[:, -1] for name, history in hands_per_stake_histories.items()}
     total_hands_per_sim = np.sum(list(final_hands_per_stake.values()), axis=0)
+
     weighted_assigned_wr_sum = np.zeros(config['NUMBER_OF_SIMULATIONS'])
     for stake_name, wr_array in all_win_rates.items():
         weighted_assigned_wr_sum += wr_array * final_hands_per_stake[stake_name]
-    
+
     # Avoid division by zero for sims with no hands played
     avg_assigned_wr_per_sim = np.divide(
-        weighted_assigned_wr_sum, 
-        total_hands_per_sim, 
-        out=np.zeros_like(weighted_assigned_wr_sum), 
+        weighted_assigned_wr_sum,
+        total_hands_per_sim,
+        out=np.zeros_like(weighted_assigned_wr_sum),
         where=total_hands_per_sim != 0
     )
-    
+
     # Find the Assigned WR for the run that resulted in the median final bankroll
     median_final_bankroll_val = np.percentile(final_bankrolls, 50)
     median_sim_index = np.argmin(np.abs(final_bankrolls - median_final_bankroll_val))
     median_run_assigned_wr = avg_assigned_wr_per_sim[median_sim_index]
 
     average_assigned_win_rates = {name: np.mean(wr_array) for name, wr_array in all_win_rates.items()}
+
     total_hands_per_stake = {name: np.sum(history[:, -1]) for name, history in hands_per_stake_histories.items()}
     grand_total_hands = sum(total_hands_per_stake.values())
     hands_distribution_pct = {name: (total / grand_total_hands) * 100 for name, total in total_hands_per_stake.items()} if grand_total_hands > 0 else {}
@@ -404,86 +406,88 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
                 risk_of_demotion[stake_name] = {'prob': demotion_prob, 'reached_count': sims_that_reached_peak}
 
     final_stake_counts = defaultdict(int)
+    final_highest_stake_counts = defaultdict(int)
+    stake_order_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
+
     for br in final_bankrolls:
         table_mix = strategy_obj.get_table_mix(br)
-        if table_mix:
-            # We assume a single stake is played for simplified final stake reporting
-            primary_stake = max(table_mix, key=table_mix.get)
-            final_stake_counts[primary_stake] += 1
+        # This part is for the detailed PDF report, so it's still needed.
+        mix_str = ", ".join(f"{s}: {v}" for s, v in sorted(table_mix.items())) if table_mix else "No Play"
+        final_stake_counts[mix_str] += 1
+
+        # This is the more direct calculation for the UI summary.
+        if not table_mix:
+            final_highest_stake_counts["No Play"] += 1
         else:
-            final_stake_counts["No Play"] += 1
+            highest_stake = max(table_mix.keys(), key=lambda s: stake_order_map.get(s, -1))
+            final_highest_stake_counts[highest_stake] += 1
 
-    # --- THIS IS THE CRITICAL FIX FOR THE BUG ---
-    # We use the peak_stake_levels array to find the highest stake reached.
-    final_highest_stake_counts = defaultdict(int)
-    for level in peak_stake_levels:
-        final_highest_stake_counts[stake_name_map[level]] += 1
-    # ----------------------------------------------
-    
-    final_highest_stake_counts = dict(final_highest_stake_counts)
-    final_stake_counts = dict(final_stake_counts)
-
-    ruin_count = np.sum(final_bankrolls <= config['RUIN_THRESHOLD'])
-    risk_of_ruin = (ruin_count / config['NUMBER_OF_SIMULATIONS']) * 100
-
-    target_count = np.sum(final_bankrolls >= config['TARGET_BANKROLL_EUR'])
-    target_prob = (target_count / config['NUMBER_OF_SIMULATIONS']) * 100
-
-    ruin_hands_distribution = {}
-    for stake_name, history in hands_per_stake_histories.items():
-        hands_in_ruin_sims = history[final_bankrolls <= config['RUIN_THRESHOLD']]
-        if len(hands_in_ruin_sims) > 0:
-            ruin_hands_distribution[stake_name] = np.sum(hands_in_ruin_sims)
-
-    median_final_bankroll = np.median(final_bankrolls)
-    median_growth = ((median_final_bankroll / config['STARTING_BANKROLL_EUR']) - 1) * 100
-    
-    hands_played_per_sim = np.sum(list(hands_per_stake_histories.values()), axis=0)
-    median_hands_played = np.median(hands_played_per_sim)
-
-    median_profit_eur = median_final_bankroll - config['STARTING_BANKROLL_EUR']
-    median_rakeback_eur = np.median(rakeback_histories[:, -1])
-    median_profit_play = median_profit_eur - median_rakeback_eur
-
-    percentiles_bankrolls = np.percentile(final_bankrolls, [5, 25, 50, 75, 95])
-    
-    # Calculate mode of final bankrolls
-    mode_final_bankroll = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
-
-    percentile_max_drawdowns = np.percentile(max_drawdowns, [5, 25, 50, 75, 95])
-    
-    median_stop_losses = np.median(stop_loss_triggers)
-
-    median_underwater_hands_count = np.median(underwater_hands_count)
+    final_stake_distribution = {mix_str: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for mix_str, count in final_stake_counts.items()}
+    final_highest_stake_distribution = {stake: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for stake, count in final_highest_stake_counts.items()}
 
     percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map)
 
+    median_max_downswing = np.median(max_drawdowns)
+    p95_max_downswing = np.percentile(max_drawdowns, 95)
+
+    # Calculate median rakeback
+    final_rakeback = rakeback_histories[:, -1]
+    median_rakeback_eur = np.median(final_rakeback)
+
+    # Calculate median profit from play
+    total_profit_per_sim = final_bankrolls - config['STARTING_BANKROLL_EUR']
+    profit_from_play_per_sim = total_profit_per_sim - final_rakeback
+    median_profit_from_play_eur = np.median(profit_from_play_per_sim)
+
+    # Calculate median stop-losses
+    median_stop_losses = np.median(stop_loss_triggers) if stop_loss_triggers is not None else 0
+
+    # Calculate median hands played
+    median_hands_played = np.median(total_hands_per_sim)
+
+    # Calculate median time spent underwater
+    time_underwater_pct = np.divide(
+        underwater_hands_count,
+        total_hands_per_sim,
+        out=np.zeros_like(underwater_hands_count, dtype=float),
+        where=total_hands_per_sim != 0
+    ) * 100
+    median_time_underwater_pct = np.median(time_underwater_pct)
+
+    final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
+    target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
+    busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
+    risk_of_ruin_percent = (busted_runs / config['NUMBER_OF_SIMULATIONS']) * 100
+    percentiles = {p: np.percentile(final_bankrolls, p) for p in [2.5, 5, 25, 50, 75, 95, 97.5]}
+    median_growth_rate = (percentiles[50] - config['STARTING_BANKROLL_EUR']) / config['STARTING_BANKROLL_EUR'] if config['STARTING_BANKROLL_EUR'] > 0 else 0.0
+
     return {
-        "strategy_name": strategy_name,
-        "final_bankrolls": final_bankrolls,
-        "bankroll_histories": bankroll_histories,
-        "hands_per_stake_histories": hands_per_stake_histories,
-        "peak_stake_levels": peak_stake_levels,
-        "median_final_bankroll": median_final_bankroll,
-        "mode_final_bankroll": mode_final_bankroll,
-        "median_growth": median_growth,
-        "risk_of_ruin": risk_of_ruin,
-        "target_prob": target_prob,
-        "percentiles_bankrolls": percentiles_bankrolls,
-        "hands_distribution_pct": hands_distribution_pct,
-        "average_assigned_win_rates": average_assigned_win_rates,
-        "final_stake_counts": final_stake_counts,
-        "final_highest_stake_counts": final_highest_stake_counts,
-        "risk_of_demotion": risk_of_demotion,
-        "percentile_max_drawdowns": percentile_max_drawdowns,
-        "median_hands_played": median_hands_played,
-        "median_profit_play": median_profit_play,
-        "median_rakeback_eur": median_rakeback_eur,
-        "median_stop_losses": median_stop_losses,
-        "median_underwater_hands_count": median_underwater_hands_count,
-        "percentile_win_rates": percentile_win_rates,
-        "median_run_assigned_wr": median_run_assigned_wr,
-        "ruin_hands_distribution": ruin_hands_distribution,
+        'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
+        'final_bankroll_mode': final_bankroll_mode, 'growth_rate': median_growth_rate,
+        'risk_of_ruin': risk_of_ruin_percent, 'p5': percentiles[5], 'p2_5': percentiles[2.5],
+        'bankroll_histories': bankroll_histories, 'hands_histories': total_hands_histories,
+        'median_history': np.median(bankroll_histories, axis=0),
+        'hands_history': np.mean(total_hands_histories, axis=0),
+        'target_prob': (target_achieved_count / config['NUMBER_OF_SIMULATIONS']) * 100,
+        'above_threshold_hit_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories >= rule["threshold"], axis=1))
+                                      for rule in strategy_obj.rules if rule["threshold"] > config['STARTING_BANKROLL_EUR']},
+        'below_threshold_drop_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories <= rule["threshold"], axis=1))
+                                       for rule in strategy_obj.rules if rule["threshold"] < config['STARTING_BANKROLL_EUR']},
+        'percentile_win_rates': percentile_win_rates, 'risk_of_demotion': risk_of_demotion,
+        'hands_distribution_pct': hands_distribution_pct,
+        'final_stake_distribution': final_stake_distribution,
+        'final_highest_stake_distribution': final_highest_stake_distribution,
+        'median_max_downswing': median_max_downswing,
+        'p95_max_downswing': p95_max_downswing,
+        'max_downswings': max_drawdowns,
+        'median_rakeback_eur': median_rakeback_eur,
+        'median_profit_from_play_eur': median_profit_from_play_eur,
+        'median_hands_played': median_hands_played,
+        'median_stop_losses': median_stop_losses,
+        'median_time_underwater_pct': median_time_underwater_pct,
+        'average_assigned_win_rates': average_assigned_win_rates,
+        'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
+        'median_run_assigned_wr': median_run_assigned_wr,
     }
 def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -520,19 +524,19 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
 
     for i in range(num_checks):
         current_bankrolls = bankroll_history[:, i]
-        
+
         # Store previous peak levels to detect demotions
         previous_peak_levels = peak_stake_levels.copy()
 
         # Determine the table mix for each simulation based on its current bankroll
         proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
-        
+
         remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
         for threshold, rule in zip(thresholds, rules):
             current_mask = (current_bankrolls >= threshold) & remaining_mask
             if not np.any(current_mask):
                 continue
-            
+
             indices = np.where(current_mask)[0]
             for sim_idx in indices:
                 resolved_proportions = resolve_proportions(rule, rng)
@@ -588,16 +592,16 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             for stake_name, bb_size in stake_bb_size_map.items():
                 played_this_stake_mask = proportions_per_stake[stake_name] > 0
                 highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
-            
+
             stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
-            
+
             # Only trigger for active simulations that have a valid stop-loss amount
             valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
-            
+
             # Calculate profit from play only (excluding rakeback) for the stop-loss check.
             profit_from_play = block_profits_eur - block_rakeback_eur
             triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
-            
+
             if np.any(triggered_mask):
                 is_stopped_out[triggered_mask] = True
                 stop_loss_triggers[triggered_mask] += 1
@@ -692,7 +696,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             at_this_stake_mask = (current_stake_indices == rule_idx)
             if not np.any(at_this_stake_mask):
                 continue
-            
+
             rule = stake_rules[rule_idx]['tables']
             resolved_proportions = resolve_proportions(rule, rng)
             for stake_name, prop in resolved_proportions.items():
@@ -704,7 +708,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
 
         # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
         is_stopped_out.fill(False)
-        
+
         if not np.any(active_mask):
             bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
             for stake_name in hands_per_stake_histories:
@@ -722,16 +726,16 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             for stake_name, bb_size in stake_bb_size_map.items():
                 played_this_stake_mask = proportions_per_stake[stake_name] > 0
                 highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
-            
+
             stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
-            
+
             # Only trigger for active simulations that have a valid stop-loss amount
             valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
-            
+
             # Calculate profit from play only (excluding rakeback) for the stop-loss check.
             profit_from_play = block_profits_eur - block_rakeback_eur
             triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
-            
+
             if np.any(triggered_mask):
                 is_stopped_out[triggered_mask] = True
                 stop_loss_triggers[triggered_mask] += 1
@@ -796,7 +800,7 @@ def plot_median_progression_comparison(all_results, config, color_map=None, pdf=
 
     for strategy_name, result in all_results.items():
         color = color_map.get(strategy_name)
-        ax.plot(result['hands_history'], result['median_history'], label=strategy_name, linewidth=2.5, color=color)   
+        ax.plot(result['hands_history'], result['median_history'], label=strategy_name, linewidth=2.5, color=color)
 
     ax.axhline(config['STARTING_BANKROLL_EUR'], color='gray', linestyle='--', label='Starting Bankroll')
     ax.axhline(config['TARGET_BANKROLL'], color='gold', linestyle='-.', label=f"Target: €{config['TARGET_BANKROLL']}")
@@ -901,7 +905,7 @@ def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None
     # --- Dynamically determine the x-axis range for a clearer plot --- #
     # Combine all results to find a global range that fits all strategies well. #
     all_final_bankrolls = np.concatenate([res['final_bankrolls'] for res in all_results.values() if len(res['final_bankrolls']) > 0])
-    
+
     # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
     successful_runs = all_final_bankrolls[all_final_bankrolls > config['RUIN_THRESHOLD']]
 
@@ -913,7 +917,7 @@ def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None
 
         x_min = np.percentile(successful_runs, lower_percentile)
         x_max = np.percentile(successful_runs, upper_percentile)
-        
+
         # Ensure the starting bankroll is always visible for context.
         x_min = min(x_min, config['STARTING_BANKROLL_EUR'])
         x_max = max(x_max, config['STARTING_BANKROLL_EUR'])
@@ -1016,10 +1020,10 @@ def plot_time_underwater_comparison(all_results, config, color_map=None, pdf=Non
         return plt.figure()
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    
+
     # Horizontal bar chart for better readability of strategy names
     bars = ax.barh(strategy_names, underwater_pcts, color=plot_colors)
-    
+
     ax.set_xlabel('Median Time Spent "Underwater" (%)', fontsize=12)
     ax.set_title('Psychological Cost: Time Spent Below Bankroll Peak', fontsize=16)
     ax.invert_yaxis()  # Puts the first strategy at the top
@@ -1042,7 +1046,7 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     Creates a scatter plot to visualize the risk vs. reward trade-off for each strategy.
     """
     strategy_names = list(all_results.keys())
-    
+
     # Define the metrics for the axes
     # X-axis: Risk (lower is better)
     risk_metric_key = 'risk_of_ruin'
@@ -1091,10 +1095,10 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
 def write_analysis_report_to_pdf(pdf, analysis_report):
     """Writes the qualitative analysis report to a PDF page."""
     fig = plt.figure(figsize=(11, 8.5))
-    
+
     lines = analysis_report.split('\n')
     y_pos = 0.90
-    
+
     for line in lines:
         line = line.strip()
         if not line: # Add vertical space for empty lines
@@ -1104,7 +1108,7 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
         font_size = 11
         font_weight = 'normal'
         x_pos = 0.05
-        
+
         # Simple markdown parsing for PDF
         if line.startswith('### '):
             font_size = 16
@@ -1114,7 +1118,7 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
         elif line.startswith('- '):
             x_pos = 0.07
             line = f"• {line[2:]}" # Use a bullet point character
-        
+
         # Strip emoji and bold markers for cleaner text
         line = line.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','').replace('🚀','').replace('😌','').replace('🎢','').replace('💰','').replace('⚠️','').replace('🧠','')
 
@@ -1265,7 +1269,7 @@ def write_strategy_report_to_pdf(pdf, report_lines, start_page_num=None):
 def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     """Creates a table of the main summary results and saves it to a PDF page."""
     header = ['Strategy', 'Page', 'Median Final BR', 'Mode Final BR', 'Median Growth', 'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile', '2.5th %ile']
-    
+
     # Conditionally add the stop-loss header
     if config.get("STOP_LOSS_BB", 0) > 0:
         header.insert(6, 'Median SL') # Insert after Median Rakeback
@@ -1284,11 +1288,11 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
             f"€{result['p5']:,.2f}",
             f"€{result['p2_5']:,.2f}"
         ]
-        
+
         # Conditionally add the stop-loss value to the row
         if config.get("STOP_LOSS_BB", 0) > 0:
             row.insert(6, f"{result.get('median_stop_losses', 0):.1f}")
-        
+
         cell_text.append(row)
 
     if not cell_text: return
@@ -1297,7 +1301,7 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     for row in cell_text:
         for i, cell in enumerate(row):
             col_widths[i] = max(col_widths[i], len(str(cell)))
-    
+
     total_width = sum(col_widths)
     col_widths_ratio = [w / total_width for w in col_widths]
 
@@ -1318,7 +1322,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     """
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
-    
+
     # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(4) = 7 pages before details
     page_counter_for_map = 7
     lines_per_page = 45
@@ -1326,10 +1330,10 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     for strategy_name, result in all_results.items():
         strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
-        
+
         # The page this strategy's report starts on
         strategy_page_map[strategy_name] = page_counter_for_map + 1
-        
+
         report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
         num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page # Ceiling division
         num_plot_pages = 4
@@ -1350,7 +1354,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     with PdfPages(pdf_buffer) as pdf:
         create_title_page(pdf, timestamp_str)
         save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
-        
+
         if analysis_report:
             write_analysis_report_to_pdf(pdf, analysis_report)
 
@@ -1407,23 +1411,23 @@ def generate_qualitative_analysis(all_results, config):
         """Helper to find the best and worst performing strategies, handling ties for 'best'."""
         valid_results = {name: res for name, res in all_results.items() if metric_key in res}
         if not valid_results: return [], None
-        
+
         sorted_strategies = sorted(valid_results.items(), key=lambda item: item[1][metric_key], reverse=higher_is_better)
-        
+
         best_value = sorted_strategies[0][1][metric_key]
         best_strategies = [name for name, res in sorted_strategies if res[metric_key] == best_value]
-        
+
         worst_name = sorted_strategies[-1][0]
-        
+
         # If all strategies have the same value, there is no "worst"
         if best_value == sorted_strategies[-1][1][metric_key]:
             return best_strategies, None
-            
+
         return best_strategies, worst_name
 
     insights.append("### Automated Strategy Analysis")
     insights.append("This analysis compares your strategies based on key performance indicators from the simulation.")
-    
+
     best_medians, worst_median = find_best_worst_with_ties('median_final_bankroll', higher_is_better=True)
     if best_medians:
         names = f"'{best_medians[0]}'" if len(best_medians) == 1 else f"'{', '.join(best_medians)}'"
@@ -1489,7 +1493,7 @@ def generate_qualitative_analysis(all_results, config):
 
     if worst_ror and best_targets and worst_ror in best_targets:
         insights.append(f"- The **'{worst_ror}'** strategy is a classic high-risk, high-reward approach. It achieved the highest probability of reaching the target, but also came with the highest Risk of Ruin. This is a trade-off between upside potential and safety.")
-    
+
     # Analyze the contribution of rakeback to the best strategy's success
     if config.get("RAKEBACK_PERCENTAGE", 0) > 0 and best_medians:
         best_median_strat_name = best_medians[0]
@@ -1502,7 +1506,7 @@ def generate_qualitative_analysis(all_results, config):
                 insights.append(f"- Rakeback was a critical factor for the top-performing **'{best_median_strat_name}'** strategy, accounting for **{rb_contribution:.0f}%** of its median profit. This strategy's success may be highly dependent on the rakeback deal.")
     elif config.get("RAKEBACK_PERCENTAGE", 0) == 0:
         insights.append("- With **0% rakeback**, all strategies are handicapped. This significantly reduces profitability and increases risk, especially for aggressive strategies that rely on moving up to high-rake environments.")
-    
+
     if worst_median:
         worst_median_res = all_results[worst_median]
         hands_dist = worst_median_res.get('hands_distribution_pct', {})
@@ -1552,7 +1556,7 @@ def generate_qualitative_analysis(all_results, config):
             if i == j: continue
             strat_a_name, strat_b_name = strategy_names[i], strategy_names[j]
             res_a, res_b = all_results[strat_a_name], all_results[strat_b_name]
-            
+
             # Strategy B dominates A if it's better/equal on all key metrics, and strictly better on at least one.
             b_is_better = (res_b['median_final_bankroll'] >= res_a['median_final_bankroll'] and
                            res_b['risk_of_ruin'] <= res_a['risk_of_ruin'] and
