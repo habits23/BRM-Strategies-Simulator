@@ -295,83 +295,107 @@ def resolve_proportions(rule, rng):
         return normalize_percentages(percentages)
     return {}
 
-def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
+def run_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
-    This version dynamically resolves table mixes for each session.
+    This single function handles both standard and hysteresis strategies.
     """
     num_sims = config['NUMBER_OF_SIMULATIONS']
     num_checks = int(np.ceil(config['TOTAL_HANDS_TO_SIMULATE'] / config['HANDS_PER_CHECK']))
+
+    # --- Common Initialization ---
     bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
     hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
     rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
-
-    # --- Maximum Drawdown Initialization ---
     peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
     max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
-
-    # --- Stop-Loss Initialization ---
-    # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
     is_stopped_out = np.zeros(num_sims, dtype=bool)
     stop_loss_triggers = np.zeros(num_sims, dtype=int)
-
-    # --- Underwater Time Initialization ---
     underwater_hands_count = np.zeros(num_sims, dtype=int)
-
-    # --- Demotion Tracking Initialization ---
-    initial_rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
-    initial_stakes_with_tables = [stake for stake, count in initial_rule.items() if (isinstance(count, int) and count > 0) or (isinstance(count, str) and float(count.replace('%','').split('-')[0]) > 0)]
-    initial_level = max([stake_level_map[s] for s in initial_stakes_with_tables]) if initial_stakes_with_tables else -1
-    peak_stake_levels = np.full(num_sims, initial_level, dtype=int)
     demotion_flags = {level: np.zeros(num_sims, dtype=bool) for level in stake_level_map.values()}
-
     stake_bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-    thresholds, rules = strategy.get_rules_as_vectors()
+
+    # --- Strategy-Specific Initialization ---
+    is_hysteresis = isinstance(strategy, HysteresisStrategy)
+    if is_hysteresis:
+        stake_rules = sorted(strategy.rules, key=lambda r: r['threshold'])
+        rule_index_to_level = {i: stake_level_map[rule['stake_name']] for i, rule in enumerate(stake_rules)}
+        current_stake_indices = np.zeros(num_sims, dtype=int)
+        for idx in range(len(stake_rules) - 1, -1, -1):
+            threshold = stake_rules[idx]['threshold']
+            current_stake_indices[config['STARTING_BANKROLL_EUR'] >= threshold] = idx
+        peak_stake_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
+    else: # Standard Strategy
+        initial_rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
+        initial_stakes_with_tables = [stake for stake, count in initial_rule.items() if (isinstance(count, int) and count > 0) or (isinstance(count, str) and float(count.replace('%','').split('-')[0]) > 0)]
+        initial_level = max([stake_level_map[s] for s in initial_stakes_with_tables]) if initial_stakes_with_tables else -1
+        peak_stake_levels = np.full(num_sims, initial_level, dtype=int)
+        thresholds, rules = strategy.get_rules_as_vectors()
 
     for i in range(num_checks):
         current_bankrolls = bankroll_history[:, i]
-
-        # Store previous peak levels to detect demotions
         previous_peak_levels = peak_stake_levels.copy()
 
-        # Determine the table mix for each simulation based on its current bankroll
+        # --- Stake Determination Logic (Branched by Strategy Type) ---
         proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
+        current_levels = np.full(num_sims, -1, dtype=int)
 
-        remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
-        for threshold, rule in zip(thresholds, rules):
-            current_mask = (current_bankrolls >= threshold) & remaining_mask
-            if not np.any(current_mask):
-                continue
+        if is_hysteresis:
+            # Hysteresis: Update state machine to find current stake index for each sim
+            for idx in range(len(stake_rules) - 1):
+                move_up_threshold = stake_rules[idx+1]['threshold']
+                can_move_up_mask = (current_stake_indices == idx) & (current_bankrolls >= move_up_threshold)
+                current_stake_indices[can_move_up_mask] = idx + 1
 
-            indices = np.where(current_mask)[0]
-            for sim_idx in indices:
+            for j in range(len(stake_rules) - 1, 0, -1):
+                move_down_threshold = stake_rules[j-1]['threshold']
+                must_move_down_mask = (current_stake_indices == j) & (current_bankrolls < move_down_threshold)
+                current_stake_indices[must_move_down_mask] = j - 1
+
+            current_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
+
+            # Resolve proportions based on the final state for this block
+            for rule_idx in range(len(stake_rules)):
+                at_this_stake_mask = (current_stake_indices == rule_idx)
+                if not np.any(at_this_stake_mask): continue
+                rule = stake_rules[rule_idx]['tables']
                 resolved_proportions = resolve_proportions(rule, rng)
                 for stake_name, prop in resolved_proportions.items():
-                    proportions_per_stake[stake_name][sim_idx] = prop
-            remaining_mask[current_mask] = False
+                    proportions_per_stake[stake_name][at_this_stake_mask] = prop
+        else: # Standard Strategy
+            # Standard: Find the highest matching threshold for each sim
+            remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
+            for threshold, rule in zip(thresholds, rules):
+                current_mask = (current_bankrolls >= threshold) & remaining_mask
+                if not np.any(current_mask): continue
 
-        # Handle simulations with bankroll below the lowest threshold by applying the lowest rule
-        if np.any(remaining_mask) and rules:
-            lowest_rule = rules[-1] # The last rule is the lowest threshold
-            indices = np.where(remaining_mask)[0]
-            for sim_idx in indices:
-                resolved_proportions = resolve_proportions(lowest_rule, rng)
-                for stake_name, prop in resolved_proportions.items():
-                    proportions_per_stake[stake_name][sim_idx] = prop
+                indices = np.where(current_mask)[0]
+                for sim_idx in indices:
+                    resolved_proportions = resolve_proportions(rule, rng)
+                    for stake_name, prop in resolved_proportions.items():
+                        proportions_per_stake[stake_name][sim_idx] = prop
+                remaining_mask[current_mask] = False
 
-        # --- Demotion Tracking Logic for the current block ---
-        current_levels = np.full(config['NUMBER_OF_SIMULATIONS'], -1, dtype=int)
-        for stake_name, level in stake_level_map.items():
-            has_tables_mask = proportions_per_stake[stake_name] > 0
-            current_levels[has_tables_mask] = np.maximum(current_levels[has_tables_mask], level)
+            if np.any(remaining_mask) and rules:
+                lowest_rule = rules[-1]
+                indices = np.where(remaining_mask)[0]
+                for sim_idx in indices:
+                    resolved_proportions = resolve_proportions(lowest_rule, rng)
+                    for stake_name, prop in resolved_proportions.items():
+                        proportions_per_stake[stake_name][sim_idx] = prop
 
+            # Calculate current levels based on the resolved proportions
+            for stake_name, level in stake_level_map.items():
+                has_tables_mask = proportions_per_stake[stake_name] > 0
+                current_levels[has_tables_mask] = np.maximum(current_levels[has_tables_mask], level)
+
+        # --- Common Logic (Demotion, Active Mask, Outcome, etc.) ---
         demotion_from_peak_mask = current_levels < previous_peak_levels
         for level in stake_level_map.values():
             if level > 0:
                 demoted_this_session_mask = (previous_peak_levels == level) & demotion_from_peak_mask
                 demotion_flags[level][demoted_this_session_mask] = True
 
-        # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
         total_proportions = sum(proportions_per_stake.values())
@@ -430,139 +454,6 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
 
     return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
 
-def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
-    """
-    Runs a simulation with a specific 'sticky' bankroll management strategy.
-    This version correctly handles multiple stakes by implementing a proper state machine.
-    """
-    num_sims = config['NUMBER_OF_SIMULATIONS']
-    num_checks = int(np.ceil(config['TOTAL_HANDS_TO_SIMULATE'] / config['HANDS_PER_CHECK']))
-    bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
-
-    # --- Maximum Drawdown Initialization ---
-    peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
-    max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
-
-    # --- Stop-Loss Initialization ---
-    # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
-    is_stopped_out = np.zeros(num_sims, dtype=bool)
-    stop_loss_triggers = np.zeros(num_sims, dtype=int)
-
-    # --- Underwater Time Initialization ---
-    underwater_hands_count = np.zeros(num_sims, dtype=int)
-
-    # --- Demotion Tracking Initialization ---
-    stake_rules = sorted(strategy.rules, key=lambda r: r['threshold'])
-    rule_index_to_level = {i: stake_level_map[rule['stake_name']] for i, rule in enumerate(stake_rules)}
-
-    current_stake_indices = np.zeros(num_sims, dtype=int)
-    for idx in range(len(stake_rules) - 1, -1, -1):
-        threshold = stake_rules[idx]['threshold']
-        current_stake_indices[config['STARTING_BANKROLL_EUR'] >= threshold] = idx
-
-    initial_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
-    peak_stake_levels = initial_levels.copy()
-    demotion_flags = {level: np.zeros(num_sims, dtype=bool) for level in stake_level_map.values()}
-    stake_bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-
-    for i in range(num_checks):
-        current_bankrolls = bankroll_history[:, i]
-
-        previous_peak_levels = peak_stake_levels.copy()
-
-        for idx in range(len(stake_rules) - 1):
-            move_up_threshold = stake_rules[idx+1]['threshold']
-            can_move_up_mask = (current_stake_indices == idx) & (current_bankrolls >= move_up_threshold)
-            current_stake_indices[can_move_up_mask] = idx + 1
-
-        for j in range(len(stake_rules) - 1, 0, -1):
-            # Hysteresis move-down: A player at stake 'j' only moves down to 'j-1'
-            # if their bankroll drops below the entry threshold for stake 'i-1'.
-            # This creates a "sticky" buffer zone.
-            move_down_threshold = stake_rules[j-1]['threshold']
-            must_move_down_mask = (current_stake_indices == j) & (current_bankrolls < move_down_threshold)
-            current_stake_indices[must_move_down_mask] = j - 1
-
-        # --- Demotion Tracking Logic ---
-        current_levels = np.vectorize(rule_index_to_level.get)(current_stake_indices)
-
-        demotion_from_peak_mask = current_levels < previous_peak_levels
-        for level in stake_level_map.values():
-            demoted_this_block_mask = (previous_peak_levels == level) & demotion_from_peak_mask
-            demotion_flags[level][demoted_this_block_mask] = True
-
-        # Update peak levels for the next session
-        peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
-
-        proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
-
-        for rule_idx in range(len(stake_rules)):
-            at_this_stake_mask = (current_stake_indices == rule_idx)
-            if not np.any(at_this_stake_mask):
-                continue
-
-            rule = stake_rules[rule_idx]['tables']
-            resolved_proportions = resolve_proportions(rule, rng)
-            for stake_name, prop in resolved_proportions.items():
-                proportions_per_stake[stake_name][at_this_stake_mask] = prop
-
-        total_proportions = sum(proportions_per_stake.values())
-        # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0) & ~is_stopped_out
-
-        # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
-        is_stopped_out.fill(False)
-
-        if not np.any(active_mask):
-            bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
-            for stake_name in hands_per_stake_histories:
-                hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
-            break
-
-        block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
-            current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
-        )
-
-        # --- Stop-Loss Logic ---
-        if config.get("STOP_LOSS_BB", 0) > 0:
-            # Find the bb_size of the highest stake played in this block for each sim
-            highest_bb_size = np.zeros(num_sims)
-            for stake_name, bb_size in stake_bb_size_map.items():
-                played_this_stake_mask = proportions_per_stake[stake_name] > 0
-                highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
-
-            stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
-
-            # Only trigger for active simulations that have a valid stop-loss amount
-            valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
-
-            # Calculate profit from play only (excluding rakeback) for the stop-loss check.
-            profit_from_play = block_profits_eur - block_rakeback_eur
-            triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
-
-            if np.any(triggered_mask):
-                is_stopped_out[triggered_mask] = True
-                stop_loss_triggers[triggered_mask] += 1
-
-        new_bankrolls = current_bankrolls + block_profits_eur
-        bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
-
-        # --- Underwater Time Calculation ---
-        underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
-        underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
-
-        # --- Maximum Drawdown Calculation ---
-        peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
-        current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
-        max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
-
-        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
-        for stake_name, hands_array in hands_per_stake_this_block.items():
-            hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
-
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
@@ -1099,11 +990,8 @@ def run_full_analysis(config):
         all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
 
-        # Determine which simulation function to use based on the class type
-        if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
-        else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+        # The unified function handles all strategy types
+        bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analysis.analyze_strategy_results(

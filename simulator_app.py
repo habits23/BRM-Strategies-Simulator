@@ -62,6 +62,72 @@ DEFAULT_STRATEGIES = {
     }
 }
 
+# --- UI Configuration Constants ---
+
+SUMMARY_TABLE_CONFIG = {
+    "Strategy": {
+        "format": None,
+        "config": st.column_config.TextColumn("Strategy", help="The name of the bankroll management strategy.")
+    },
+    "Median Final BR": {
+        "format": "€{:,.2f}",
+        "config": st.column_config.TextColumn("Median Final BR", help="The median (50th percentile) final bankroll across all simulations. This value includes both profit from play and rakeback.")
+    },
+    "Mode Final BR": {
+        "format": "€{:,.2f}",
+        "config": st.column_config.TextColumn("Mode Final BR", help="The most frequently occurring final bankroll outcome, calculated using Kernel Density Estimation.")
+    },
+    "Median Growth": {
+        "format": "{:.2%}",
+        "config": st.column_config.TextColumn("Median Growth", help="The median percentage growth from the starting bankroll.")
+    },
+    "Median Hands Played": {
+        "format": "{:,.0f}",
+        "config": st.column_config.TextColumn("Median Hands Played", help="The median number of hands played. This can be lower than the 'Total Hands to Simulate' if a stop-loss is frequently triggered.")
+    },
+    "Median Profit (Play)": {
+        "format": "€{:,.2f}",
+        "config": st.column_config.TextColumn("Median Profit (Play)", help="The median profit from gameplay only, excluding rakeback. This shows how much was won or lost at the tables.")
+    },
+    "Median Rakeback": {
+        "format": "€{:,.2f}",
+        "config": st.column_config.TextColumn("Median Rakeback", help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback.")
+    },
+    "Risk of Ruin (%)": {
+        "format": "{:.2f}%",
+        "config": st.column_config.TextColumn("Risk of Ruin (%)", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+    },
+    "Target Prob (%)": {
+        "format": "{:.2f}%",
+        "config": st.column_config.TextColumn("Target Prob (%)", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+    },
+    "5th %ile BR": {
+        "format": "€{:,.2f}",
+        "config": st.column_config.TextColumn("5th %ile BR", help="The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value.")
+    },
+    "P95 Max Downswing": {
+        "format": "€{:,.2f}",
+        "config": st.column_config.TextColumn("P95 Max Downswing", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+    }
+}
+
+PERCENTILE_METRIC_DEFINITIONS = [
+    {
+        "label": "Assigned WR", "key": "Assigned WR",
+        "help": "The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler."
+    },
+    {
+        "label": "Play WR", "key": "Realized WR (Play)",
+        "help": "The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length)."
+    },
+    {
+        "label": "Rakeback WR", "key": "Rakeback (bb/100)", "help": "The effective win rate gained from rakeback."
+    },
+    {
+        "label": "Variance Impact", "key": "Variance Impact", "help": "The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
+    }
+]
+
 st.set_page_config(layout="wide", page_title="Poker Bankroll Simulator")
 
 st.title("Poker Bankroll Simulator")
@@ -205,30 +271,30 @@ with st.expander("Need Help? Click here for the User Guide"):
     """)
 
 # --- Session State Initialization ---
-# Initialize each key separately to ensure new features work for users with old session states.
-if 'start_br' not in st.session_state: st.session_state.start_br = 2500
-if 'target_br' not in st.session_state: st.session_state.target_br = 3000
-if 'ruin_thresh' not in st.session_state: st.session_state.ruin_thresh = 750
-if 'num_sims' not in st.session_state: st.session_state.num_sims = 2000
-if 'total_hands' not in st.session_state: st.session_state.total_hands = 50000
-if 'hands_per_check' not in st.session_state: st.session_state.hands_per_check = 1000
-if 'rb_percent' not in st.session_state: st.session_state.rb_percent = 20
-if 'prior_sample' not in st.session_state: st.session_state.prior_sample = 50000
-if 'zero_hands_weight' not in st.session_state: st.session_state.zero_hands_weight = 0.5
-if 'enable_stop_loss' not in st.session_state: st.session_state.enable_stop_loss = False
-if 'stop_loss_bb' not in st.session_state: st.session_state.stop_loss_bb = 300
-if 'seed' not in st.session_state: st.session_state.seed = 98765
-if 'plot_percentile_limit' not in st.session_state: st.session_state.plot_percentile_limit = 99
+# Use a dictionary for defaults to make initialization cleaner and more maintainable.
+DEFAULT_SESSION_STATE = {
+    "start_br": 2500,
+    "target_br": 3000,
+    "ruin_thresh": 750,
+    "num_sims": 2000,
+    "total_hands": 50000,
+    "hands_per_check": 1000,
+    "rb_percent": 20,
+    "prior_sample": 50000,
+    "zero_hands_weight": 0.5,
+    "enable_stop_loss": False,
+    "stop_loss_bb": 300,
+    "seed": 98765,
+    "plot_percentile_limit": 99,
+    "run_simulation": False,
+    "simulation_output": None,
+    "stakes_data": DEFAULT_STAKES_DATA,
+    "strategy_configs": DEFAULT_STRATEGIES.copy()
+}
 
-if 'run_simulation' not in st.session_state:
-    st.session_state.run_simulation = False
-    st.session_state.simulation_output = None
-
-if 'stakes_data' not in st.session_state:
-    st.session_state.stakes_data = DEFAULT_STAKES_DATA
-
-if 'strategy_configs' not in st.session_state:
-    st.session_state.strategy_configs = DEFAULT_STRATEGIES.copy()
+for key, value in DEFAULT_SESSION_STATE.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
@@ -400,6 +466,135 @@ def sync_strategy_rules(strategy_name):
         # by the simulation engine. Removing the `if tables:` check fixes the sorting bug.
         new_rules.append({"threshold": int(threshold_val), "tables": tables})
     st.session_state.strategy_configs[strategy_name]['rules'] = new_rules
+
+def render_standard_strategy_editor(name, current_config, available_stakes):
+    """Renders the UI for editing a 'standard' bankroll management strategy."""
+    # Clean up keys from the other strategy type if switching
+    if 'num_buy_ins' in st.session_state.strategy_configs[name]:
+        del st.session_state.strategy_configs[name]['num_buy_ins']
+
+    # --- Real-time Validation for Standard Strategy ---
+    rules = current_config.get("rules", [])
+
+    # Check for orphaned stake names in rules
+    orphaned_stakes = set()
+    for rule in rules:
+        for stake_name in rule.get("tables", {}).keys():
+            if stake_name not in available_stakes:
+                orphaned_stakes.add(stake_name)
+    if orphaned_stakes:
+        st.warning(f"**Warning:** The following stakes are referenced in this strategy's rules but no longer exist in the 'Stakes Data' tab: **{', '.join(sorted(list(orphaned_stakes)))}**. These rule parts will be ignored and removed upon saving.")
+
+    if not rules:
+        st.warning("This strategy has no rules. Please add at least one rule below.")
+    else:
+        # Check if any rule applies to the starting bankroll
+        start_br = st.session_state.start_br
+        if not any(start_br >= rule['threshold'] for rule in rules):
+            st.warning(f"No rule applies to the starting bankroll of €{start_br}. The simulation will not run for this strategy.")
+
+    # --- Convert rules to a DataFrame for the editor ---
+    rules_list = current_config.get("rules", [])
+    df_data = []
+    for r in rules_list:
+        tables_str = {k: str(v) for k, v in r.get('tables', {}).items()}
+        df_data.append({'threshold': r['threshold'], **tables_str})
+
+    rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
+
+    stake_cols_in_df = [col for col in rules_df.columns if col in available_stakes]
+    if stake_cols_in_df:
+        rules_df[stake_cols_in_df] = rules_df[stake_cols_in_df].astype(str).replace('nan', '')
+
+    # --- Display the data editor ---
+    st.data_editor(
+        rules_df,
+        key=f"rules_{name}",
+        num_rows="dynamic",
+        column_config={
+            "threshold": st.column_config.NumberColumn(
+                "Bankroll Threshold (€)",
+                help="The bankroll amount at which this rule applies.",
+                min_value=1,
+                format="€ %d",
+            ),
+            **{
+                stake: st.column_config.TextColumn(
+                    f"{stake} Mix",
+                    help=f"Table mix for {stake}. Use a fixed ratio (e.g., 1), a percentage (e.g., '80%'), or a range (e.g., '20-40%'). Ratios are proportional (e.g., NL20: 1, NL50: 3 is a 25%/75% split).",
+                )
+                for stake in available_stakes
+            },
+        },
+    )
+    st.button(
+        f"Save and Sort '{name}' Rules",
+        on_click=sync_strategy_rules, args=(name,),
+        help="Click to save any changes and sort the rules by 'Bankroll Threshold'."
+    )
+
+def render_hysteresis_strategy_editor(name, current_config, available_stakes):
+    """Renders the UI for editing a 'hysteresis' (sticky) bankroll management strategy."""
+    st.info(
+        "**How Hysteresis (Sticky) Strategy Works:**\n\n"
+        "**Important:** This strategy requires the stakes in the 'Stakes Data' tab to be sorted by `bb_size`. Use the 'Sort Stakes' button on that tab.\n\n"
+        "This strategy prevents rapid switching between stakes. You define a buy-in (BI) buffer for each stake.\n\n"
+        "- **Moving Up:** To move up to a higher stake, your bankroll must meet the BI requirement for that new stake.\n"
+        "  - *Example:* To play NL50 with a 40 BI buffer, you need `40 * 100 * €0.50 = €2000`.\n"
+        "- **Moving Down (The \"Sticky\" Part):** Once you are playing a higher stake, you will *only* move down if your bankroll drops below the BI requirement of the *lower* stake.\n"
+        "  - *Example:* If you're playing NL50, you will only drop to NL20 if your bankroll falls below NL20's requirement (e.g., `40 * 100 * €0.20 = €800`).\n\n"
+        "This creates a buffer zone (e.g., between €800 and €2000) where you 'stick' to the higher stake, avoiding moving down on small downswings."
+    )
+
+    # Clean up keys from the other strategy type
+    if 'rules' in st.session_state.strategy_configs[name]:
+        del st.session_state.strategy_configs[name]['rules']
+
+    # Get the current config for buy-ins, which can be an int or a dict
+    num_buy_ins_config = current_config.get("num_buy_ins", 40)
+
+    # Determine if we are in per-stake mode based on the data type
+    is_per_stake_mode = isinstance(num_buy_ins_config, dict)
+
+    use_per_stake_checkbox = st.checkbox(
+        "Use per-stake buy-in buffers",
+        value=is_per_stake_mode,
+        key=f"per_stake_cb_{name}"
+    )
+
+    if use_per_stake_checkbox:
+        # --- Per-Stake Buy-in Buffer Mode ---
+        if not is_per_stake_mode:
+            # Transitioning from single to per-stake: initialize dict
+            old_value = num_buy_ins_config if isinstance(num_buy_ins_config, int) else 40
+            new_dict = {stake: old_value for stake in available_stakes}
+            st.session_state.strategy_configs[name]['num_buy_ins'] = new_dict
+            num_buy_ins_config = new_dict # update local var
+
+        st.write("Define the buy-in buffer required to play at each stake:")
+
+        cols = st.columns(len(available_stakes) if available_stakes else 1)
+        new_buy_ins_dict = {}
+        for i, stake_name in enumerate(available_stakes):
+            with cols[i]:
+                stake_value = num_buy_ins_config.get(stake_name, 40)
+                new_buy_ins_dict[stake_name] = st.number_input(
+                    f"{stake_name} BIs", value=stake_value, min_value=1, key=f"bi_{name}_{stake_name}"
+                )
+        st.session_state.strategy_configs[name]['num_buy_ins'] = new_buy_ins_dict
+
+    else:
+        # --- Single Buy-in Buffer Mode ---
+        if is_per_stake_mode:
+            # Transitioning from per-stake to single: take first value or default
+            first_stake_value = next(iter(num_buy_ins_config.values()), 40)
+            st.session_state.strategy_configs[name]['num_buy_ins'] = first_stake_value
+            num_buy_ins_config = first_stake_value # update local var
+
+        st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
+            "Buy-in Buffer (BIs)", value=num_buy_ins_config, min_value=1, key=f"bi_{name}",
+            help="The number of buy-ins (100 bbs) used to calculate the bankroll thresholds for moving between stakes. See the info box above for a detailed explanation of the 'sticky' logic."
+        )
 
 # --- Sidebar for User Inputs ---
 st.sidebar.header("Simulation Parameters")
@@ -673,136 +868,10 @@ with tab2:
             st.session_state.strategy_configs[name]['type'] = strategy_type
 
             # --- Row 2: Type-specific inputs ---
-            if strategy_type == 'hysteresis':
-                st.info(
-                    "**How Hysteresis (Sticky) Strategy Works:**\n\n"
-                    "**Important:** This strategy requires the stakes in the 'Stakes Data' tab to be sorted by `bb_size`. Use the 'Sort Stakes' button on that tab.\n\n"
-                    "This strategy prevents rapid switching between stakes. You define a buy-in (BI) buffer for each stake.\n\n"
-                    "- **Moving Up:** To move up to a higher stake, your bankroll must meet the BI requirement for that new stake.\n"
-                    "  - *Example:* To play NL50 with a 40 BI buffer, you need `40 * 100 * €0.50 = €2000`.\n"
-                    "- **Moving Down (The \"Sticky\" Part):** Once you are playing a higher stake, you will *only* move down if your bankroll drops below the BI requirement of the *lower* stake.\n"
-                    "  - *Example:* If you're playing NL50, you will only drop to NL20 if your bankroll falls below NL20's requirement (e.g., `40 * 100 * €0.20 = €800`).\n\n"
-                    "This creates a buffer zone (e.g., between €800 and €2000) where you 'stick' to the higher stake, avoiding moving down on small downswings."
-                )
-
-                # Get the current config for buy-ins, which can be an int or a dict
-                num_buy_ins_config = current_config.get("num_buy_ins", 40)
-
-                # Determine if we are in per-stake mode based on the data type
-                is_per_stake_mode = isinstance(num_buy_ins_config, dict)
-
-                use_per_stake_checkbox = st.checkbox(
-                    "Use per-stake buy-in buffers",
-                    value=is_per_stake_mode,
-                    key=f"per_stake_cb_{name}"
-                )
-
-                if use_per_stake_checkbox:
-                    # --- Per-Stake Buy-in Buffer Mode ---
-                    if not is_per_stake_mode:
-                        # Transitioning from single to per-stake: initialize dict
-                        old_value = num_buy_ins_config if isinstance(num_buy_ins_config, int) else 40
-                        new_dict = {stake: old_value for stake in available_stakes}
-                        st.session_state.strategy_configs[name]['num_buy_ins'] = new_dict
-                        num_buy_ins_config = new_dict # update local var
-
-                    st.write("Define the buy-in buffer required to play at each stake:")
-
-                    cols = st.columns(len(available_stakes) if available_stakes else 1)
-                    new_buy_ins_dict = {}
-                    for i, stake_name in enumerate(available_stakes):
-                        with cols[i]:
-                            stake_value = num_buy_ins_config.get(stake_name, 40)
-                            new_buy_ins_dict[stake_name] = st.number_input(
-                                f"{stake_name} BIs", value=stake_value, min_value=1, key=f"bi_{name}_{stake_name}"
-                            )
-                    st.session_state.strategy_configs[name]['num_buy_ins'] = new_buy_ins_dict
-
-                else:
-                    # --- Single Buy-in Buffer Mode ---
-                    if is_per_stake_mode:
-                        # Transitioning from per-stake to single: take first value or default
-                        first_stake_value = next(iter(num_buy_ins_config.values()), 40)
-                        st.session_state.strategy_configs[name]['num_buy_ins'] = first_stake_value
-                        num_buy_ins_config = first_stake_value # update local var
-
-                    st.session_state.strategy_configs[name]['num_buy_ins'] = st.number_input(
-                        "Buy-in Buffer (BIs)", value=num_buy_ins_config, min_value=1, key=f"bi_{name}",
-                        help="The number of buy-ins (100 bbs) used to calculate the bankroll thresholds for moving between stakes. See the info box above for a detailed explanation of the 'sticky' logic."
-                    )
-
-                if 'rules' in st.session_state.strategy_configs[name]:
-                    del st.session_state.strategy_configs[name]['rules']
-            elif strategy_type == 'standard':
-                # Clean up keys from the other strategy type
-                if 'num_buy_ins' in st.session_state.strategy_configs[name]:
-                    del st.session_state.strategy_configs[name]['num_buy_ins']
-
-                # --- Real-time Validation for Standard Strategy ---
-                rules = current_config.get("rules", [])
-
-                # --- Check for orphaned stake names in rules ---
-                orphaned_stakes = set()
-                for rule in rules:
-                    for stake_name in rule.get("tables", {}).keys():
-                        if stake_name not in available_stakes:
-                            orphaned_stakes.add(stake_name)
-                if orphaned_stakes:
-                    st.warning(f"**Warning:** The following stakes are referenced in this strategy's rules but no longer exist in the 'Stakes Data' tab: **{', '.join(sorted(list(orphaned_stakes)))}**. These rule parts will be ignored and removed upon saving.")
-
-                if not rules:
-                    st.warning("This strategy has no rules. Please add at least one rule below.")
-                else:
-                    # Check if any rule applies to the starting bankroll
-                    start_br = st.session_state.start_br
-                    if not any(start_br >= rule['threshold'] for rule in rules):
-                        st.warning(f"No rule applies to the starting bankroll of €{start_br}. The simulation will not run for this strategy.")
-
-                # --- Convert rules to a DataFrame for the editor ---
-                # We must ensure all table mix values are strings for the data_editor,
-                # as it's configured with TextColumn. Pandas might otherwise infer
-                # float types for columns with only numbers, causing a type mismatch.
-                rules_list = current_config.get("rules", [])
-                df_data = []
-                for r in rules_list:
-                    tables_str = {k: str(v) for k, v in r.get('tables', {}).items()}
-                    df_data.append({'threshold': r['threshold'], **tables_str})
-
-                rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
-
-                # CRITICAL FIX: Convert any NaN (float) values in stake columns to empty
-                # strings. This prevents a type mismatch error in st.data_editor where
-                # the data type is float (due to NaN) but the column is configured as Text.
-                stake_cols_in_df = [col for col in rules_df.columns if col in available_stakes]
-                if stake_cols_in_df:
-                    rules_df[stake_cols_in_df] = rules_df[stake_cols_in_df].astype(str).replace('nan', '')
-
-                # --- Display the data editor ---
-                st.data_editor(
-                    rules_df,
-                    key=f"rules_{name}",
-                    num_rows="dynamic",
-                    column_config={
-                        "threshold": st.column_config.NumberColumn(
-                            "Bankroll Threshold (€)",
-                            help="The bankroll amount at which this rule applies.",
-                            min_value=1,
-                            format="€ %d",
-                        ),
-                        **{
-                            stake: st.column_config.TextColumn(
-                                f"{stake} Mix",
-                                help=f"Table mix for {stake}. Use a fixed ratio (e.g., 1), a percentage (e.g., '80%'), or a range (e.g., '20-40%'). Ratios are proportional (e.g., NL20: 1, NL50: 3 is a 25%/75% split).",
-                            )
-                            for stake in available_stakes
-                        },
-                    },
-                )
-                st.button(
-                    f"Save and Sort '{name}' Rules",
-                    on_click=sync_strategy_rules, args=(name,),
-                    help="Click to save any changes and sort the rules by 'Bankroll Threshold'."
-                )
+            if strategy_type == 'standard':
+                render_standard_strategy_editor(name, current_config, available_stakes)
+            elif strategy_type == 'hysteresis':
+                render_hysteresis_strategy_editor(name, current_config, available_stakes)
 
 # --- Main Logic to Run Simulation and Display Results ---
 
@@ -905,59 +974,13 @@ if st.session_state.get("simulation_output"):
         })
     summary_df = pd.DataFrame(summary_data)
 
+    # Generate formatting and config dicts from the constant
+    format_dict = {k: v['format'] for k, v in SUMMARY_TABLE_CONFIG.items() if v['format']}
+    column_config_dict = {k: v['config'] for k, v in SUMMARY_TABLE_CONFIG.items()}
+
     st.dataframe(
-        summary_df.style.format({
-            "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
-            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}", "Median Profit (Play)": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
-            "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
-            "P95 Max Downswing": "€{:,.2f}"
-        }).hide(axis="index"),
-        column_config={
-            "Strategy": st.column_config.TextColumn(
-                "Strategy",
-                help="The name of the bankroll management strategy."
-            ),
-            "Median Final BR": st.column_config.TextColumn(
-                "Median Final BR",
-                help="The median (50th percentile) final bankroll across all simulations. This value includes both profit from play and rakeback."
-            ),
-            "Mode Final BR": st.column_config.TextColumn(
-                "Mode Final BR",
-                help="The most frequently occurring final bankroll outcome, calculated using Kernel Density Estimation."
-            ),
-            "Median Growth": st.column_config.TextColumn(
-                "Median Growth",
-                help="The median percentage growth from the starting bankroll."
-            ),
-            "Median Hands Played": st.column_config.TextColumn(
-                "Median Hands Played",
-                help="The median number of hands played. This can be lower than the 'Total Hands to Simulate' if a stop-loss is frequently triggered."
-            ),
-            "Median Profit (Play)": st.column_config.TextColumn(
-                "Median Profit (Play)",
-                help="The median profit from gameplay only, excluding rakeback. This shows how much was won or lost at the tables."
-            ),
-            "Median Rakeback": st.column_config.TextColumn(
-                "Median Rakeback",
-                help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
-            ),
-            "Risk of Ruin (%)": st.column_config.TextColumn(
-                "Risk of Ruin (%)",
-                help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'."
-            ),
-            "Target Prob (%)": st.column_config.TextColumn(
-                "Target Prob (%)",
-                help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point."
-            ),
-            "5th %ile BR": st.column_config.TextColumn(
-                "5th %ile BR",
-                help="The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value."
-            ),
-            "P95 Max Downswing": st.column_config.TextColumn(
-                "P95 Max Downswing",
-                help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value."
-            ),
-        }
+        summary_df.style.format(format_dict).hide(axis="index"),
+        column_config=column_config_dict
     )
     # --- Display Comparison Plots in a 2-column layout ---
     st.subheader("Strategy Comparison Visuals")
@@ -1191,15 +1214,8 @@ if st.session_state.get("simulation_output"):
                         st.markdown(f"**{short_name} %ile**")
                         if long_name in percentile_wrs:
                             data = percentile_wrs[long_name]
-                            st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
-                            st.metric(
-                                label="Play WR",
-                                value=f"{data.get('Realized WR (Play)', 'N/A')}",
-                                help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length)."
-                            )
-                            st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
-                            st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
-
+                            for metric in PERCENTILE_METRIC_DEFINITIONS:
+                                st.metric(label=metric["label"], value=f"{data.get(metric['key'], 'N/A')}", help=metric["help"])
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
