@@ -618,7 +618,7 @@ with tab2:
     st.subheader("Bankroll Management Strategies")
     st.write(
         "Define your strategies below. For 'Standard' strategies, use the data editor to set bankroll thresholds and table mixes. "
-        "You can use fixed ratios (e.g., `1`), percentages (e.g., `'80%`), or percentage ranges (e.g., `'20-40%`). "
+        "You can use fixed ratios (e.g., `1`), percentages (e.g., `'80%'`), or percentage ranges (e.g., `'20-40%'`). "
         "Hover over the 'Mix' column headers for more details."
     )
     st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
@@ -939,7 +939,7 @@ if st.session_state.get("simulation_output"):
             ),
             "Median Rakeback": st.column_config.TextColumn(
                 "Median Rakeback",
-                help="The median amount of rakeback earned. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
+                help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
             ),
             "Risk of Ruin (%)": st.column_config.TextColumn(
                 "Risk of Ruin (%)",
@@ -974,7 +974,7 @@ if st.session_state.get("simulation_output"):
         plt.close(fig)
     with comp_col2:
         st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
-        fig = engine.reporting.plot_final_bankroll_distribution(all_results, config, color_map=color_map)
+        fig = engine.reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
 
@@ -1050,12 +1050,7 @@ if st.session_state.get("simulation_output"):
                 plt.close(fig)
             with row1_col2:
                 st.markdown("###### Final Bankroll Distribution")
-                # The arguments here were incorrect. This is the corrected call.
-                fig = engine.reporting.plot_final_bankroll_distribution(
-                    all_results={strategy_name: result}, # Pass as a dict with one strategy
-                    config=config,
-                    color_map=color_map
-                )
+                fig = engine.reporting.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
                 st.pyplot(fig)
                 plt.close(fig)
 
@@ -1099,7 +1094,15 @@ if st.session_state.get("simulation_output"):
             col1, col2 = st.columns(2)
 
             with col1:
-                st.markdown("**Hands Distribution**")
+                st.markdown(
+                    "**Hands Distribution**",
+                    help=(
+                        "This section shows three key metrics for each stake:\n\n"
+                        "1.  **Percentage:** The share of total hands played at this stake.\n\n"
+                        "2.  **Avg. WR:** The average win rate the simulation used for this stake across all runs. This includes the 'luck' factor, so it will differ from your input. It represents the average 'true skill' assigned to players at this stake.\n\n"
+                        "3.  **Trust:** A percentage showing how much the model 'trusts' your input `EV Win Rate`. It's calculated from your `Sample Hands` vs. the `Prior Sample Size`. A higher trust percentage means the model is more confident in your data and will apply less long-term luck (variance) to your win rate."
+                    ),
+                )
                 if result.get('hands_distribution_pct'):
                     # Create a map for easy lookup of sample hands
                     stakes_data_list = config.get('STAKES_DATA', [])
@@ -1136,7 +1139,7 @@ if st.session_state.get("simulation_output"):
                     for stake, pct in sorted_dist:
                         if pct > 0.01:
                             display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
-                            st.write(f"- {display_stake}: {pct:.2f}")
+                            st.write(f"- {display_stake}: {pct:.2f}%")
                 else:
                     st.write("N/A")
 
@@ -1145,11 +1148,7 @@ if st.session_state.get("simulation_output"):
                 st.markdown("---")
                 st.markdown("**Risk of Demotion**", help="The probability of being demoted from a stake after you've reached it. Calculated as: (Simulations demoted from Stake X) / (Simulations that ever reached Stake X). A high percentage indicates an unstable strategy.")
                 stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                sorted_demotions = sorted(
-                    result['risk_of_demotion'].items(),
-                    key=lambda item: stake_order_map.get(item[0], float('inf')),
-                    reverse=True
-                )
+                sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
 
                 demotion_markdown = ""
                 for stake, data in sorted_demotions:
@@ -1164,8 +1163,8 @@ if st.session_state.get("simulation_output"):
                     "**Percentile Win Rate Analysis (bb/100)**",
                     help=(
                         "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
-                        "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.\n\n"
-                        "- **Play WR:** The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
+                        "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
+                        "- **Play WR:** The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
                         "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
                         "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
                     )
@@ -1200,3 +1199,16 @@ if st.session_state.get("simulation_output"):
                             )
                             st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
                             st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
+
+
+    # --- PDF Download Button ---
+    st.subheader("Download Full Report")
+    with st.spinner("Generating PDF report..."):
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        pdf_buffer = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
+        st.download_button(
+            label="Download Full PDF Report",
+            data=pdf_buffer,
+            file_name=f"simulation_report_{timestamp}.pdf",
+            mime="application/pdf"
+        )

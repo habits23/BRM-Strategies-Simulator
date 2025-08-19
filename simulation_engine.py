@@ -8,8 +8,9 @@ import datetime
 from matplotlib.backends.backend_pdf import PdfPages
 from collections import defaultdict
 import io
-import analysis
-import reporting
+
+from . import analysis
+from . import reporting
 
 # =================================================================================
 #   BANKROLL MANAGEMENT STRATEGY CLASS

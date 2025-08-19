@@ -31,7 +31,7 @@ def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name
         plt.close(fig)
     return fig
 
-def plot_final_bankroll_distribution(all_results, config, color_map=None, pdf=None):
+def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None):
     """
     Creates an overlapping density plot to compare the final bankroll distributions of all strategies.
     """
@@ -95,7 +95,7 @@ def plot_final_bankroll_distribution(all_results, config, color_map=None, pdf=No
                 # Fallback for datasets that are not suitable for KDE
                 ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=color)
 
-    ax.set_title('Final Bankroll Distribution', fontsize=16)
+    ax.set_title('Comparison of Final Bankroll Distributions', fontsize=16)
     ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
     ax.set_ylabel('Probability Density', fontsize=12)
     ax.legend()
