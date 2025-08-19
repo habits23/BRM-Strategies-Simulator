@@ -1073,7 +1073,7 @@ if st.session_state.get("simulation_output"):
                 plt.close(fig)
             with row1_col2:
                 st.markdown("###### Final Bankroll Distribution")
-                fig = engine.reporting.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+                fig = engine.reporting.plot_final_bankroll_comparison({strategy_name: result}, config, color_map=color_map)
                 st.pyplot(fig)
                 plt.close(fig)
 
