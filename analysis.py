@@ -203,3 +203,6 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
     }
+
+# No changes required in this file for the st.pyplot() deprecation warning.
+# The warning applies to Streamlit UI code, not analysis code.
