@@ -188,6 +188,15 @@ def style_h2h_table(df, s1_name, s2_name):
         diff_val = row['Difference']
         higher_is_better = config['higher_is_better']
         style = ''
+        # Convert string to float if needed
+        if isinstance(diff_val, str):
+            # Remove currency symbols and commas
+            diff_val_clean = diff_val.replace('€', '').replace(',', '').replace('%', '')
+            try:
+                diff_val = float(diff_val_clean)
+            except ValueError:
+                return style  # If conversion fails, return default style
+
         if pd.notna(diff_val) and diff_val != 0:
             # Green for good, red for bad
             if (diff_val > 0 and higher_is_better) or (diff_val < 0 and not higher_is_better):
@@ -1391,4 +1400,3 @@ if st.session_state.get("simulation_output"):
             file_name=f"simulation_report_{timestamp}.pdf",
             mime="application/pdf"
         )
-                    
