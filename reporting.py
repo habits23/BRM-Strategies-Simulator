@@ -106,6 +106,73 @@ def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None
         plt.close(fig)
     return fig
 
+def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, config, pdf=None, color_map=None):
+    """
+    Plots the final bankroll distribution for a single strategy, highlighting median and mode.
+    """
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Use the strategy's assigned color if a map is provided
+    plot_color = 'skyblue'
+    if color_map and strategy_name in color_map:
+        plot_color = color_map[strategy_name]
+
+    # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
+    successful_runs = final_bankrolls[final_bankrolls > config['RUIN_THRESHOLD']]
+
+    if len(successful_runs) > 5:
+        upper_percentile = config.get('PLOT_PERCENTILE_LIMIT', 99)
+        lower_percentile = 100 - upper_percentile
+
+        x_min = np.percentile(successful_runs, lower_percentile)
+        x_max = np.percentile(successful_runs, upper_percentile)
+
+        x_min = min(x_min, config['STARTING_BANKROLL_EUR'])
+        x_max = max(x_max, config['STARTING_BANKROLL_EUR'])
+
+        padding = (x_max - x_min) * 0.05
+        x_min -= padding
+        x_max += padding
+    else:
+        x_min = 0
+        x_max = config.get('TARGET_BANKROLL', 5000) * 1.5
+
+    x_grid = np.linspace(x_min, x_max, 1000)
+
+    if len(final_bankrolls) > 1:
+        try:
+            filtered_bankrolls_for_kde = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max) & (final_bankrolls > config['RUIN_THRESHOLD'])]
+            if len(filtered_bankrolls_for_kde) < 2:
+                ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=plot_color)
+            else:
+                kde = gaussian_kde(filtered_bankrolls_for_kde)
+                density = kde(x_grid)
+                ax.plot(x_grid, density, label=strategy_name, color=plot_color, linewidth=2)
+                ax.fill_between(x_grid, density, color=plot_color, alpha=0.1)
+        except (np.linalg.LinAlgError, ValueError):
+            ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=plot_color)
+
+    # Add median and mode lines
+    median_br = result.get('median_final_bankroll')
+    mode_br = result.get('final_bankroll_mode')
+
+    if median_br is not None:
+        ax.axvline(median_br, color='darkgreen', linestyle='--', linewidth=2, label=f'Median: €{median_br:,.0f}')
+    if mode_br is not None:
+        ax.axvline(mode_br, color='darkred', linestyle=':', linewidth=2, label=f'Mode: €{mode_br:,.0f}')
+
+    ax.set_title(f'Final Bankroll Distribution for {strategy_name}', fontsize=16)
+    ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
+    ax.set_ylabel('Probability Density', fontsize=12)
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.6)
+    ax.set_xlim(left=x_min, right=x_max)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def plot_median_progression_comparison(all_results, config, color_map=None, pdf=None):
     """Compares the median bankroll progression for all strategies on a single plot."""
     fig, ax = plt.subplots(figsize=(8, 5)) # Made consistent with other compact plots
