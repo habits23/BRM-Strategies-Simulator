@@ -1176,27 +1176,33 @@ if st.session_state.get("simulation_output"):
                 )
 
                 percentile_wrs = result.get('percentile_win_rates', {})
+                # Show a 7-number summary to match the data calculated in the analysis module
                 percentiles_to_show = {
+                    "2.5th": "2.5th Percentile",
                     "5th": "5th Percentile",
                     "25th": "25th Percentile",
                     "Median": "Median Percentile",
                     "75th": "75th Percentile",
-                    "95th": "95th Percentile"
+                    "95th": "95th Percentile",
+                    "97.5th": "97.5th Percentile"
                 }
 
-                cols = st.columns(len(percentiles_to_show))
+                # Filter to only show percentiles that were actually calculated
+                # This also preserves the correct order from the dictionary definition
+                available_percentiles = {
+                    short: long for short, long in percentiles_to_show.items() if long in percentile_wrs
+                }
 
-                for i, (short_name, long_name) in enumerate(percentiles_to_show.items()):
-                    with cols[i]:
-                        st.markdown(f"**{short_name} %ile**")
-                        if long_name in percentile_wrs:
-                            data = percentile_wrs[long_name]
+                if not available_percentiles:
+                    st.write("No percentile data available.")
+                else:
+                    cols = st.columns(len(available_percentiles))
+                    for i, (short_name, long_name) in enumerate(available_percentiles.items()):
+                        with cols[i]:
+                            st.markdown(f"**{short_name} %ile**")
+                            data = percentile_wrs.get(long_name, {})
                             st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
-                            st.metric(
-                                label="Play WR",
-                                value=f"{data.get('Realized WR (Play)', 'N/A')}",
-                                help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length)."
-                            )
+                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}", help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).")
                             st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
                             st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
 
