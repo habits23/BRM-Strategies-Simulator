@@ -736,7 +736,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
             report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
             write_strategy_report_to_pdf(pdf, report_lines_for_writing, start_page_num=page_num)
             reporting.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
-            reporting.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf, color_map=color_map)
+            reporting.plot_final_bankroll_comparison({strategy_name: result}, config, color_map=color_map, pdf=pdf)
             reporting.plot_assigned_wr_distribution(
                 result['avg_assigned_wr_per_sim'],
                 result['median_run_assigned_wr'],
