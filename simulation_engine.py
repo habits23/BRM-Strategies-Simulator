@@ -76,15 +76,13 @@ class BankrollManagementStrategy:
     def get_table_mix(self, bankroll):
         """
         Finds the correct table mix for a given bankroll.
-        If the bankroll is below the lowest threshold, it defaults to the mix of the lowest threshold rule.
+        If the bankroll is below the lowest threshold, it returns an empty mix (no play).
         """
         for rule in self.rules:
             if bankroll >= rule["threshold"]:
                 return rule["tables"]
-        # If no rule is met (bankroll is below the lowest threshold),
-        # return the table mix of the lowest threshold rule.
-        if self.rules:
-            return self.rules[-1]["tables"]
+        # If no rule is met (bankroll is below the lowest threshold), the player
+        # should not be playing any tables, so we return an empty dictionary.
         return {}
 
     def get_rules_as_vectors(self):
@@ -375,14 +373,6 @@ def run_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, con
                     for stake_name, prop in resolved_proportions.items():
                         proportions_per_stake[stake_name][sim_idx] = prop
                 remaining_mask[current_mask] = False
-
-            if np.any(remaining_mask) and rules:
-                lowest_rule = rules[-1]
-                indices = np.where(remaining_mask)[0]
-                for sim_idx in indices:
-                    resolved_proportions = resolve_proportions(lowest_rule, rng)
-                    for stake_name, prop in resolved_proportions.items():
-                        proportions_per_stake[stake_name][sim_idx] = prop
 
             # Calculate current levels based on the resolved proportions
             for stake_name, level in stake_level_map.items():

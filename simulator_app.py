@@ -163,24 +163,17 @@ def style_summary_table(df):
     format_dict = {k: v['format'] for k, v in SUMMARY_TABLE_CONFIG.items() if v['format']}
     styler = styled_df.style.format(format_dict)
 
-    # Helper function to apply the highlight style
-    def highlight_best(s, best_idx_label):
-        # s is a pandas Series (a column from the dataframe)
-        # best_idx_label is the index *label* (e.g., 0, 1, 2...) of the best row
-        return ['background-color: #d4edda' if i == best_idx_label else '' for i in s.index]
-
-    # Apply highlighting to each configured column
+    # Apply gradient styling to each configured column for a more nuanced view
     for col, higher_is_better in style_config.items():
         if col in styled_df.columns and not styled_df[col].empty:
-            # Ensure the column is numeric before finding min/max
+            # Ensure the column is numeric before styling
             numeric_col = pd.to_numeric(styled_df[col], errors='coerce')
             if numeric_col.notna().any(): # Check if there are any valid numbers
-                if higher_is_better:
-                    best_idx_label = numeric_col.idxmax()
-                else:
-                    best_idx_label = numeric_col.idxmin()
-
-                styler = styler.apply(highlight_best, best_idx_label=best_idx_label, subset=[col])
+                # Use a green gradient. For 'lower is better' metrics, reverse the map
+                # so that lower values get a darker green. This provides a much
+                # clearer visual hierarchy than highlighting a single best value.
+                cmap = 'Greens' if higher_is_better else 'Greens_r'
+                styler = styler.background_gradient(cmap=cmap, subset=[col], axis=0)
 
     return styler.hide(axis="index")
 
