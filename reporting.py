@@ -273,6 +273,46 @@ def plot_time_underwater_comparison(all_results, config, color_map=None, pdf=Non
         plt.close(fig)
     return fig
 
+def plot_total_withdrawn_comparison(all_results, config, color_map=None, pdf=None):
+    """
+    Creates a bar chart comparing the median total amount withdrawn for each strategy.
+    Returns None if withdrawals were not enabled, so the UI can skip rendering it.
+    """
+    # Only show this plot if withdrawals were enabled for the simulation run.
+    if not config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
+        return None
+
+    strategy_names = list(all_results.keys())
+    withdrawn_amounts = [res.get('median_total_withdrawn', 0) for res in all_results.values()]
+
+    if color_map is None:
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
+    plot_colors = [color_map.get(name) for name in strategy_names]
+
+    if not strategy_names:
+        return plt.figure()
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.barh(strategy_names, withdrawn_amounts, color=plot_colors)
+
+    ax.set_xlabel('Median Total Withdrawn (€)', fontsize=12)
+    ax.set_title('Income Generation: Median Total Withdrawn', fontsize=16)
+    ax.invert_yaxis()
+    ax.grid(axis='x', linestyle='--', alpha=0.7)
+
+    for bar in bars:
+        width = bar.get_width()
+        ax.text(width * 1.01, bar.get_y() + bar.get_height()/2, f'€{width:,.0f}', va='center', ha='left')
+
+    ax.set_xlim(right=max(withdrawn_amounts) * 1.2 if withdrawn_amounts and max(withdrawn_amounts) > 0 else 100)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_wr, average_input_wr, strategy_name, pdf=None):
     """
     Plots the distribution of the weighted average 'Assigned WR' for all simulations.
