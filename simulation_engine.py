@@ -439,10 +439,10 @@ def run_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, con
         new_bankrolls = current_bankrolls + block_profits_eur
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
-        # --- Underwater Time Calculation ---
+            # --- Underwater Time Calculation ---
         underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
         underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
-
+ 
         # --- Maximum Drawdown Calculation ---
         peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
         current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
@@ -453,6 +453,7 @@ def run_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, con
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
     return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
+
 
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
@@ -689,8 +690,11 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
 
-    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(4) = 7 pages before details
-    page_counter_for_map = 7
+    # Calculate the number of pages before the detailed strategy reports
+    # Title(1) + Summary Table(1) + Analysis Report (if present) + Comparison Plots(4)
+    num_comparison_plots = 4 # median progression, final distribution, time underwater, risk/reward
+    base_pages = 1 + 1 + (1 if analysis_report else 0) + num_comparison_plots
+    page_counter_for_map = base_pages
     lines_per_page = 45
 
     for strategy_name, result in all_results.items():

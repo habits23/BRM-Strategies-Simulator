@@ -111,6 +111,17 @@ SUMMARY_TABLE_CONFIG = {
     }
 }
 
+H2H_METRICS_CONFIG = {
+    "Median Final BR": {"key": "median_final_bankroll", "higher_is_better": True, "format": "€{:,.2f}"},
+    "Mode Final BR": {"key": "final_bankroll_mode", "higher_is_better": True, "format": "€{:,.2f}"},
+    "Median Growth": {"key": "growth_rate", "higher_is_better": True, "format": "{:.2%}"},
+    "Risk of Ruin (%)": {"key": "risk_of_ruin", "higher_is_better": False, "format": "{:.2f}%"},
+    "Target Prob (%)": {"key": "target_prob", "higher_is_better": True, "format": "{:.2f}%"},
+    "5th %ile BR": {"key": "p5", "higher_is_better": True, "format": "€{:,.2f}"},
+    "P95 Max Downswing": {"key": "p95_max_downswing", "higher_is_better": False, "format": "€{:,.2f}"},
+    "Median Time Underwater (%)": {"key": "median_time_underwater_pct", "higher_is_better": False, "format": "{:.1f}%"},
+}
+
 PERCENTILE_METRIC_DEFINITIONS = [
     {
         "label": "Assigned WR", "key": "Assigned WR",
@@ -129,6 +140,78 @@ PERCENTILE_METRIC_DEFINITIONS = [
 ]
 
 st.set_page_config(layout="wide", page_title="Poker Bankroll Simulator")
+
+def style_summary_table(df):
+    """Applies conditional styling to the summary table to highlight the best-performing strategies."""
+    # Define which columns to style and whether higher or lower is better.
+    style_config = {
+        "Median Final BR": True,
+        "Mode Final BR": True,
+        "Median Growth": True,
+        "Median Profit (Play)": True,
+        "Median Rakeback": True,
+        "Risk of Ruin (%)": False,
+        "Target Prob (%)": True,
+        "5th %ile BR": True,
+        "P95 Max Downswing": False,
+    }
+
+    # Make a copy to avoid modifying the original DataFrame
+    styled_df = df.copy()
+
+    # Apply number formatting first
+    format_dict = {k: v['format'] for k, v in SUMMARY_TABLE_CONFIG.items() if v['format']}
+    styler = styled_df.style.format(format_dict)
+
+    # Helper function to apply the highlight style
+    def highlight_best(s, best_idx_label):
+        # s is a pandas Series (a column from the dataframe)
+        # best_idx_label is the index *label* (e.g., 0, 1, 2...) of the best row
+        return ['background-color: #d4edda' if i == best_idx_label else '' for i in s.index]
+
+    # Apply highlighting to each configured column
+    for col, higher_is_better in style_config.items():
+        if col in styled_df.columns and not styled_df[col].empty:
+            # Ensure the column is numeric before finding min/max
+            numeric_col = pd.to_numeric(styled_df[col], errors='coerce')
+            if numeric_col.notna().any(): # Check if there are any valid numbers
+                if higher_is_better:
+                    best_idx_label = numeric_col.idxmax()
+                else:
+                    best_idx_label = numeric_col.idxmin()
+
+                styler = styler.apply(highlight_best, best_idx_label=best_idx_label, subset=[col])
+
+    return styler.hide(axis="index")
+
+def style_h2h_table(df, s1_name, s2_name):
+    """Applies conditional styling to the Head-to-Head comparison table."""
+    def style_difference_column(row):
+        metric_name = row.name
+        config = H2H_METRICS_CONFIG.get(metric_name)
+        if not config:
+            return [''] * len(row)
+
+        diff_val = row['Difference']
+        higher_is_better = config['higher_is_better']
+        style = ''
+        if pd.notna(diff_val) and diff_val != 0:
+            # Green for good, red for bad
+            if (diff_val > 0 and higher_is_better) or (diff_val < 0 and not higher_is_better):
+                style = 'background-color: #d4edda; color: #155724'
+            else:
+                style = 'background-color: #f8d7da; color: #721c24'
+
+        styles = [''] * len(row)
+        styles[row.index.get_loc('Difference')] = style
+        return styles
+
+    styler = df.style.apply(style_difference_column, axis=1)
+    styler = styler.format({
+        s1_name: lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x,
+        s2_name: lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x,
+    })
+    return styler.hide(axis="index")
 
 st.title("Poker Bankroll Simulator")
 st.write("An interactive tool to simulate poker bankroll progression based on your data and strategies. Based on the logic from `Final BR Simulator v1_5.py`.")
@@ -607,6 +690,32 @@ st.sidebar.button(
     help="Click to run the simulation with the current settings."
 )
 
+# --- New Strategy Selection UI ---
+available_strategies = list(st.session_state.strategy_configs.keys())
+
+# Ensure selected_strategies in session state are valid and exist in the available list
+if 'selected_strategies' not in st.session_state:
+    # On first run, select the first two strategies by default
+    st.session_state.selected_strategies = available_strategies[:2]
+else:
+    # On subsequent runs, filter out any selected strategies that may have been deleted by the user
+    st.session_state.selected_strategies = [
+        s for s in st.session_state.selected_strategies if s in available_strategies
+    ]
+    # If the selection becomes empty after filtering (e.g., user deleted all selected strats),
+    # default to selecting the first available strategy to prevent an empty state.
+    if not st.session_state.selected_strategies and available_strategies:
+        st.session_state.selected_strategies = [available_strategies[0]]
+
+st.sidebar.multiselect(
+    "Strategies to Run",
+    options=available_strategies,
+    # The selection is now managed via st.session_state.selected_strategies,
+    # which is updated before this widget is rendered to ensure it's always valid.
+    key="selected_strategies",
+    help="Select one or more strategies to run and compare in the simulation."
+)
+
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
     st.number_input("Target Bankroll (€)", min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
@@ -894,16 +1003,25 @@ if st.session_state.run_simulation:
     }
 
     # --- 2. Parse and validate the inputs for stakes and strategies ---
+    inputs_are_valid = True # Assume valid until a check fails
     try:
-        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
+        # Convert stakes data to the list of dicts the engine expects.
         config["STAKES_DATA"] = st.session_state.stakes_data.to_dict('records')
 
-        # The strategies are now directly in the correct dictionary format. No more parsing needed!
-        config["STRATEGIES_TO_RUN"] = st.session_state.strategy_configs
+        # Filter strategies based on the user's selection in the new multiselect widget
+        selected_names = st.session_state.get("selected_strategies", [])
+        if not selected_names:
+            st.error("No strategies selected. Please select at least one strategy from the sidebar to run the simulation.")
+            inputs_are_valid = False
+        else:
+            config["STRATEGIES_TO_RUN"] = {
+                name: strat_config for name, strat_config in st.session_state.strategy_configs.items()
+                if name in selected_names
+            }
 
         # Also store the config used for this run, so we can access it for display later
-        st.session_state.config_for_display = config
-        inputs_are_valid = True
+        if inputs_are_valid:
+            st.session_state.config_for_display = config
 
     except Exception as e: # Catch any other potential errors during config assembly
         st.error(f"Error preparing simulation configuration. Details: {e}")
@@ -950,272 +1068,324 @@ if st.session_state.get("simulation_output"):
 
     st.header("Simulation Results")
 
-    if analysis_report:
-        with st.expander("Automated Strategy Analysis", expanded=False):
-            st.markdown(analysis_report)
+    num_strategies = len(all_results)
+    tab_list = ["📊 Summary & Plots", "🔬 Detailed Analysis"]
+    if num_strategies == 2:
+        tab_list.insert(0, "⚔️ Head-to-Head")
 
-    st.subheader("Strategy Comparison")
-
-    # --- Display Summary Table ---
-    summary_data = []
-    for name, res in all_results.items():
-        summary_data.append({
-            "Strategy": name,
-            "Median Final BR": res['median_final_bankroll'],
-            "Mode Final BR": res['final_bankroll_mode'],
-            "Median Growth": res['growth_rate'],
-            "Median Hands Played": res.get('median_hands_played', 0),
-            "Median Profit (Play)": res.get('median_profit_from_play_eur', 0.0),
-            "Median Rakeback": res.get('median_rakeback_eur', 0.0),
-            "Risk of Ruin (%)": res['risk_of_ruin'],
-            "Target Prob (%)": res['target_prob'],
-            "5th %ile BR": res['p5'],
-            "P95 Max Downswing": res['p95_max_downswing']
-        })
-    summary_df = pd.DataFrame(summary_data)
-
-    # Generate formatting and config dicts from the constant
-    format_dict = {k: v['format'] for k, v in SUMMARY_TABLE_CONFIG.items() if v['format']}
-    column_config_dict = {k: v['config'] for k, v in SUMMARY_TABLE_CONFIG.items()}
-
-    st.dataframe(
-        summary_df.style.format(format_dict).hide(axis="index"),
-        column_config=column_config_dict
-    )
-    # --- Display Comparison Plots in a 2-column layout ---
-    st.subheader("Strategy Comparison Visuals")
+    tabs = st.tabs(tab_list)
+    tab_map = {label: tab for label, tab in zip(tab_list, tabs)}
 
     # Create a consistent, colorblind-friendly color map for all comparison plots
     colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
     color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
-    comp_col1, comp_col2 = st.columns(2)
-    with comp_col1:
-        st.markdown("###### Median Bankroll Progression")
-        fig = engine.reporting.plot_median_progression_comparison(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
-    with comp_col2:
-        st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
-        fig = engine.reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
+    # --- Head-to-Head Tab (Conditional) ---
+    if "⚔️ Head-to-Head" in tab_map:
+        with tab_map["⚔️ Head-to-Head"]:
+            st.subheader("Head-to-Head Comparison")
+            s1_name, s2_name = list(all_results.keys())
+            s1_res, s2_res = all_results[s1_name], all_results[s2_name]
 
-    # --- Display new comparison plots in a second 2-column layout ---
-    comp_col3, comp_col4 = st.columns(2)
-    with comp_col3:
-        st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
-        fig = engine.reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
-    with comp_col4:
-        st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
-        fig = engine.reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
+            h2h_data = []
+            s1_wins, s2_wins = 0, 0
 
+            for metric_name, metric_config in H2H_METRICS_CONFIG.items():
+                key = metric_config["key"]
+                s1_val = s1_res.get(key)
+                s2_val = s2_res.get(key)
 
-    # --- Display Detailed Results for Each Strategy ---
-    for strategy_name, result in all_results.items():
-        with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
-            # --- Special Sanity Check Analysis Box ---
-            if strategy_name == "Sanity Check (NL20 Only)":
-                with st.container(border=True):
-                    st.subheader("🔬 Sanity Check Analysis")
-                    start_br = config['STARTING_BANKROLL_EUR']
-                    total_hands = config['TOTAL_HANDS_TO_SIMULATE']
-                    stake_data = config['STAKES_DATA'][0]
-                    ev_wr = stake_data['ev_bb_per_100']
-                    std_dev = stake_data['std_dev_per_100']
-                    bb_size = stake_data['bb_size']
+                if s1_val is not None and s2_val is not None:
+                    diff = s1_val - s2_val
+                    h2h_data.append({
+                        "Metric": metric_name,
+                        s1_name: s1_val,
+                        s2_name: s2_val,
+                        "Difference": diff
+                    })
+                    # Scorecard logic
+                    if diff > 0:
+                        s1_wins += 1 if metric_config["higher_is_better"] else 0
+                        s2_wins += 1 if not metric_config["higher_is_better"] else 0
+                    elif diff < 0:
+                        s2_wins += 1 if metric_config["higher_is_better"] else 0
+                        s1_wins += 1 if not metric_config["higher_is_better"] else 0
 
-                    # Analytical calculations
-                    expected_profit = (total_hands / 100) * ev_wr * bb_size
-                    expected_final_br = start_br + expected_profit
-                    expected_std_dev_eur = (std_dev / np.sqrt(100)) * np.sqrt(total_hands) * bb_size
+            # Display Scorecard
+            st.markdown("##### Scorecard")
+            st.write("Which strategy performed better on key metrics?")
+            score_col1, score_col2 = st.columns(2)
+            with score_col1:
+                st.metric(label=s1_name, value=s1_wins, help="Number of metrics where this strategy was better.")
+            with score_col2:
+                st.metric(label=s2_name, value=s2_wins, help="Number of metrics where this strategy was better.")
 
-                    # Actual results from simulation
-                    actual_median_br = result['median_final_bankroll']
-                    actual_std_dev_br = np.std(result['final_bankrolls'])
-
-                    # Calculate percentage differences
-                    median_diff_pct = ((actual_median_br - expected_final_br) / expected_final_br) * 100 if expected_final_br != 0 else 0
-                    std_dev_diff_pct = ((actual_std_dev_br - expected_std_dev_eur) / expected_std_dev_eur) * 100 if expected_std_dev_eur != 0 else 0
-
-                    st.markdown("This mode compares the simulation's output against known mathematical formulas for a simple, single-stake scenario. The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.")
-                    col1, col2 = st.columns(2)
-                    col1.metric("Expected Median Final Bankroll", f"€{expected_final_br:,.2f}", help="Calculated as: Start BR + (EV Win Rate * Total Hands * bb Size)")
-                    col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f} ({median_diff_pct:+.2f}%)")
-                    col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
-                    col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
-
-            st.subheader(f"Key Metrics for '{strategy_name}'")
-            num_metrics = 9 if config.get("STOP_LOSS_BB", 0) > 0 else 8
-            metric_cols = st.columns(num_metrics)
-            col1, col2, col3, col4, col5, col6, col7, col8 = metric_cols[:8]
-            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
-            col2.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
-            col3.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
-            col4.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
-            col5.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
-            col6.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col7.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col8.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
-            if num_metrics == 9:
-                metric_cols[8].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
-
-            st.subheader("Visual Analysis")
-            row1_col1, row1_col2 = st.columns(2)
-            with row1_col1:
-                st.markdown("###### Bankroll Progression")
-                fig = engine.reporting.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
-                st.pyplot(fig)
-                plt.close(fig)
-            with row1_col2:
-                st.markdown("###### Final Bankroll Distribution")
-                fig = engine.reporting.plot_final_bankroll_comparison({strategy_name: result}, config, color_map=color_map)
-                st.pyplot(fig)
-                plt.close(fig)
-
-            row2_col1, row2_col2 = st.columns(2)
-            with row2_col1:
-                st.markdown("###### Distribution of Assigned Luck (WR)", help=(
-                    "This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations.\n\n"
-                    "**Why is the distribution so wide?**\n\n"
-                    "The width of this 'luck' distribution is determined by your **'Std Dev (bb/100)'** and **'Sample Hands'** inputs. A high standard deviation and/or a low sample size creates more uncertainty about your true win rate. The simulation reflects this by generating a wider range of possible outcomes (both lucky and unlucky).\n\n"
-                    "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
-                ))
-                if 'avg_assigned_wr_per_sim' in result:
-                    fig = engine.reporting.plot_assigned_wr_distribution(
-                        result['avg_assigned_wr_per_sim'],
-                        result['median_run_assigned_wr'],
-                        weighted_input_wr,
-                        strategy_name
-                    )
-                    st.pyplot(fig)
-                    plt.close(fig)
-            with row2_col2:
-                st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
-                if 'max_downswings' in result:
-                    fig = engine.reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
-                    st.pyplot(fig)
-                    plt.close(fig)
-
-            st.subheader("Key Strategy Insights")
-            st.markdown("_For a full breakdown, please download the PDF report._")
-
-            # Check for a dominant stake to provide a key insight
-            if result.get('hands_distribution_pct'):
-                hands_dist = result['hands_distribution_pct']
-                if hands_dist: # Ensure it's not empty
-                    dominant_stake = max(hands_dist, key=hands_dist.get)
-                    dominant_pct = hands_dist[dominant_stake]
-                    if dominant_pct > 75:  # Threshold for being "dominant"
-                        st.info(f"**Key Insight:** This strategy spent the vast majority of its time at **{dominant_stake}** ({dominant_pct:.1f}% of all hands played). The results are therefore heavily influenced by the performance at this single stake.")
-
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown(
-                    "**Hands Distribution**",
-                    help=(
-                        "This section shows three key metrics for each stake:\n\n"
-                        "1.  **Percentage:** The share of total hands played at this stake.\n\n"
-                        "2.  **Avg. WR:** The average win rate the simulation used for this stake across all runs. This includes the 'luck' factor, so it will differ from your input. It represents the average 'true skill' assigned to players at this stake.\n\n"
-                        "3.  **Trust:** A percentage showing how much the model 'trusts' your input `EV Win Rate`. It's calculated from your `Sample Hands` vs. the `Prior Sample Size`. A higher trust percentage means the model is more confident in your data and will apply less long-term luck (variance) to your win rate."
-                    ),
+            # Display H2H Table
+            if h2h_data:
+                h2h_df = pd.DataFrame(h2h_data).set_index("Metric")
+                # Format the difference column to match the metric's original format
+                h2h_df['Difference'] = h2h_df.apply(
+                    lambda row: H2H_METRICS_CONFIG[row.name]['format'].format(row['Difference']).replace('€', '€ ').replace('%', ' %'),
+                    axis=1
                 )
+                styled_h2h_df = style_h2h_table(h2h_df, s1_name, s2_name)
+                st.dataframe(styled_h2h_df, use_container_width=True)
+
+    # --- Summary & Plots Tab ---
+    with tab_map["📊 Summary & Plots"]:
+        if analysis_report:
+            with st.expander("Automated Strategy Analysis", expanded=(num_strategies > 1)):
+                st.markdown(analysis_report)
+
+        st.subheader("Strategy Comparison Summary")
+        # --- Display Summary Table ---
+        summary_data = []
+        for name, res in all_results.items():
+            summary_data.append({
+                "Strategy": name,
+                "Median Final BR": res['median_final_bankroll'],
+                "Mode Final BR": res['final_bankroll_mode'],
+                "Median Growth": res['growth_rate'],
+                "Median Hands Played": res.get('median_hands_played', 0),
+                "Median Profit (Play)": res.get('median_profit_from_play_eur', 0.0),
+                "Median Rakeback": res.get('median_rakeback_eur', 0.0),
+                "Risk of Ruin (%)": res['risk_of_ruin'],
+                "Target Prob (%)": res['target_prob'],
+                "5th %ile BR": res['p5'],
+                "P95 Max Downswing": res['p95_max_downswing']
+            })
+        summary_df = pd.DataFrame(summary_data)
+        column_config_dict = {k: v['config'] for k, v in SUMMARY_TABLE_CONFIG.items()}
+        styled_summary = style_summary_table(summary_df)
+        st.dataframe(styled_summary, column_config=column_config_dict)
+
+        st.subheader("Strategy Comparison Visuals")
+        comp_col1, comp_col2 = st.columns(2)
+        with comp_col1:
+            st.markdown("###### Median Bankroll Progression")
+            fig = engine.reporting.plot_median_progression_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+        with comp_col2:
+            st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
+            fig = engine.reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+
+        comp_col3, comp_col4 = st.columns(2)
+        with comp_col3:
+            st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
+            fig = engine.reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+        with comp_col4:
+            st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
+            fig = engine.reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+
+    # --- Detailed Analysis Tab ---
+    with tab_map["🔬 Detailed Analysis"]:
+        st.info("This tab provides a deep dive into the performance of each individual strategy. Expand any strategy below to see its detailed metrics and plots.")
+        # --- Display Detailed Results for Each Strategy ---
+        for strategy_name, result in all_results.items():
+            with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
+                # --- Special Sanity Check Analysis Box ---
+                if strategy_name == "Sanity Check (NL20 Only)":
+                    with st.container(border=True):
+                        st.subheader("🔬 Sanity Check Analysis")
+                        start_br = config['STARTING_BANKROLL_EUR']
+                        total_hands = config['TOTAL_HANDS_TO_SIMULATE']
+                        stake_data = config['STAKES_DATA'][0]
+                        ev_wr = stake_data['ev_bb_per_100']
+                        std_dev = stake_data['std_dev_per_100']
+                        bb_size = stake_data['bb_size']
+
+                        # Analytical calculations
+                        expected_profit = (total_hands / 100) * ev_wr * bb_size
+                        expected_final_br = start_br + expected_profit
+                        expected_std_dev_eur = (std_dev / np.sqrt(100)) * np.sqrt(total_hands) * bb_size
+
+                        # Actual results from simulation
+                        actual_median_br = result['median_final_bankroll']
+                        actual_std_dev_br = np.std(result['final_bankrolls'])
+
+                        # Calculate percentage differences
+                        median_diff_pct = ((actual_median_br - expected_final_br) / expected_final_br) * 100 if expected_final_br != 0 else 0
+                        std_dev_diff_pct = ((actual_std_dev_br - expected_std_dev_eur) / expected_std_dev_eur) * 100 if expected_std_dev_eur != 0 else 0
+
+                        st.markdown("This mode compares the simulation's output against known mathematical formulas for a simple, single-stake scenario. The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.")
+                        col1, col2 = st.columns(2)
+                        col1.metric("Expected Median Final Bankroll", f"€{expected_final_br:,.2f}", help="Calculated as: Start BR + (EV Win Rate * Total Hands * bb Size)")
+                        col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f} ({median_diff_pct:+.2f}%)")
+                        col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
+                        col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
+
+                st.subheader(f"Key Metrics for '{strategy_name}'")
+                num_metrics = 9 if config.get("STOP_LOSS_BB", 0) > 0 else 8
+                metric_cols = st.columns(num_metrics)
+                col1, col2, col3, col4, col5, col6, col7, col8 = metric_cols[:8]
+                col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
+                col2.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
+                col3.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
+                col4.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
+                col5.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+                col6.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+                col7.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+                col8.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+                if num_metrics == 9:
+                    metric_cols[8].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
+
+                st.subheader("Visual Analysis")
+                row1_col1, row1_col2 = st.columns(2)
+                with row1_col1:
+                    st.markdown("###### Bankroll Progression")
+                    fig = engine.reporting.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+                    st.pyplot(fig)
+                    plt.close(fig)
+                with row1_col2:
+                    st.markdown("###### Final Bankroll Distribution")
+                    fig = engine.reporting.plot_final_bankroll_comparison({strategy_name: result}, config, color_map=color_map)
+                    st.pyplot(fig)
+                    plt.close(fig)
+
+                row2_col1, row2_col2 = st.columns(2)
+                with row2_col1:
+                    st.markdown("###### Distribution of Assigned Luck (WR)", help=(
+                        "This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations.\n\n"
+                        "**Why is the distribution so wide?**\n\n"
+                        "The width of this 'luck' distribution is determined by your **'Std Dev (bb/100)'** and **'Sample Hands'** inputs. A high standard deviation and/or a low sample size creates more uncertainty about your true win rate. The simulation reflects this by generating a wider range of possible outcomes (both lucky and unlucky).\n\n"
+                        "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
+                    ))
+                    if 'avg_assigned_wr_per_sim' in result:
+                        fig = engine.reporting.plot_assigned_wr_distribution(
+                            result['avg_assigned_wr_per_sim'],
+                            result['median_run_assigned_wr'],
+                            weighted_input_wr,
+                            strategy_name
+                        )
+                        st.pyplot(fig)
+                        plt.close(fig)
+                with row2_col2:
+                    st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
+                    if 'max_downswings' in result:
+                        fig = engine.reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
+                        st.pyplot(fig)
+                        plt.close(fig)
+
+                st.subheader("Key Strategy Insights")
+                st.markdown("_For a full breakdown, please download the PDF report._")
+
+                # Check for a dominant stake to provide a key insight
                 if result.get('hands_distribution_pct'):
-                    # Create a map for easy lookup of sample hands
-                    stakes_data_list = config.get('STAKES_DATA', [])
-                    sample_hands_map = {s['name']: s.get('sample_hands', 0) for s in stakes_data_list}
-                    prior_sample_size = config.get('PRIOR_SAMPLE_SIZE', 50000)
+                    hands_dist = result['hands_distribution_pct']
+                    if hands_dist: # Ensure it's not empty
+                        dominant_stake = max(hands_dist, key=hands_dist.get)
+                        dominant_pct = hands_dist[dominant_stake]
+                        if dominant_pct > 75:  # Threshold for being "dominant"
+                            st.info(f"**Key Insight:** This strategy spent the vast majority of its time at **{dominant_stake}** ({dominant_pct:.1f}% of all hands played). The results are therefore heavily influenced by the performance at this single stake.")
 
-                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                    sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
-                    avg_win_rates = result.get('average_assigned_win_rates', {})
 
-                    for stake, pct in sorted_stakes:
-                        if pct > 0.01:
-                            # Calculate data weight (trust factor)
-                            sample_hands = sample_hands_map.get(stake, 0)
-                            trust_factor = 0.0
-                            if sample_hands > 0 and (sample_hands + prior_sample_size) > 0:
-                                trust_factor = sample_hands / (sample_hands + prior_sample_size)
+                col1, col2 = st.columns(2)
 
-                            details_parts = []
-                            if stake in avg_win_rates:
-                                details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
-                            details_parts.append(f"Trust: {trust_factor:.0%}")
-
-                            details_str = f" ({', '.join(details_parts)})"
-                            st.write(f"- {stake}: {pct:.2f}%{details_str}")
-                else:
-                    st.write("No hands played.")
-
-            with col2:
-                st.markdown("**Final Stake**", help="The percentage of simulations that finished with this as their highest active stake.")
-                if result.get('final_highest_stake_distribution'):
-                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                    sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
-                    for stake, pct in sorted_dist:
-                        if pct > 0.01:
-                            display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
-                            st.write(f"- {display_stake}: {pct:.2f}%")
-                else:
-                    st.write("N/A")
-
-            # --- Risk of Demotion Section ---
-            if result.get('risk_of_demotion'):
-                st.markdown("---")
-                st.markdown("**Risk of Demotion**", help="The probability of being demoted from a stake after you've reached it. Calculated as: (Simulations demoted from Stake X) / (Simulations that ever reached Stake X). A high percentage indicates an unstable strategy.")
-                stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
-
-                demotion_markdown = ""
-                for stake, data in sorted_demotions:
-                    if data['reached_count'] > 0: # Only show relevant stakes
-                        demotion_markdown += f"- From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_\n"
-                st.markdown(demotion_markdown)
-
-            # --- Percentile Win Rate Analysis Section ---
-            if result.get('percentile_win_rates'):
-                st.markdown("---")
-                st.markdown(
-                    "**Percentile Win Rate Analysis (bb/100)**",
-                    help=(
-                        "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
-                        "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
-                        "- **Play WR:** The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
-                        "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
-                        "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
+                with col1:
+                    st.markdown(
+                        "**Hands Distribution**",
+                        help=(
+                            "This section shows three key metrics for each stake:\n\n"
+                            "1.  **Percentage:** The share of total hands played at this stake.\n\n"
+                            "2.  **Avg. WR:** The average win rate the simulation used for this stake across all runs. This includes the 'luck' factor, so it will differ from your input. It represents the average 'true skill' assigned to players at this stake.\n\n"
+                            "3.  **Trust:** A percentage showing how much the model 'trusts' your input `EV Win Rate`. It's calculated from your `Sample Hands` vs. the `Prior Sample Size`. A higher trust percentage means the model is more confident in your data and will apply less long-term luck (variance) to your win rate."
+                        ),
                     )
-                )
-                st.caption(
-                    "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
-                    "The `Realized WR (Play)` includes short-term variance, so it will naturally differ from the `Assigned WR` even for this median-outcome run. "
-                    "This is expected statistical noise."
-                )
+                    if result.get('hands_distribution_pct'):
+                        # Create a map for easy lookup of sample hands
+                        stakes_data_list = config.get('STAKES_DATA', [])
+                        sample_hands_map = {s['name']: s.get('sample_hands', 0) for s in stakes_data_list}
+                        prior_sample_size = config.get('PRIOR_SAMPLE_SIZE', 50000)
 
-                percentile_wrs = result.get('percentile_win_rates', {})
-                percentiles_to_show = {
-                    "5th": "5th Percentile",
-                    "25th": "25th Percentile",
-                    "Median": "Median Percentile",
-                    "75th": "75th Percentile",
-                    "95th": "95th Percentile"
-                }
+                        stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                        sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
+                        avg_win_rates = result.get('average_assigned_win_rates', {})
 
-                cols = st.columns(len(percentiles_to_show))
+                        for stake, pct in sorted_stakes:
+                            if pct > 0.01:
+                                # Calculate data weight (trust factor)
+                                sample_hands = sample_hands_map.get(stake, 0)
+                                trust_factor = 0.0
+                                if sample_hands > 0 and (sample_hands + prior_sample_size) > 0:
+                                    trust_factor = sample_hands / (sample_hands + prior_sample_size)
 
-                for i, (short_name, long_name) in enumerate(percentiles_to_show.items()):
-                    with cols[i]:
-                        st.markdown(f"**{short_name} %ile**")
-                        if long_name in percentile_wrs:
-                            data = percentile_wrs[long_name]
-                            for metric in PERCENTILE_METRIC_DEFINITIONS:
-                                st.metric(label=metric["label"], value=f"{data.get(metric['key'], 'N/A')}", help=metric["help"])
+                                details_parts = []
+                                if stake in avg_win_rates:
+                                    details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
+                                details_parts.append(f"Trust: {trust_factor:.0%}")
+
+                                details_str = f" ({', '.join(details_parts)})"
+                                st.write(f"- {stake}: {pct:.2f}%{details_str}")
+                    else:
+                        st.write("No hands played.")
+
+                with col2:
+                    st.markdown("**Final Stake**", help="The percentage of simulations that finished with this as their highest active stake.")
+                    if result.get('final_highest_stake_distribution'):
+                        stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                        sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
+                        for stake, pct in sorted_dist:
+                            if pct > 0.01:
+                                display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
+                                st.write(f"- {display_stake}: {pct:.2f}%")
+
+                # --- Risk of Demotion Section ---
+                if result.get('risk_of_demotion'):
+                    st.markdown("---")
+                    st.markdown("**Risk of Demotion**", help="The probability of being demoted from a stake after you've reached it. Calculated as: (Simulations demoted from Stake X) / (Simulations that ever reached Stake X). A high percentage indicates an unstable strategy.")
+                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                    sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
+
+                    demotion_markdown = ""
+                    for stake, data in sorted_demotions:
+                        if data['reached_count'] > 0: # Only show relevant stakes
+                            demotion_markdown += f"- From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_\n"
+                    st.markdown(demotion_markdown)
+
+                # --- Percentile Win Rate Analysis Section ---
+                if result.get('percentile_win_rates'):
+                    st.markdown("---")
+                    st.markdown(
+                        "**Percentile Win Rate Analysis (bb/100)**",
+                        help=(
+                            "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
+                            "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
+                            "- **Play WR:** The actual, realized win rate realized from gameplay after adding short-term (session) variance. It's influenced by the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
+                            "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
+                            "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
+                        )
+                    )
+                    st.caption(
+                        "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
+                        "The `Realized WR (Play)` includes short-term variance, so it will naturally differ from the `Assigned WR` even for this median-outcome run. "
+                        "This is expected statistical noise."
+                    )
+
+                    percentile_wrs = result.get('percentile_win_rates', {})
+                    percentiles_to_show = {
+                        "5th": "5th Percentile",
+                        "25th": "25th Percentile",
+                        "Median": "Median Percentile",
+                        "75th": "75th Percentile",
+                        "95th": "95th Percentile"
+                    }
+
+                    cols = st.columns(len(percentiles_to_show))
+
+                    for i, (short_name, long_name) in enumerate(percentiles_to_show.items()):
+                        with cols[i]:
+                            st.markdown(f"**{short_name} %ile**")
+                            if long_name in percentile_wrs:
+                                data = percentile_wrs[long_name]
+                                for metric in PERCENTILE_METRIC_DEFINITIONS:
+                                    st.metric(label=metric["label"], value=f"{data.get(metric['key'], 'N/A')}", help=metric["help"])
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
@@ -1228,3 +1398,4 @@ if st.session_state.get("simulation_output"):
             file_name=f"simulation_report_{timestamp}.pdf",
             mime="application/pdf"
         )
+                    
