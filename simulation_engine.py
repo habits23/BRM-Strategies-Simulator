@@ -9,8 +9,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from collections import defaultdict
 import io
 
-from . import analysis
-from . import reporting
+import analysis
+import reporting
 
 # =================================================================================
 #   BANKROLL MANAGEMENT STRATEGY CLASS
