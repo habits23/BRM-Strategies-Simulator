@@ -207,6 +207,49 @@ def calculate_hand_block_outcome(current_bankrolls, proportions_per_stake, all_w
     final_session_profit = session_profits_eur + total_rakeback_eur
     return final_session_profit, hands_per_stake_this_session, total_rakeback_eur
 
+def _calculate_withdrawal_amounts(current_bankrolls, bankroll_at_start_of_month, settings, due_mask, ruin_threshold):
+    """
+    Calculates the withdrawal amount for each simulation based on its strategy.
+    This is a helper function for the main simulation loops.
+    """
+    withdrawal_amounts = np.zeros_like(current_bankrolls)
+
+    # Safety check: only withdraw if bankroll is above the minimum threshold specified in the UI
+    eligible_mask = due_mask & (current_bankrolls >= settings["min_bankroll"])
+    if not np.any(eligible_mask):
+        return withdrawal_amounts
+
+    strategy = settings["strategy"]
+    value = settings["value"]
+
+    calculated_withdrawals = np.zeros_like(current_bankrolls)
+
+    if "Fixed Amount" in strategy:
+        calculated_withdrawals[eligible_mask] = value
+
+    elif "Percentage of Profits" in strategy:
+        profits = current_bankrolls - bankroll_at_start_of_month
+        # Only withdraw from positive profits
+        positive_profit_mask = eligible_mask & (profits > 0)
+        if np.any(positive_profit_mask):
+            calculated_withdrawals[positive_profit_mask] = profits[positive_profit_mask] * (value / 100.0)
+
+    elif "Withdraw Down to Threshold" in strategy:
+        amount_over_threshold = current_bankrolls - value
+        # Only withdraw if bankroll is over the threshold
+        over_threshold_mask = eligible_mask & (amount_over_threshold > 0)
+        if np.any(over_threshold_mask):
+            calculated_withdrawals[over_threshold_mask] = amount_over_threshold[over_threshold_mask]
+
+    # Final check: Don't let withdrawal cause bankroll to go below ruin threshold.
+    # This is a safety net, though min_br_for_withdrawal should usually prevent this.
+    max_possible_withdrawal = current_bankrolls - ruin_threshold
+    final_withdrawals = np.minimum(calculated_withdrawals, max_possible_withdrawal)
+    final_withdrawals[final_withdrawals < 0] = 0 # Ensure withdrawals are not negative
+
+    withdrawal_amounts[eligible_mask] = final_withdrawals[eligible_mask]
+    return withdrawal_amounts
+
 def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, long_term_luck_factors, prior_win_rate, config):
     """Adjusts the observed EV win rate using a Bayesian-inspired 'shrinkage' method."""
     # This function calculates the "Assigned WR" which includes LONG-TERM LUCK.
@@ -305,6 +348,14 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
     bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
     hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
     rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
+
+    # --- Withdrawal Initialization ---
+    withdrawal_settings = config.get("WITHDRAWAL_SETTINGS", {"enabled": False})
+    total_withdrawn_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
+    if withdrawal_settings.get("enabled"):
+        hands_since_last_withdrawal = np.zeros(num_sims, dtype=int)
+        # Store the bankroll at the start of a "month" to calculate profit-based withdrawals
+        bankroll_at_last_withdrawal = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
 
     # --- Maximum Drawdown Initialization ---
     peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
@@ -411,8 +462,29 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             if np.any(triggered_mask):
                 is_stopped_out[triggered_mask] = True
                 stop_loss_triggers[triggered_mask] += 1
+        
+        # Update bankrolls with play profits first, before withdrawal calculations
+        temp_bankrolls = current_bankrolls + block_profits_eur
 
-        new_bankrolls = current_bankrolls + block_profits_eur
+        # --- Withdrawal Logic ---
+        withdrawal_amounts_this_block = np.zeros(num_sims, dtype=float)
+        if withdrawal_settings.get("enabled"):
+            total_hands_this_block = np.sum(list(hands_per_stake_this_block.values()), axis=0)
+            hands_since_last_withdrawal += np.where(active_mask, total_hands_this_block, 0)
+
+            due_for_withdrawal_mask = (hands_since_last_withdrawal >= withdrawal_settings["monthly_volume"]) & active_mask
+            if np.any(due_for_withdrawal_mask):
+                withdrawal_amounts_this_block = _calculate_withdrawal_amounts(
+                    temp_bankrolls, bankroll_at_last_withdrawal, withdrawal_settings,
+                    due_for_withdrawal_mask, config['RUIN_THRESHOLD']
+                )
+                temp_bankrolls -= withdrawal_amounts_this_block
+                hands_since_last_withdrawal[due_for_withdrawal_mask] = 0
+                bankroll_at_last_withdrawal[due_for_withdrawal_mask] = temp_bankrolls[due_for_withdrawal_mask]
+
+        total_withdrawn_histories[:, i+1] = total_withdrawn_histories[:, i] + withdrawal_amounts_this_block
+        new_bankrolls = temp_bankrolls
+
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
         # --- Underwater Time Calculation ---
@@ -428,7 +500,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories
 
 def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -440,6 +512,14 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
     hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
     rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
+
+    # --- Withdrawal Initialization ---
+    withdrawal_settings = config.get("WITHDRAWAL_SETTINGS", {"enabled": False})
+    total_withdrawn_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
+    if withdrawal_settings.get("enabled"):
+        hands_since_last_withdrawal = np.zeros(num_sims, dtype=int)
+        # Store the bankroll at the start of a "month" to calculate profit-based withdrawals
+        bankroll_at_last_withdrawal = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
 
     # --- Maximum Drawdown Initialization ---
     peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
@@ -546,7 +626,26 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
                 is_stopped_out[triggered_mask] = True
                 stop_loss_triggers[triggered_mask] += 1
 
-        new_bankrolls = current_bankrolls + block_profits_eur
+        # Update bankrolls with play profits first, before withdrawal calculations
+        temp_bankrolls = current_bankrolls + block_profits_eur
+
+        withdrawal_amounts_this_block = np.zeros(num_sims, dtype=float)
+        if withdrawal_settings.get("enabled"):
+            total_hands_this_block = np.sum(list(hands_per_stake_this_block.values()), axis=0)
+            hands_since_last_withdrawal += np.where(active_mask, total_hands_this_block, 0)
+
+            due_for_withdrawal_mask = (hands_since_last_withdrawal >= withdrawal_settings["monthly_volume"]) & active_mask
+            if np.any(due_for_withdrawal_mask):
+                withdrawal_amounts_this_block = _calculate_withdrawal_amounts( # noqa
+                    temp_bankrolls, bankroll_at_last_withdrawal, withdrawal_settings,
+                    due_for_withdrawal_mask, config['RUIN_THRESHOLD']
+                )
+                temp_bankrolls -= withdrawal_amounts_this_block
+                hands_since_last_withdrawal[due_for_withdrawal_mask] = 0
+                bankroll_at_last_withdrawal[due_for_withdrawal_mask] = temp_bankrolls[due_for_withdrawal_mask]
+
+        total_withdrawn_histories[:, i+1] = total_withdrawn_histories[:, i] + withdrawal_amounts_this_block
+        new_bankrolls = temp_bankrolls
         bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
         # --- Underwater Time Calculation ---
@@ -562,7 +661,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         for stake_name, hands_array in hands_per_stake_this_block.items():
             hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
@@ -667,6 +766,20 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
             lines.append(f"   - 95th Percentile Downswing: €{p95_downswing:.2f} (5% of runs had a worse downswing)")
         return lines
 
+    def _write_income_analysis(res):
+        lines = []
+        # Only add this section if withdrawals were enabled for the run
+        if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
+            lines.extend(["", "--- Income & Total Return Analysis ---"])
+            lines.append("Metrics related to money taken out of the bankroll and overall value generated.")
+            median_withdrawn = res.get('median_total_withdrawn', 0.0)
+            p95_withdrawn = res.get('p95_total_withdrawn', 0.0)
+            median_return = res.get('median_total_return', 0.0)
+            lines.append(f"   - Median Total Withdrawn: €{median_withdrawn:,.2f}")
+            lines.append(f"   - 95th Percentile Withdrawn: €{p95_withdrawn:,.2f} (5% of runs withdrew more than this)")
+            lines.append(f"   - Median Total Return: €{median_return:,.2f} ((Final BR - Start BR) + Withdrawn)")
+        return lines
+
     def _write_final_stake_distribution(res):
         lines = []
         if 'final_stake_distribution' in res and res['final_stake_distribution']:
@@ -720,6 +833,7 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
     report_lines.extend(_write_hands_distribution(result))
     report_lines.extend(_write_demotion_analysis(result))
     report_lines.extend(_write_downswing_analysis(result))
+    report_lines.extend(_write_income_analysis(result))
     report_lines.extend(_write_final_bankroll_metrics(result))
     report_lines.extend(_write_final_stake_distribution(result))
     report_lines.extend(_write_final_highest_stake_distribution(result))
@@ -743,11 +857,11 @@ def write_strategy_report_to_pdf(pdf, report_lines, start_page_num=None):
 
 def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     """Creates a table of the main summary results and saves it to a PDF page."""
-    header = ['Strategy', 'Page', 'Median Final BR', 'Mode Final BR', 'Median Growth', 'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile', '2.5th %ile']
+    header = ['Strategy', 'Page', 'Median Final BR', 'Med Withdrawn', 'Med Total Return', 'Median Growth', 'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile']
 
     # Conditionally add the stop-loss header
     if config.get("STOP_LOSS_BB", 0) > 0:
-        header.insert(6, 'Median SL') # Insert after Median Rakeback
+        header.insert(7, 'Median SL') # Insert after Median Rakeback
 
     cell_text = []
     for strategy_name, result in all_results.items():
@@ -755,18 +869,18 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
             strategy_name,
             str(strategy_page_map.get(strategy_name, '-')),
             f"€{result['median_final_bankroll']:,.2f}",
-            f"€{result['final_bankroll_mode']:,.2f}",
+            f"€{result.get('median_total_withdrawn', 0.0):,.2f}",
+            f"€{result.get('median_total_return', 0.0):,.2f}",
             f"{result['growth_rate']:.2%}",
             f"€{result.get('median_rakeback_eur', 0.0):,.2f}",
             f"{result['risk_of_ruin']:.2f}",
             f"{result['target_prob']:.2f}",
-            f"€{result['p5']:,.2f}",
-            f"€{result['p2_5']:,.2f}"
+            f"€{result['p5']:,.2f}"
         ]
 
         # Conditionally add the stop-loss value to the row
         if config.get("STOP_LOSS_BB", 0) > 0:
-            row.insert(6, f"{result.get('median_stop_losses', 0):.1f}")
+            row.insert(7, f"{result.get('median_stop_losses', 0):.1f}")
 
         cell_text.append(row)
 
@@ -798,13 +912,18 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
 
-    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(4) = 7 pages before details
-    page_counter_for_map = 7
+    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(5) = 8 pages before details
+    # The number of comparison plots increases by 1 if withdrawals are enabled.
+    num_comparison_plots = 4
+    if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
+        num_comparison_plots += 1
+
+    page_counter_for_map = 2 + num_comparison_plots + (1 if analysis_report else 0)
     lines_per_page = 45
 
     for strategy_name, result in all_results.items():
         strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
-        strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
+        strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA']) # noqa
 
         # The page this strategy's report starts on
         strategy_page_map[strategy_name] = page_counter_for_map + 1
@@ -835,6 +954,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
 
         reporting.plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf)
         reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        reporting.plot_total_withdrawn_comparison(all_results, config, color_map=color_map, pdf=pdf)
         reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
         reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
 
@@ -872,15 +992,20 @@ def generate_qualitative_analysis(all_results, config):
 
     # --- New Metric Calculation: Efficiency Score ---
     for name, res in all_results.items():
-        # Calculate a risk-adjusted return score (Growth-to-Pain Ratio). Higher is better.
-        growth = res['median_final_bankroll'] - config['STARTING_BANKROLL_EUR']
+        # Calculate a risk-adjusted return score. Higher is better.
+        # Use Median Total Return if withdrawals are on, otherwise use simple growth.
+        if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
+            total_value_generated = res.get('median_total_return', 0)
+        else:
+            total_value_generated = res['median_final_bankroll'] - config['STARTING_BANKROLL_EUR']
+
         pain = res['p95_max_downswing']
         if pain > 1: # Avoid division by zero or tiny numbers
-            # We add 1 to growth to avoid issues with 0 growth and to slightly penalize negative growth.
-            res['efficiency_score'] = (growth + 1) / pain
+            # We add 1 to value to avoid issues with 0 and to slightly penalize negative values.
+            res['efficiency_score'] = (total_value_generated + 1) / pain
         else:
-            # If there's no significant downswing, it's extremely efficient. Give it a very high score, proportional to growth.
-            res['efficiency_score'] = growth if growth > 0 else 1.0
+            # If there's no significant downswing, it's extremely efficient. Give it a very high score, proportional to value.
+            res['efficiency_score'] = total_value_generated if total_value_generated > 0 else 1.0
 
     def find_best_worst_with_ties(metric_key, higher_is_better=True):
         """Helper to find the best and worst performing strategies, handling ties for 'best'."""
@@ -937,7 +1062,17 @@ def generate_qualitative_analysis(all_results, config):
     if best_efficiency:
         names = f"'{best_efficiency[0]}'" if len(best_efficiency) == 1 else f"'{', '.join(best_efficiency)}'"
         verb = "demonstrated" if len(best_efficiency) == 1 else "were tied for demonstrating"
-        insights.append(f"\n**⚡ Most Efficient:** The **{names}** strategy {verb} the best risk-adjusted return. It generated the most 'growth' for the amount of 'pain' (downswing) it caused, making it a highly efficient choice.")
+        insights.append(f"\n**⚡ Most Efficient:** The **{names}** strategy {verb} the best risk-adjusted return. It generated the most 'total value' (growth + withdrawals) for the amount of 'pain' (downswing) it caused, making it a highly efficient choice.")
+
+    # Add insight for withdrawals if enabled
+    if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
+        best_income, worst_income = find_best_worst_with_ties('median_total_withdrawn', higher_is_better=True)
+        if best_income:
+            names = f"'{best_income[0]}'" if len(best_income) == 1 else f"'{', '.join(best_income)}'"
+            verb = "generated" if len(best_income) == 1 else "were tied for generating"
+            insights.append(f"\n**💸 Best Income Generator:** The **{names}** strategy {verb} the most income through withdrawals, with a median of €{all_results[best_income[0]]['median_total_withdrawn']:,.0f}. This is a key metric for players who need to live off their winnings.")
+        if worst_income and worst_income not in best_income and all_results[worst_income]['median_total_withdrawn'] < all_results[best_income[0]]['median_total_withdrawn']:
+            insights.append(f"\n**🏦 Lowest Income Generator:** **'{worst_income}'** generated the least income (€{all_results[worst_income]['median_total_withdrawn']:,.0f}). This might be because it was too conservative to generate profits to withdraw, or too risky, leading to frequent downswings that prevented withdrawals.")
 
     # Add insight for highest rakeback earner
     if config.get("RAKEBACK_PERCENTAGE", 0) > 0:
@@ -1101,14 +1236,14 @@ def run_full_analysis(config):
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analysis.analyze_strategy_results(
             strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng,
-            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, config
+            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories, config
         )
 
     # Generate the final qualitative analysis report

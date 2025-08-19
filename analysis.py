@@ -21,10 +21,11 @@ def calculate_binned_mode(data, ruin_threshold):
     except (np.linalg.LinAlgError, ValueError):
         return np.median(filtered_data)
 
-def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map):
+def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, total_withdrawn_histories, config, bb_size_map):
     """Calculates assigned and realized win rates for simulations closest to key percentiles."""
     percentile_win_rates = {}
     percentiles_to_find = {'2.5th': 2.5, '5th': 5, '25th': 25, 'Median': 50, '75th': 75, '95th': 95, '97.5th': 97.5}
+    final_withdrawn = total_withdrawn_histories[:, -1]
     final_rakeback = rakeback_histories[:, -1]
 
     for name, p_val in sorted(percentiles_to_find.items(), key=lambda item: item[1]):
@@ -47,7 +48,9 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
             avg_bb_size = weighted_bb_size_sum / total_hands_for_sim
 
             if avg_bb_size > 0:
-                total_profit_eur = final_bankrolls[closest_sim_index] - config['STARTING_BANKROLL_EUR']
+                # CRITICAL: Total profit must include money that was withdrawn.
+                # Total value generated = (Final BR - Start BR) + Total Withdrawn
+                total_profit_eur = (final_bankrolls[closest_sim_index] + final_withdrawn[closest_sim_index]) - config['STARTING_BANKROLL_EUR']
                 profit_from_play_eur = total_profit_eur - final_rakeback[closest_sim_index]
                 realized_wr_val = (profit_from_play_eur / avg_bb_size) / (total_hands_for_sim / 100)
                 assigned_wr_val = assigned_weighted_wr_sum / total_hands_for_sim
@@ -64,10 +67,11 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
+    final_withdrawn = total_withdrawn_histories[:, -1]
     final_bankrolls = bankroll_histories[:, -1]
 
     # --- Calculate Weighted Assigned WR for each simulation ---
@@ -139,7 +143,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     final_stake_distribution = {mix_str: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for mix_str, count in final_stake_counts.items()}
     final_highest_stake_distribution = {stake: (count / config['NUMBER_OF_SIMULATIONS']) * 100 for stake, count in final_highest_stake_counts.items()}
 
-    percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, config, bb_size_map)
+    percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, total_withdrawn_histories, config, bb_size_map)
 
     median_max_downswing = np.median(max_drawdowns)
     p95_max_downswing = np.percentile(max_drawdowns, 95)
@@ -149,7 +153,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     median_rakeback_eur = np.median(final_rakeback)
 
     # Calculate median profit from play
-    total_profit_per_sim = final_bankrolls - config['STARTING_BANKROLL_EUR']
+    # This now correctly includes withdrawn amounts as part of the total profit generated.
+    total_profit_per_sim = (final_bankrolls + final_withdrawn) - config['STARTING_BANKROLL_EUR']
     profit_from_play_per_sim = total_profit_per_sim - final_rakeback
     median_profit_from_play_eur = np.median(profit_from_play_per_sim)
 
@@ -174,6 +179,15 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     risk_of_ruin_percent = (busted_runs / config['NUMBER_OF_SIMULATIONS']) * 100
     percentiles = {p: np.percentile(final_bankrolls, p) for p in [2.5, 5, 25, 50, 75, 95, 97.5]}
     median_growth_rate = (percentiles[50] - config['STARTING_BANKROLL_EUR']) / config['STARTING_BANKROLL_EUR'] if config['STARTING_BANKROLL_EUR'] > 0 else 0.0
+
+    # --- Calculate Withdrawal Metrics ---
+    median_total_withdrawn = np.median(final_withdrawn)
+    p95_total_withdrawn = np.percentile(final_withdrawn, 95)
+
+    # --- Calculate Total Return ---
+    # Total return is the change in bankroll plus everything that was taken out.
+    total_return_per_sim = (final_bankrolls - config['STARTING_BANKROLL_EUR']) + final_withdrawn
+    median_total_return = np.median(total_return_per_sim)
 
     return {
         'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
@@ -202,4 +216,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
+        'median_total_withdrawn': median_total_withdrawn,
+        'p95_total_withdrawn': p95_total_withdrawn,
+        'median_total_return': median_total_return,
+        'total_withdrawn_histories': total_withdrawn_histories,
     }

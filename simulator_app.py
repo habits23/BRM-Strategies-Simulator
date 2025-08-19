@@ -91,6 +91,15 @@ with st.expander("Need Help? Click here for the User Guide"):
     *   **Rakeback (%)**: The percentage of rake you get back. This is a critical, variance-free boost to your win rate. Setting it to 0% can make aggressive strategies unprofitable and significantly increase your Risk of Ruin.
     *   **Enable Stop-Loss**: If enabled, simulations will 'sit out' for the next hand block (defined by 'Hands per Bankroll Check') after losing more than the specified amount in a single block. This simulates taking a break after a big losing session.
 
+    #### Withdrawal & Deposit Settings
+    *   **Enable Monthly Withdrawals**: Turns on the withdrawal feature.
+    *   **Monthly Volume (Hands)**: Defines how many hands make up a "month". The simulation will attempt a withdrawal after this many hands are played.
+    *   **Withdrawal Strategy**: Choose how to withdraw money:
+        *   **Fixed Amount**: Withdraw a set amount each month.
+        *   **Percentage of Profits**: Withdraw a percentage of the profits made in that month.
+        *   **Withdraw Down to Threshold**: Withdraw any amount above a specific bankroll level.
+    *   **Minimum Bankroll for Withdrawal**: A safety net. No withdrawals will be made if the bankroll is below this amount, regardless of the chosen strategy.
+
     #### Advanced Statistical Settings
     This is the "secret sauce" of the simulator that makes it more realistic than a simple variance calculator.
 
@@ -218,6 +227,11 @@ if 'zero_hands_weight' not in st.session_state: st.session_state.zero_hands_weig
 if 'enable_stop_loss' not in st.session_state: st.session_state.enable_stop_loss = False
 if 'stop_loss_bb' not in st.session_state: st.session_state.stop_loss_bb = 300
 if 'seed' not in st.session_state: st.session_state.seed = 98765
+if 'enable_withdrawals' not in st.session_state: st.session_state.enable_withdrawals = False
+if 'monthly_volume_hands' not in st.session_state: st.session_state.monthly_volume_hands = 15000
+if 'withdrawal_strategy' not in st.session_state: st.session_state.withdrawal_strategy = "Fixed Amount (€)"
+if 'withdrawal_value' not in st.session_state: st.session_state.withdrawal_value = 500
+if 'min_br_for_withdrawal' not in st.session_state: st.session_state.min_br_for_withdrawal = 2000
 if 'plot_percentile_limit' not in st.session_state: st.session_state.plot_percentile_limit = 99
 
 if 'run_simulation' not in st.session_state:
@@ -439,6 +453,45 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
             help="The number of big blinds lost in a single block that will trigger the stop-loss. A common value is 300-500bb (3-5 buy-ins)."
         )
 
+with st.sidebar.expander("Withdrawal & Deposit Settings", expanded=False):
+    st.checkbox("Enable Monthly Withdrawals", key="enable_withdrawals", help="If enabled, the simulation will attempt to withdraw funds periodically based on the rules below.")
+    if st.session_state.enable_withdrawals:
+        st.number_input(
+            "Monthly Volume (Hands)",
+            min_value=st.session_state.hands_per_check, # Must be at least one check period
+            step=1000,
+            key="monthly_volume_hands",
+            help="The number of hands that constitutes a 'month'. A withdrawal will be attempted after this many hands are played."
+        )
+        st.selectbox(
+            "Withdrawal Strategy",
+            options=["Fixed Amount (€)", "Percentage of Profits (%)", "Withdraw Down to Threshold (€)"],
+            key="withdrawal_strategy",
+            help=(
+                "- **Fixed Amount:** Withdraw a set amount each month.\n"
+                "- **Percentage of Profits:** Withdraw a percentage of profits made during that month.\n"
+                "- **Withdraw Down to Threshold:** Withdraw any amount above a specified bankroll level."
+            )
+        )
+
+        # Determine the label for the next input based on the strategy
+        if "Fixed Amount" in st.session_state.withdrawal_strategy:
+            label, min_val, step = "Withdrawal Amount (€)", 1, 50
+        elif "Percentage" in st.session_state.withdrawal_strategy:
+            label, min_val, step = "Withdrawal Percentage (%)", 1, 5
+        else: # Threshold
+            label, min_val, step = "Bankroll Threshold to Withdraw Down To (€)", 0, 100
+
+        st.number_input(label, min_value=min_val, step=step, key="withdrawal_value")
+
+        st.number_input(
+            "Minimum Bankroll for Withdrawal (€)",
+            min_value=st.session_state.ruin_thresh,
+            step=100,
+            key="min_br_for_withdrawal",
+            help="A safety net. No withdrawals will be made if the bankroll is below this amount, regardless of the strategy."
+        )
+
 
 with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
     st.number_input(
@@ -487,6 +540,10 @@ def get_full_config_as_json():
             "hands_per_check": st.session_state.hands_per_check,
             "rb_percent": st.session_state.rb_percent,
             "enable_stop_loss": st.session_state.enable_stop_loss, "stop_loss_bb": st.session_state.stop_loss_bb,
+            "enable_withdrawals": st.session_state.enable_withdrawals,
+            "monthly_volume_hands": st.session_state.monthly_volume_hands,
+            "withdrawal_strategy": st.session_state.withdrawal_strategy, "withdrawal_value": st.session_state.withdrawal_value,
+            "min_br_for_withdrawal": st.session_state.min_br_for_withdrawal,
             "prior_sample": st.session_state.prior_sample, "zero_hands_weight": st.session_state.zero_hands_weight, "plot_percentile_limit": st.session_state.plot_percentile_limit,
             "seed": st.session_state.seed,
         },
@@ -821,6 +878,13 @@ if st.session_state.run_simulation:
         "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
         "ZERO_HANDS_INPUT_WEIGHT": st.session_state.zero_hands_weight,
         "SEED": st.session_state.seed,
+        "WITHDRAWAL_SETTINGS": {
+            "enabled": st.session_state.enable_withdrawals,
+            "monthly_volume": st.session_state.monthly_volume_hands,
+            "strategy": st.session_state.withdrawal_strategy,
+            "value": st.session_state.withdrawal_value,
+            "min_bankroll": st.session_state.min_br_for_withdrawal
+        } if st.session_state.enable_withdrawals else {"enabled": False},
         "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
     }
 
@@ -897,6 +961,8 @@ if st.session_state.get("simulation_output"):
             "Median Growth": res['growth_rate'],
             "Median Hands Played": res.get('median_hands_played', 0),
             "Median Profit (Play)": res.get('median_profit_from_play_eur', 0.0),
+            "Median Total Withdrawn": res.get('median_total_withdrawn', 0.0),
+            "Median Total Return": res.get('median_total_return', 0.0),
             "Median Rakeback": res.get('median_rakeback_eur', 0.0),
             "Risk of Ruin (%)": res['risk_of_ruin'],
             "Target Prob (%)": res['target_prob'],
@@ -908,7 +974,9 @@ if st.session_state.get("simulation_output"):
     st.dataframe(
         summary_df.style.format({
             "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
-            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}", "Median Profit (Play)": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
+            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}",
+            "Median Profit (Play)": "€{:,.2f}", "Median Total Withdrawn": "€{:,.2f}",
+            "Median Total Return": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
             "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
             "P95 Max Downswing": "€{:,.2f}"
         }).hide(axis="index"),
@@ -936,6 +1004,14 @@ if st.session_state.get("simulation_output"):
             "Median Profit (Play)": st.column_config.TextColumn(
                 "Median Profit (Play)",
                 help="The median profit from gameplay only, excluding rakeback. This shows how much was won or lost at the tables."
+            ),
+            "Median Total Withdrawn": st.column_config.TextColumn(
+                "Median Total Withdrawn",
+                help="The median amount of money withdrawn over the entire simulation. This represents the typical income generated by the strategy."
+            ),
+            "Median Total Return": st.column_config.TextColumn(
+                "Median Total Return",
+                help="The median total value generated. Calculated as: (Final Bankroll - Starting Bankroll) + Total Withdrawn."
             ),
             "Median Rakeback": st.column_config.TextColumn(
                 "Median Rakeback",
@@ -990,6 +1066,14 @@ if st.session_state.get("simulation_output"):
         fig = engine.reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
+    
+    # --- Display new withdrawal plot if applicable ---
+    fig_withdrawn = engine.reporting.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
+    if fig_withdrawn:
+        st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
+        st.pyplot(fig_withdrawn)
+        plt.close(fig_withdrawn)
+
 
 
     # --- Display Detailed Results for Each Strategy ---
@@ -1027,19 +1111,21 @@ if st.session_state.get("simulation_output"):
                     col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
             st.subheader(f"Key Metrics for '{strategy_name}'")
-            num_metrics = 9 if config.get("STOP_LOSS_BB", 0) > 0 else 8
+            num_metrics = 11 if config.get("STOP_LOSS_BB", 0) > 0 else 10
             metric_cols = st.columns(num_metrics)
-            col1, col2, col3, col4, col5, col6, col7, col8 = metric_cols[:8]
+            col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 = metric_cols[:10]
             col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
-            col2.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
-            col3.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
-            col4.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
-            col5.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
-            col6.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col7.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col8.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
-            if num_metrics == 9:
-                metric_cols[8].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
+            col2.metric("Median Total Withdrawn", f"€{result.get('median_total_withdrawn', 0.0):,.2f}", help="The median amount of money withdrawn over the entire simulation. This represents the typical income generated by the strategy.")
+            col3.metric("Median Total Return", f"€{result.get('median_total_return', 0.0):,.2f}", help="The median total value generated. Calculated as: (Final Bankroll - Starting Bankroll) + Total Withdrawn.")
+            col4.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
+            col5.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
+            col6.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+            col7.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+            col8.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+            col9.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+            col10.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
+            if num_metrics == 11:
+                metric_cols[10].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
 
             st.subheader("Visual Analysis")
             row1_col1, row1_col2 = st.columns(2)
