@@ -690,11 +690,13 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
 
-    # Calculate the number of pages before the detailed strategy reports
-    # Title(1) + Summary Table(1) + Analysis Report (if present) + Comparison Plots(4)
-    num_comparison_plots = 4 # median progression, final distribution, time underwater, risk/reward
-    base_pages = 1 + 1 + (1 if analysis_report else 0) + num_comparison_plots
-    page_counter_for_map = base_pages
+    # Dynamically calculate the number of pages before the detailed strategy reports.
+    # This makes it easier to add or remove summary pages in the future.
+    num_comparison_plots = 4  # median progression, final distribution, time underwater, risk/reward
+    page_counter_for_map = (1 +  # Title page
+                            1 +  # Summary Table page
+                            (1 if analysis_report else 0) +  # Analysis Report page (if it exists)
+                            num_comparison_plots)
     lines_per_page = 45
 
     for strategy_name, result in all_results.items():
@@ -757,6 +759,16 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
 
 def generate_qualitative_analysis(all_results, config):
     """Generates a human-readable analysis comparing the performance of different strategies."""
+    # --- Analysis Thresholds ---
+    # These constants control the sensitivity of the qualitative analysis.
+    # They can be tuned to make the analysis more or less likely to trigger certain insights.
+    HIGH_UNDERWATER_TIME_PCT = 60.0  # % of hands spent below a previous peak to be considered "psychologically costly".
+    HIGH_RAKEBACK_CONTRIBUTION_PCT = 30.0 # % of profit from rakeback to be considered "highly dependent".
+    HIGH_DEMOTION_RISK_PCT = 40.0 # % risk of demotion to be considered "unstable".
+    CONSERVATIVE_STRAT_TARGET_PROB_LAG_PCT = 10.0 # % below average target prob to be flagged.
+    CONSERVATIVE_STRAT_LOWEST_STAKE_PCT = 80.0 # % of time at lowest stake to be flagged as "stuck".
+    # --- End of Thresholds ---
+
     insights = []
     num_strategies = len(all_results)
 
@@ -856,7 +868,7 @@ def generate_qualitative_analysis(all_results, config):
     if most_underwater_strats:
         strat_name = most_underwater_strats[0]
         underwater_pct = all_results[strat_name]['median_time_underwater_pct']
-        if underwater_pct > 60: # Threshold for a "high" amount of time underwater
+        if underwater_pct > HIGH_UNDERWATER_TIME_PCT:
             insights.append(f"\n**🧠 Psychological Cost:** The **'{strat_name}'** strategy spent the most time 'underwater' ({underwater_pct:.0f}% of hands). While potentially profitable, this indicates a psychologically demanding journey with long periods of grinding back to a previous peak.")
 
     insights.append("\n### Why Did They Perform This Way?")
@@ -872,7 +884,7 @@ def generate_qualitative_analysis(all_results, config):
         median_rakeback = best_median_res['median_rakeback_eur']
         if median_profit > 0 and median_rakeback > 0:
             rb_contribution = (median_rakeback / median_profit) * 100
-            if rb_contribution > 30:
+            if rb_contribution > HIGH_RAKEBACK_CONTRIBUTION_PCT:
                 insights.append(f"- Rakeback was a critical factor for the top-performing **'{best_median_strat_name}'** strategy, accounting for **{rb_contribution:.0f}%** of its median profit. This strategy's success may be highly dependent on the rakeback deal.")
     elif config.get("RAKEBACK_PERCENTAGE", 0) == 0:
         insights.append("- With **0% rakeback**, all strategies are handicapped. This significantly reduces profitability and increases risk, especially for aggressive strategies that rely on moving up to high-rake environments.")
@@ -886,7 +898,7 @@ def generate_qualitative_analysis(all_results, config):
             if played_stakes:
                 highest_played_stake = max(played_stakes, key=lambda s: stake_order_map.get(s, -1))
                 demotion_risks = worst_median_res.get('risk_of_demotion', {})
-                if highest_played_stake in demotion_risks and demotion_risks[highest_played_stake]['prob'] > 40:
+                if highest_played_stake in demotion_risks and demotion_risks[highest_played_stake]['prob'] > HIGH_DEMOTION_RISK_PCT:
                     insights.append(f"- The **'{worst_median}'** strategy likely underperformed due to instability. It had a high **Risk of Demotion of {demotion_risks[highest_played_stake]['prob']:.1f}%** from {highest_played_stake}. This 'yo-yo effect' of moving up and down frequently is inefficient and can hurt long-term growth.")
 
     hysteresis_strats = [name for name in all_results if 'Hysteresis' in name or 'Sticky' in name]
@@ -904,13 +916,13 @@ def generate_qualitative_analysis(all_results, config):
     if conservative_strats:
         c_strat_name = conservative_strats[0]
         c_res = all_results[c_strat_name]
-        if c_res['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - 10: # If target prob is >10% below average
+        if c_res['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - CONSERVATIVE_STRAT_TARGET_PROB_LAG_PCT: # If target prob is >10% below average
             hands_dist = c_res.get('hands_distribution_pct', {})
             if hands_dist:
                 lowest_stake_played = min(hands_dist.keys(), key=lambda s: stake_order_map.get(s, float('inf'))) if hands_dist else None
                 if lowest_stake_played:
                     percent_at_lowest = hands_dist.get(lowest_stake_played, 0)
-                    if percent_at_lowest > 80: # If it spends >80% of time at the lowest stake
+                    if percent_at_lowest > CONSERVATIVE_STRAT_LOWEST_STAKE_PCT: # If it spends >80% of time at the lowest stake
                         display_percent = "over 99" if percent_at_lowest > 99 else f"over {percent_at_lowest:.0f}"
                         insights.append(f"- The **'{c_strat_name}'** strategy may be too conservative. It spent {display_percent}% of its time at {lowest_stake_played}, which significantly limited its growth and ability to reach the target.")
 
@@ -952,7 +964,7 @@ def generate_qualitative_analysis(all_results, config):
 
     if conservative_strats and 'conservative' not in advice_given:
         c_strat_name = conservative_strats[0]
-        if all_results[c_strat_name]['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - 10:
+        if all_results[c_strat_name]['target_prob'] < np.mean([res['target_prob'] for res in all_results.values()]) - CONSERVATIVE_STRAT_TARGET_PROB_LAG_PCT:
             insights.append(f"\n**Tuning the Most Conservative Strategy:**\n- The **'{c_strat_name}'** strategy may be too conservative and limiting your growth. Consider lowering its bankroll thresholds to allow it to move up to more profitable stakes sooner.")
             advice_given.add('conservative'); recommendations_made = True
 
