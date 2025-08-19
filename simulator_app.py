@@ -618,7 +618,7 @@ with tab2:
     st.subheader("Bankroll Management Strategies")
     st.write(
         "Define your strategies below. For 'Standard' strategies, use the data editor to set bankroll thresholds and table mixes. "
-        "You can use fixed ratios (e.g., `1`), percentages (e.g., `'80%'`), or percentage ranges (e.g., `'20-40%'`). "
+        "You can use fixed ratios (e.g., `1`), percentages (e.g., `'80%`), or percentage ranges (e.g., `'20-40%`). "
         "Hover over the 'Mix' column headers for more details."
     )
     st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
@@ -939,7 +939,7 @@ if st.session_state.get("simulation_output"):
             ),
             "Median Rakeback": st.column_config.TextColumn(
                 "Median Rakeback",
-                help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
+                help="The median amount of rakeback earned. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
             ),
             "Risk of Ruin (%)": st.column_config.TextColumn(
                 "Risk of Ruin (%)",
@@ -974,7 +974,7 @@ if st.session_state.get("simulation_output"):
         plt.close(fig)
     with comp_col2:
         st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
-        fig = engine.reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
+        fig = engine.reporting.plot_final_bankroll_distribution(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
 
@@ -1139,7 +1139,7 @@ if st.session_state.get("simulation_output"):
                     for stake, pct in sorted_dist:
                         if pct > 0.01:
                             display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
-                            st.write(f"- {display_stake}: {pct:.2f}%")
+                            st.write(f"- {display_stake}: {pct:.2f}")
                 else:
                     st.write("N/A")
 
@@ -1199,16 +1199,3 @@ if st.session_state.get("simulation_output"):
                             )
                             st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
                             st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
-
-
-    # --- PDF Download Button ---
-    st.subheader("Download Full Report")
-    with st.spinner("Generating PDF report..."):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        pdf_buffer = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
-        st.download_button(
-            label="Download Full PDF Report",
-            data=pdf_buffer,
-            file_name=f"simulation_report_{timestamp}.pdf",
-            mime="application/pdf"
-        )
