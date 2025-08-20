@@ -294,7 +294,7 @@ def plot_total_withdrawn_comparison(all_results, config, color_map=None, pdf=Non
     if not strategy_names:
         return plt.figure()
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 5))
     bars = ax.barh(strategy_names, withdrawn_amounts, color=plot_colors)
 
     ax.set_xlabel('Median Total Withdrawn (€)', fontsize=12)
