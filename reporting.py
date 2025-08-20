@@ -137,20 +137,10 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
         x_min = 0
         x_max = config.get('TARGET_BANKROLL', 5000) * 1.5
 
-    x_grid = np.linspace(x_min, x_max, 1000)
-
-    if len(final_bankrolls) > 1:
-        try:
-            filtered_bankrolls_for_kde = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max) & (final_bankrolls > config['RUIN_THRESHOLD'])]
-            if len(filtered_bankrolls_for_kde) < 2:
-                ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=plot_color)
-            else:
-                kde = gaussian_kde(filtered_bankrolls_for_kde)
-                density = kde(x_grid)
-                ax.plot(x_grid, density, label=strategy_name, color=plot_color, linewidth=2)
-                ax.fill_between(x_grid, density, color=plot_color, alpha=0.1)
-        except (np.linalg.LinAlgError, ValueError):
-            ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=plot_color)
+    if len(successful_runs) > 0:
+        # Filter the data for the histogram to match the x-axis limits for a cleaner plot
+        filtered_for_hist = successful_runs[(successful_runs >= x_min) & (successful_runs <= x_max)]
+        ax.hist(filtered_for_hist, bins=50, color=plot_color, edgecolor='black', alpha=0.7)
 
     # Add median and mode lines
     median_br = result.get('median_final_bankroll')
@@ -163,7 +153,7 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
 
     ax.set_title(f'Final Bankroll Distribution for {strategy_name}', fontsize=16)
     ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
-    ax.set_ylabel('Probability Density', fontsize=12)
+    ax.set_ylabel('Frequency (Number of Simulations)', fontsize=12)
     ax.legend()
     ax.grid(True, linestyle='--', alpha=0.6)
     ax.set_xlim(left=x_min, right=x_max)
