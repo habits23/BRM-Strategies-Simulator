@@ -387,7 +387,11 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     if not strategy_names or len(strategy_names) < 2:
         return plt.figure() # Don't plot if there's nothing to compare
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    # Make height dynamic to match the "Time Spent Underwater" plot it's paired with.
+    # This ensures visual uniformity in the UI layout.
+    num_strategies = len(strategy_names)
+    fig_height = max(4, 2.0 + num_strategies * 0.7)
+    fig, ax = plt.subplots(figsize=(8, fig_height))
 
     if color_map is None:
         # Fallback for generating colors internally if no map is provided
