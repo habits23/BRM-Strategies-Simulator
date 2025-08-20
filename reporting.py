@@ -250,7 +250,7 @@ def plot_time_underwater_comparison(all_results, config, color_map=None, pdf=Non
     if not strategy_names:
         return plt.figure()
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
     # Horizontal bar chart for better readability of strategy names
     bars = ax.barh(strategy_names, underwater_pcts, color=plot_colors)
@@ -372,7 +372,7 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     if not strategy_names or len(strategy_names) < 2:
         return plt.figure() # Don't plot if there's nothing to compare
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 5))
 
     if color_map is None:
         # Fallback for generating colors internally if no map is provided

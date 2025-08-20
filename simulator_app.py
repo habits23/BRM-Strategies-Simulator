@@ -1091,14 +1091,14 @@ if st.session_state.get("simulation_output"):
         st.pyplot(fig)
         plt.close(fig)
     
-    # --- Display new withdrawal plot if applicable ---
+    # --- Display new withdrawal plot if applicable, inside a column to maintain size ---
     fig_withdrawn = engine.reporting.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
     if fig_withdrawn:
-        st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
-        st.pyplot(fig_withdrawn)
-        plt.close(fig_withdrawn)
-
-
+        comp_col5, _ = st.columns(2)
+        with comp_col5:
+            st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
+            st.pyplot(fig_withdrawn)
+            plt.close(fig_withdrawn)
 
     # --- Display Detailed Results for Each Strategy ---
     for strategy_name, result in all_results.items():
