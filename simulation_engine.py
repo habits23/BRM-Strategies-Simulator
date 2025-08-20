@@ -453,9 +453,9 @@ def _process_simulation_block(
         integrated_drawdown[underwater_mask] += drawdown_amount[underwater_mask] * config['HANDS_PER_CHECK']
 
     # --- Maximum Drawdown Calculation ---
-    peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
+    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
     current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
-    max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
+    np.maximum(max_drawdowns_so_far, current_drawdowns, out=max_drawdowns_so_far)
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
