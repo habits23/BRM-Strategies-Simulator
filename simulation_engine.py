@@ -257,30 +257,23 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
     # 1. It creates a "skill_estimate_wr" by blending the user's input with a prior, weighted by sample size.
     # 2. It calculates the uncertainty ("std_error") in that skill estimate.
     # 3. It applies the `long_term_luck_factors` (one persistent random number per simulation) scaled by the uncertainty.
-    # The result is the "true" win rate for a given simulation run.
-
-    # The `PRIOR_SAMPLE_SIZE` has two distinct effects:
-    # 1. The "Shrinkage" Effect: It determines how much weight to give the user's input vs. the prior (the model's extrapolation).
-    #    A high prior means the model is more skeptical of the user's input if the `sample_hands` is low.
-    # 2. The "Uncertainty" Effect: It's added to the user's `sample_hands` to form a total "pool of evidence".
-    #    A larger total pool results in a smaller `std_error`, meaning less long-term luck is applied.
-
-    # --- A Note on a Common Point of Confusion ---
-    # It may seem that a low prior (more trust in user input) should lead to less variance in Assigned WR.
-    # This is not the case. The two effects work differently:
-    # - "Trust" (Shrinkage) affects the *center* of the Assigned WR distribution. A low prior centers the distribution on the user's input.
-    # - "Uncertainty" (Variance) affects the *width* of the distribution. A low prior creates a small "pool of evidence",
-    #   which means the model is very uncertain about its estimate, resulting in a *wider* distribution of long-term luck.
-    # Conversely, a high prior creates a large evidence pool, high certainty, and a *narrower* distribution.
+    # The result is the "true" win rate (Assigned WR) for each individual simulation run.
 
     if sample_hands > 0:
-        # Effect 1: Calculate the weight for the "shrinkage" effect.
+        # --- The "Shrinkage" Effect ---
+        # This determines the center of our win rate estimate. We "shrink" the user's
+        # observed win rate (ev_bb_per_100) towards a more conservative prior estimate.
+        # The amount of shrinkage depends on the weight of the evidence (sample_hands)
+        # compared to the model's skepticism (PRIOR_SAMPLE_SIZE).
+        #
+        # - High sample_hands: data_weight is high -> skill_estimate_wr is close to user's input.
+        # - Low sample_hands: data_weight is low -> skill_estimate_wr is "shrunk" towards the prior.
         data_weight = sample_hands / (sample_hands + config['PRIOR_SAMPLE_SIZE'])
         skill_estimate_wr = (data_weight * ev_bb_per_100) + ((1 - data_weight) * prior_win_rate)
     else:
+        # If there are no hands, we blend the user's guess with the model's extrapolation.
         model_extrapolation = prior_win_rate
         user_estimate = ev_bb_per_100
-        # This is the model's best guess at your "true skill" for a stake with no data.
         skill_estimate_wr = (config['ZERO_HANDS_INPUT_WEIGHT'] * user_estimate) + ((1 - config['ZERO_HANDS_INPUT_WEIGHT']) * model_extrapolation)
 
     # For a true sanity check, we can bypass the luck factor entirely.
@@ -291,15 +284,27 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
             return np.full_like(long_term_luck_factors, skill_estimate_wr)
         return skill_estimate_wr # It's already an array for subsequent stakes
 
-    # Effect 2: Calculate the total "pool of evidence" to determine uncertainty.
+    # --- The "Uncertainty" Effect ---
+    # This determines the *width* of the distribution of long-term luck.
+    # We create a total "pool of evidence" by combining the user's sample with the prior.
+    # A larger pool means more certainty and thus a smaller standard error.
+    #
+    # - High sample_hands or high PRIOR_SAMPLE_SIZE: Large evidence pool -> low std_error -> narrow luck distribution.
+    # - Low sample_hands and low PRIOR_SAMPLE_SIZE: Small evidence pool -> high std_error -> wide luck distribution.
+    #
+    # This is why a low PRIOR_SAMPLE_SIZE leads to a wider, more "lucky" range of outcomes.
+    # The model has a small evidence pool, so it is very uncertain about the true skill,
+    # and it expresses this uncertainty by simulating a wider range of possibilities.
     effective_sample_size_for_variance = sample_hands + config['PRIOR_SAMPLE_SIZE']
     N_blocks = max(1.0, effective_sample_size_for_variance / 100.0)
     std_error = std_dev_per_100 / np.sqrt(N_blocks)
 
-    # This is the "long-term luck" component for the entire simulation run.
+    # Apply the luck factor. `long_term_luck_factors` is an array of N(0,1) random numbers,
+    # one for each simulation. This is the "long-term luck" component that persists for
+    # the entire duration of a single simulation run.
     long_term_luck_adjustment = long_term_luck_factors * std_error
 
-    # The final Assigned WR is the skill estimate plus the long-term luck.
+    # The final Assigned WR is the shrunken skill estimate plus the long-term luck adjustment.
     return skill_estimate_wr + long_term_luck_adjustment
 
 def sample_percentage_range(range_str, rng):
@@ -338,6 +343,127 @@ def resolve_proportions(rule, rng):
         return normalize_percentages(percentages)
     return {}
 
+def _initialize_simulation_state(num_sims, num_checks, config):
+    """Initializes all common numpy arrays for a simulation run."""
+    bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
+    hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
+    rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
+
+    # Withdrawal state
+    withdrawal_settings = config.get("WITHDRAWAL_SETTINGS", {"enabled": False})
+    total_withdrawn_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
+    hands_since_last_withdrawal = np.zeros(num_sims, dtype=int) if withdrawal_settings.get("enabled") else None
+    bankroll_at_last_withdrawal = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float) if withdrawal_settings.get("enabled") else None
+
+    # Drawdown state
+    peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
+    max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
+
+    # Stop-loss state
+    is_stopped_out = np.zeros(num_sims, dtype=bool)
+    stop_loss_triggers = np.zeros(num_sims, dtype=int)
+
+    # Underwater state
+    underwater_hands_count = np.zeros(num_sims, dtype=int)
+    integrated_drawdown = np.zeros(num_sims, dtype=float)
+
+    return (
+        bankroll_history, hands_per_stake_histories, rakeback_histories,
+        total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
+        peak_bankrolls_so_far, max_drawdowns_so_far,
+        is_stopped_out, stop_loss_triggers,
+        underwater_hands_count, integrated_drawdown
+    )
+
+def _process_simulation_block(
+    i, num_sims, rng, config, all_win_rates, stake_bb_size_map,
+    proportions_per_stake,
+    # Mutable state variables
+    bankroll_history, hands_per_stake_histories, rakeback_histories,
+    total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
+    peak_bankrolls_so_far, max_drawdowns_so_far,
+    is_stopped_out, stop_loss_triggers,
+    underwater_hands_count, integrated_drawdown
+):
+    """
+    Processes a single block/step of the simulation for all runs.
+    This function contains the logic common to both standard and sticky strategies.
+    It mutates the state arrays in place and returns a boolean indicating if the loop should continue.
+    """
+    current_bankrolls = bankroll_history[:, i]
+    total_proportions = sum(proportions_per_stake.values())
+    # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
+    active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0) & ~is_stopped_out
+
+    # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
+    is_stopped_out.fill(False)
+
+    if not np.any(active_mask):
+        bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
+        for stake_name in hands_per_stake_histories:
+            hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
+        return False # Signal to break the main loop
+
+    block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
+        current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
+    )
+
+    # --- Stop-Loss Logic ---
+    if config.get("STOP_LOSS_BB", 0) > 0:
+        highest_bb_size = np.zeros(num_sims)
+        for stake_name, bb_size in stake_bb_size_map.items():
+            played_this_stake_mask = proportions_per_stake[stake_name] > 0
+            highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
+        stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
+        valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
+        profit_from_play = block_profits_eur - block_rakeback_eur
+        triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
+        if np.any(triggered_mask):
+            is_stopped_out[triggered_mask] = True
+            stop_loss_triggers[triggered_mask] += 1
+    
+    # Update bankrolls with play profits first, before withdrawal calculations
+    temp_bankrolls = current_bankrolls + block_profits_eur
+
+    # --- Withdrawal Logic ---
+    withdrawal_settings = config.get("WITHDRAWAL_SETTINGS", {"enabled": False})
+    withdrawal_amounts_this_block = np.zeros(num_sims, dtype=float)
+    if withdrawal_settings.get("enabled"):
+        total_hands_this_block = np.sum(list(hands_per_stake_this_block.values()), axis=0)
+        hands_since_last_withdrawal += np.where(active_mask, total_hands_this_block, 0)
+        due_for_withdrawal_mask = (hands_since_last_withdrawal >= withdrawal_settings["monthly_volume"]) & active_mask
+        if np.any(due_for_withdrawal_mask):
+            withdrawal_amounts_this_block = _calculate_withdrawal_amounts(
+                temp_bankrolls, bankroll_at_last_withdrawal, withdrawal_settings,
+                due_for_withdrawal_mask, config['RUIN_THRESHOLD']
+            )
+            temp_bankrolls -= withdrawal_amounts_this_block
+            hands_since_last_withdrawal[due_for_withdrawal_mask] = 0
+            bankroll_at_last_withdrawal[due_for_withdrawal_mask] = temp_bankrolls[due_for_withdrawal_mask]
+
+    total_withdrawn_histories[:, i+1] = total_withdrawn_histories[:, i] + withdrawal_amounts_this_block
+    new_bankrolls = temp_bankrolls
+    bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
+
+    # --- Underwater Time Calculation ---
+    underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
+    if np.any(underwater_mask):
+        underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
+        drawdown_amount = peak_bankrolls_so_far - bankroll_history[:, i+1]
+        integrated_drawdown[underwater_mask] += drawdown_amount[underwater_mask] * config['HANDS_PER_CHECK']
+
+    # --- Maximum Drawdown Calculation ---
+    peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
+    current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
+
+    # --- History Updates ---
+    rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
+    for stake_name, hands_array in hands_per_stake_this_block.items():
+        hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
+    
+    return True # Signal to continue loop
+
 def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
@@ -345,29 +471,14 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
     """
     num_sims = config['NUMBER_OF_SIMULATIONS']
     num_checks = int(np.ceil(config['TOTAL_HANDS_TO_SIMULATE'] / config['HANDS_PER_CHECK']))
-    bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
 
-    # --- Withdrawal Initialization ---
-    withdrawal_settings = config.get("WITHDRAWAL_SETTINGS", {"enabled": False})
-    total_withdrawn_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
-    if withdrawal_settings.get("enabled"):
-        hands_since_last_withdrawal = np.zeros(num_sims, dtype=int)
-        # Store the bankroll at the start of a "month" to calculate profit-based withdrawals
-        bankroll_at_last_withdrawal = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
-
-    # --- Maximum Drawdown Initialization ---
-    peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
-    max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
-
-    # --- Stop-Loss Initialization ---
-    # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
-    is_stopped_out = np.zeros(num_sims, dtype=bool)
-    stop_loss_triggers = np.zeros(num_sims, dtype=int)
-
-    # --- Underwater Time Initialization ---
-    underwater_hands_count = np.zeros(num_sims, dtype=int)
+    (
+        bankroll_history, hands_per_stake_histories, rakeback_histories,
+        total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
+        peak_bankrolls_so_far, max_drawdowns_so_far,
+        is_stopped_out, stop_loss_triggers,
+        underwater_hands_count, integrated_drawdown
+    ) = _initialize_simulation_state(num_sims, num_checks, config)
 
     # --- Demotion Tracking Initialization ---
     initial_rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
@@ -425,82 +536,19 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
-        total_proportions = sum(proportions_per_stake.values())
-        # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0) & ~is_stopped_out
-
-        # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
-        is_stopped_out.fill(False)
-
-        if not np.any(active_mask):
-            bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
-            for stake_name in hands_per_stake_histories:
-                hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
+        should_continue = _process_simulation_block(
+            i, num_sims, rng, config, all_win_rates, stake_bb_size_map,
+            proportions_per_stake,
+            bankroll_history, hands_per_stake_histories, rakeback_histories,
+            total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
+            peak_bankrolls_so_far, max_drawdowns_so_far,
+            is_stopped_out, stop_loss_triggers,
+            underwater_hands_count, integrated_drawdown
+        )
+        if not should_continue:
             break
 
-        block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
-            current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
-        )
-
-        # --- Stop-Loss Logic ---
-        if config.get("STOP_LOSS_BB", 0) > 0:
-            # Find the bb_size of the highest stake played in this block for each sim
-            highest_bb_size = np.zeros(num_sims)
-            for stake_name, bb_size in stake_bb_size_map.items():
-                played_this_stake_mask = proportions_per_stake[stake_name] > 0
-                highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
-
-            stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
-
-            # Only trigger for active simulations that have a valid stop-loss amount
-            valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
-
-            # Calculate profit from play only (excluding rakeback) for the stop-loss check.
-            profit_from_play = block_profits_eur - block_rakeback_eur
-            triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
-
-            if np.any(triggered_mask):
-                is_stopped_out[triggered_mask] = True
-                stop_loss_triggers[triggered_mask] += 1
-        
-        # Update bankrolls with play profits first, before withdrawal calculations
-        temp_bankrolls = current_bankrolls + block_profits_eur
-
-        # --- Withdrawal Logic ---
-        withdrawal_amounts_this_block = np.zeros(num_sims, dtype=float)
-        if withdrawal_settings.get("enabled"):
-            total_hands_this_block = np.sum(list(hands_per_stake_this_block.values()), axis=0)
-            hands_since_last_withdrawal += np.where(active_mask, total_hands_this_block, 0)
-
-            due_for_withdrawal_mask = (hands_since_last_withdrawal >= withdrawal_settings["monthly_volume"]) & active_mask
-            if np.any(due_for_withdrawal_mask):
-                withdrawal_amounts_this_block = _calculate_withdrawal_amounts(
-                    temp_bankrolls, bankroll_at_last_withdrawal, withdrawal_settings,
-                    due_for_withdrawal_mask, config['RUIN_THRESHOLD']
-                )
-                temp_bankrolls -= withdrawal_amounts_this_block
-                hands_since_last_withdrawal[due_for_withdrawal_mask] = 0
-                bankroll_at_last_withdrawal[due_for_withdrawal_mask] = temp_bankrolls[due_for_withdrawal_mask]
-
-        total_withdrawn_histories[:, i+1] = total_withdrawn_histories[:, i] + withdrawal_amounts_this_block
-        new_bankrolls = temp_bankrolls
-
-        bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
-
-        # --- Underwater Time Calculation ---
-        underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
-        underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
-
-        # --- Maximum Drawdown Calculation ---
-        peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
-        current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
-        max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
-
-        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
-        for stake_name, hands_array in hands_per_stake_this_block.items():
-            hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
-
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories
 
 def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -509,29 +557,14 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     """
     num_sims = config['NUMBER_OF_SIMULATIONS']
     num_checks = int(np.ceil(config['TOTAL_HANDS_TO_SIMULATE'] / config['HANDS_PER_CHECK']))
-    bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
-    hands_per_stake_histories = {stake['name']: np.zeros((num_sims, num_checks + 1), dtype=int) for stake in config['STAKES_DATA']}
-    rakeback_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
 
-    # --- Withdrawal Initialization ---
-    withdrawal_settings = config.get("WITHDRAWAL_SETTINGS", {"enabled": False})
-    total_withdrawn_histories = np.zeros((num_sims, num_checks + 1), dtype=float)
-    if withdrawal_settings.get("enabled"):
-        hands_since_last_withdrawal = np.zeros(num_sims, dtype=int)
-        # Store the bankroll at the start of a "month" to calculate profit-based withdrawals
-        bankroll_at_last_withdrawal = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
-
-    # --- Maximum Drawdown Initialization ---
-    peak_bankrolls_so_far = np.full(num_sims, config['STARTING_BANKROLL_EUR'], dtype=float)
-    max_drawdowns_so_far = np.zeros(num_sims, dtype=float)
-
-    # --- Stop-Loss Initialization ---
-    # These must be initialized unconditionally to avoid NameError if stop-loss is disabled.
-    is_stopped_out = np.zeros(num_sims, dtype=bool)
-    stop_loss_triggers = np.zeros(num_sims, dtype=int)
-
-    # --- Underwater Time Initialization ---
-    underwater_hands_count = np.zeros(num_sims, dtype=int)
+    (
+        bankroll_history, hands_per_stake_histories, rakeback_histories,
+        total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
+        peak_bankrolls_so_far, max_drawdowns_so_far,
+        is_stopped_out, stop_loss_triggers,
+        underwater_hands_count, integrated_drawdown
+    ) = _initialize_simulation_state(num_sims, num_checks, config)
 
     # --- Demotion Tracking Initialization ---
     stake_rules = sorted(strategy.rules, key=lambda r: r['threshold'])
@@ -588,80 +621,19 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             for stake_name, prop in resolved_proportions.items():
                 proportions_per_stake[stake_name][at_this_stake_mask] = prop
 
-        total_proportions = sum(proportions_per_stake.values())
-        # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
-        active_mask = (current_bankrolls >= config['RUIN_THRESHOLD']) & (total_proportions > 0) & ~is_stopped_out
-
-        # Reset the stopped out flag for the next loop. Any sim that was stopped out can now play again.
-        is_stopped_out.fill(False)
-
-        if not np.any(active_mask):
-            bankroll_history[:, i+1:] = bankroll_history[:, i][:, np.newaxis]
-            for stake_name in hands_per_stake_histories:
-                hands_per_stake_histories[stake_name][:, i+1:] = hands_per_stake_histories[stake_name][:, i][:, np.newaxis]
+        should_continue = _process_simulation_block(
+            i, num_sims, rng, config, all_win_rates, stake_bb_size_map,
+            proportions_per_stake,
+            bankroll_history, hands_per_stake_histories, rakeback_histories,
+            total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
+            peak_bankrolls_so_far, max_drawdowns_so_far,
+            is_stopped_out, stop_loss_triggers,
+            underwater_hands_count, integrated_drawdown
+        )
+        if not should_continue:
             break
 
-        block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
-            current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
-        )
-
-        # --- Stop-Loss Logic ---
-        if config.get("STOP_LOSS_BB", 0) > 0:
-            # Find the bb_size of the highest stake played in this block for each sim
-            highest_bb_size = np.zeros(num_sims)
-            for stake_name, bb_size in stake_bb_size_map.items():
-                played_this_stake_mask = proportions_per_stake[stake_name] > 0
-                highest_bb_size[played_this_stake_mask] = np.maximum(highest_bb_size[played_this_stake_mask], bb_size)
-
-            stop_loss_eur = config["STOP_LOSS_BB"] * highest_bb_size
-
-            # Only trigger for active simulations that have a valid stop-loss amount
-            valid_stop_loss_mask = active_mask & (stop_loss_eur > 0)
-
-            # Calculate profit from play only (excluding rakeback) for the stop-loss check.
-            profit_from_play = block_profits_eur - block_rakeback_eur
-            triggered_mask = (profit_from_play < -stop_loss_eur) & valid_stop_loss_mask
-
-            if np.any(triggered_mask):
-                is_stopped_out[triggered_mask] = True
-                stop_loss_triggers[triggered_mask] += 1
-
-        # Update bankrolls with play profits first, before withdrawal calculations
-        temp_bankrolls = current_bankrolls + block_profits_eur
-
-        withdrawal_amounts_this_block = np.zeros(num_sims, dtype=float)
-        if withdrawal_settings.get("enabled"):
-            total_hands_this_block = np.sum(list(hands_per_stake_this_block.values()), axis=0)
-            hands_since_last_withdrawal += np.where(active_mask, total_hands_this_block, 0)
-
-            due_for_withdrawal_mask = (hands_since_last_withdrawal >= withdrawal_settings["monthly_volume"]) & active_mask
-            if np.any(due_for_withdrawal_mask):
-                withdrawal_amounts_this_block = _calculate_withdrawal_amounts( # noqa
-                    temp_bankrolls, bankroll_at_last_withdrawal, withdrawal_settings,
-                    due_for_withdrawal_mask, config['RUIN_THRESHOLD']
-                )
-                temp_bankrolls -= withdrawal_amounts_this_block
-                hands_since_last_withdrawal[due_for_withdrawal_mask] = 0
-                bankroll_at_last_withdrawal[due_for_withdrawal_mask] = temp_bankrolls[due_for_withdrawal_mask]
-
-        total_withdrawn_histories[:, i+1] = total_withdrawn_histories[:, i] + withdrawal_amounts_this_block
-        new_bankrolls = temp_bankrolls
-        bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
-
-        # --- Underwater Time Calculation ---
-        underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
-        underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
-
-        # --- Maximum Drawdown Calculation ---
-        peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
-        current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
-        max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdowns)
-
-        rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
-        for stake_name, hands_array in hands_per_stake_this_block.items():
-            hands_per_stake_histories[stake_name][:, i+1] = hands_per_stake_histories[stake_name][:, i] + np.where(active_mask, hands_array, 0)
-
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories
+    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
@@ -762,8 +734,12 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
             lines.append("A downswing is the largest single peak-to-trough drop in bankroll during a simulation.")
             median_downswing = res['median_max_downswing']
             p95_downswing = res['p95_max_downswing']
-            lines.append(f"   - Median Downswing: €{median_downswing:.2f}")
-            lines.append(f"   - 95th Percentile Downswing: €{p95_downswing:.2f} (5% of runs had a worse downswing)")
+            median_integrated_drawdown = res.get('median_integrated_drawdown', 0)
+            lines.append(f"   - Median Downswing Depth: €{median_downswing:,.2f}")
+            lines.append(f"   - 95th Percentile Downswing Depth: €{p95_downswing:,.2f} (5% of runs had a worse downswing)")
+            if median_integrated_drawdown > 0:
+                lines.append(f"   - Median Integrated Drawdown: {median_integrated_drawdown:,.0f} Euro-Hands")
+                lines.append("     (This measures the total 'pain' by combining the size and duration of all time spent underwater.)")
         return lines
 
     def _write_income_analysis(res):
@@ -1231,14 +1207,14 @@ def run_full_analysis(config):
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analysis.analyze_strategy_results(
             strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng,
-            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories, config
+            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, config
         )
 
     # Generate the final qualitative analysis report

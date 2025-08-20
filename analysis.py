@@ -67,7 +67,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
@@ -173,6 +173,9 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     ) * 100
     median_time_underwater_pct = np.median(time_underwater_pct)
 
+    # Calculate median integrated drawdown
+    median_integrated_drawdown = np.median(integrated_drawdown)
+
     final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
     target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
     busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
@@ -213,6 +216,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'median_hands_played': median_hands_played,
         'median_stop_losses': median_stop_losses,
         'median_time_underwater_pct': median_time_underwater_pct,
+        'median_integrated_drawdown': median_integrated_drawdown,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
