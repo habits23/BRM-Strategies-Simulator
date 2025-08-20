@@ -456,24 +456,24 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
 with st.sidebar.expander("Withdrawal & Deposit Settings", expanded=False):
     st.checkbox("Enable Monthly Withdrawals", key="enable_withdrawals", help="If enabled, the simulation will attempt to withdraw funds periodically based on the rules below.")
     if st.session_state.enable_withdrawals:
-        # To prevent unexpected behavior, we explicitly manage the state relationship
-        # between these two inputs.
-        new_min_monthly_volume = st.session_state.hands_per_check
-
-        # The check: is the current monthly volume now invalid because hands_per_check was increased?
-        if st.session_state.monthly_volume_hands < new_min_monthly_volume:
-            # If so, update the session state value to the new minimum.
-            st.session_state.monthly_volume_hands = new_min_monthly_volume
-            st.warning(f"Monthly Volume was automatically adjusted to {new_min_monthly_volume:,} to be at least as large as 'Hands per Bankroll Check'.")
+        # We handle validation manually after the input to avoid unexpected widget behavior
+        # when the min_value property changes dynamically.
+        hands_per_check_val = st.session_state.hands_per_check    
 
         st.number_input(
             "Monthly Volume (Hands)",
-            min_value=new_min_monthly_volume,
+            min_value=1, # Use a static minimum to avoid widget conflicts
             step=1000,
             key="monthly_volume_hands",
             help="The number of hands that constitutes a 'month'. A withdrawal will be attempted after this many hands are played."
         )
-
+        
+        # Post-render validation: If the current monthly volume is invalid, correct it and notify the user.
+        if st.session_state.monthly_volume_hands < hands_per_check_val:
+            st.warning(f"Monthly Volume must be at least {hands_per_check_val:,} (the 'Hands per Bankroll Check' value). Adjusting...")
+            st.session_state.monthly_volume_hands = hands_per_check_val
+            st.rerun()
+            
         st.selectbox(
             "Withdrawal Strategy",
             options=["Fixed Amount (€)", "Percentage of Profits (%)", "Withdraw Down to Threshold (€)"],
