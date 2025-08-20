@@ -1054,9 +1054,12 @@ def generate_qualitative_analysis(all_results, config):
     if best_downswings:
         names = f"'{best_downswings[0]}'" if len(best_downswings) == 1 else f"'{', '.join(best_downswings)}'"
         verb = "had" if len(best_downswings) == 1 else "were tied for having"
-        insights.append(f"\n**😌 Smoothest Ride:** The **{names}** strategy {verb} the smallest median downswing (€{all_results[best_downswings[0]]['median_max_downswing']:,.0f}), making it the least stressful to play.")
+        best_strat_name = best_downswings[0]
+        underwater_pct = all_results[best_strat_name]['median_time_underwater_pct']
+        insights.append(f"\n**😌 Smoothest Ride:** The **{names}** strategy {verb} the smallest median downswing (€{all_results[best_strat_name]['median_max_downswing']:,.0f}). It also spent only {underwater_pct:.0f}% of the time 'underwater', making it the least stressful to play.")
     if worst_downswing and worst_downswing not in best_downswings:
-        insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f}.")
+        underwater_pct = all_results[worst_downswing]['median_time_underwater_pct']
+        insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f} and spent {underwater_pct:.0f}% of the time 'underwater'.")
 
     best_efficiency, _ = find_best_worst_with_ties('efficiency_score', higher_is_better=True)
     if best_efficiency:
@@ -1091,18 +1094,10 @@ def generate_qualitative_analysis(all_results, config):
             median_sl_val = all_results[most_sl_strats[0]]['median_stop_losses']
             insights.append(f"\n**⚠️ Session Volatility:** The **{names}** strategy {verb} the stop-loss most often (median of {median_sl_val:.1f} times). This indicates it was more prone to large, single-session losses.")
 
-    # Add insight for Time Underwater
-    most_underwater_strats, _ = find_best_worst_with_ties('median_time_underwater_pct', higher_is_better=True)
-    if most_underwater_strats:
-        strat_name = most_underwater_strats[0]
-        underwater_pct = all_results[strat_name]['median_time_underwater_pct']
-        if underwater_pct > 60: # Threshold for a "high" amount of time underwater
-            insights.append(f"\n**🧠 Psychological Cost:** The **'{strat_name}'** strategy spent the most time 'underwater' ({underwater_pct:.0f}% of hands). While potentially profitable, this indicates a psychologically demanding journey with long periods of grinding back to a previous peak.")
-
     insights.append("\n### Why Did They Perform This Way?")
 
     if worst_ror and best_targets and worst_ror in best_targets:
-        insights.append(f"- The **'{worst_ror}'** strategy is a classic high-risk, high-reward approach. It achieved the highest probability of reaching the target, but also came with the highest Risk of Ruin. This is a trade-off between upside potential and safety.")
+        insights.append(f"- The **'{worst_ror}'** strategy is a classic high-risk, high-reward approach. It achieved the highest probability of reaching the target, but also came with the highest Risk of Ruin. This is a trade-off between upside potential and safety.")   
 
     # Analyze the contribution of rakeback to the best strategy's success
     if config.get("RAKEBACK_PERCENTAGE", 0) > 0 and best_medians:
