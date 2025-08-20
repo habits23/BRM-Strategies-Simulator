@@ -145,11 +145,20 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     # Add median and mode lines
     median_br = result.get('median_final_bankroll')
     mode_br = result.get('final_bankroll_mode')
+    p5_br = result.get('p5')
+    p95_br = np.percentile(final_bankrolls, 95) if len(final_bankrolls) > 0 else None
+    target_br = config.get('TARGET_BANKROLL')
 
     if median_br is not None:
         ax.axvline(median_br, color='darkgreen', linestyle='--', linewidth=2, label=f'Median: €{median_br:,.0f}')
     if mode_br is not None:
         ax.axvline(mode_br, color='darkred', linestyle=':', linewidth=2, label=f'Mode: €{mode_br:,.0f}')
+    if p5_br is not None:
+        ax.axvline(p5_br, color='orangered', linestyle='--', linewidth=1.5, label=f'5th %ile: €{p5_br:,.0f}')
+    if p95_br is not None:
+        ax.axvline(p95_br, color='purple', linestyle='--', linewidth=1.5, label=f'95th %ile: €{p95_br:,.0f}')
+    if target_br is not None:
+        ax.axvline(target_br, color='gold', linestyle='-.', linewidth=2, label=f'Target: €{target_br:,.0f}')
 
     ax.set_title(f'Final Bankroll Distribution for {strategy_name}', fontsize=16)
     ax.set_xlabel('Final Bankroll (EUR)', fontsize=12)
