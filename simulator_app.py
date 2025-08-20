@@ -592,7 +592,12 @@ def process_uploaded_config():
 
         # --- Validate and load stakes data ---
         if "stakes_data" in loaded_data and isinstance(loaded_data["stakes_data"], list):
-            st.session_state.stakes_data = pd.DataFrame(loaded_data["stakes_data"])
+            df = pd.DataFrame(loaded_data["stakes_data"])
+            # Also sort the stakes data, just like the 'Save and Sort' button does, to ensure consistency.
+            if 'bb_size' in df.columns:
+                df['bb_size'] = pd.to_numeric(df['bb_size'], errors='coerce')
+                df = df.sort_values(by='bb_size', ascending=True, na_position='last').reset_index(drop=True)
+            st.session_state.stakes_data = df
         else:
             st.error("Invalid config file: 'stakes_data' section is missing or malformed.")
             return

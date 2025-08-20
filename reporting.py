@@ -35,7 +35,11 @@ def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None
     """
     Creates an overlapping density plot to compare the final bankroll distributions of all strategies.
     """
-    fig, ax = plt.subplots(figsize=(8, 5))
+    # Dynamic height to prevent legend from squishing the plot with many strategies
+    num_strategies = len(all_results)
+    # A small increase in height per strategy to accommodate the legend
+    fig_height = max(5, 4.0 + num_strategies * 0.25)
+    fig, ax = plt.subplots(figsize=(8, fig_height))
 
     if color_map is None:
         # Fallback for generating colors internally if no map is provided
@@ -174,7 +178,11 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
 
 def plot_median_progression_comparison(all_results, config, color_map=None, pdf=None):
     """Compares the median bankroll progression for all strategies on a single plot."""
-    fig, ax = plt.subplots(figsize=(8, 5)) # Made consistent with other compact plots
+    # Dynamic height to prevent legend from squishing the plot with many strategies
+    num_strategies = len(all_results)
+    # A small increase in height per strategy to accommodate the legend
+    fig_height = max(5, 4.0 + num_strategies * 0.25)
+    fig, ax = plt.subplots(figsize=(8, fig_height))
     if color_map is None:
         # Fallback for generating colors internally if no map is provided
         colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
