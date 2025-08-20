@@ -250,7 +250,10 @@ def plot_time_underwater_comparison(all_results, config, color_map=None, pdf=Non
     if not strategy_names:
         return plt.figure()
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    # Dynamic height to ensure bars are not too squished with many strategies
+    num_strategies = len(strategy_names)
+    fig_height = max(4, 2.0 + num_strategies * 0.7) # Base height + per-strategy height, with a minimum
+    fig, ax = plt.subplots(figsize=(8, fig_height))
 
     # Horizontal bar chart for better readability of strategy names
     bars = ax.barh(strategy_names, underwater_pcts, color=plot_colors)
@@ -293,7 +296,11 @@ def plot_total_withdrawn_comparison(all_results, config, color_map=None, pdf=Non
     if not strategy_names:
         return plt.figure()
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    # Dynamic height to ensure bars are not too squished with many strategies
+    num_strategies = len(strategy_names)
+    # Use the same dynamic height formula for consistency with the other h-bar chart
+    fig_height = max(4, 2.0 + num_strategies * 0.7)
+    fig, ax = plt.subplots(figsize=(8, fig_height))
     bars = ax.barh(strategy_names, withdrawn_amounts, color=plot_colors)
 
     ax.set_xlabel('Median Total Withdrawn (€)', fontsize=12)
