@@ -456,18 +456,19 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
 with st.sidebar.expander("Withdrawal & Deposit Settings", expanded=False):
     st.checkbox("Enable Monthly Withdrawals", key="enable_withdrawals", help="If enabled, the simulation will attempt to withdraw funds periodically based on the rules below.")
     if st.session_state.enable_withdrawals:
-        # Enforce the rule that Monthly Volume must be >= Hands per Check.
-        # If the user changes Hands per Check to be larger than Monthly Volume,
-        # we manually adjust Monthly Volume and show a warning. This is better UX
-        # than letting the number_input widget clamp the value silently.
-        hands_per_check_val = st.session_state.hands_per_check
-        if st.session_state.monthly_volume_hands < hands_per_check_val:
-            st.session_state.monthly_volume_hands = hands_per_check_val
-            st.warning(f"Monthly Volume was automatically adjusted to {hands_per_check_val:,} to be at least as large as 'Hands per Bankroll Check'.")
+        # To prevent unexpected behavior, we explicitly manage the state relationship
+        # between these two inputs.
+        new_min_monthly_volume = st.session_state.hands_per_check
+
+        # The check: is the current monthly volume now invalid because hands_per_check was increased?
+        if st.session_state.monthly_volume_hands < new_min_monthly_volume:
+            # If so, update the session state value to the new minimum.
+            st.session_state.monthly_volume_hands = new_min_monthly_volume
+            st.warning(f"Monthly Volume was automatically adjusted to {new_min_monthly_volume:,} to be at least as large as 'Hands per Bankroll Check'.")
 
         st.number_input(
             "Monthly Volume (Hands)",
-            min_value=hands_per_check_val,
+            min_value=new_min_monthly_volume,
             step=1000,
             key="monthly_volume_hands",
             help="The number of hands that constitutes a 'month'. A withdrawal will be attempted after this many hands are played."
