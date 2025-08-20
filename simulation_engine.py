@@ -1186,21 +1186,30 @@ def initialize_strategy(strategy_name, strategy_config, stakes_data):
     else:
         raise ValueError(f"Unknown strategy type '{strategy_type}' for '{strategy_name}'")
 
-def run_full_analysis(config):
+def run_full_analysis(config, progress_callback=None):
     """
     The main entry point for running the entire simulation analysis.
     This function is called by the Streamlit app.
+    It now accepts an optional progress_callback function to report progress to the UI.
     """
     all_results = {}
     stake_level_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
     stake_name_map = {v: k for k, v in stake_level_map.items()}
+
+    num_strategies = len(config['STRATEGIES_TO_RUN'])
+    if num_strategies == 0:
+        raise ValueError("No strategies are defined. Please add at least one strategy.")
 
     # Create a master RNG to generate unique, deterministic seeds for each strategy.
     # This ensures each strategy gets its own "deck of cards" while the overall
     # simulation remains reproducible from the main seed.
     master_rng = np.random.default_rng(config['SEED'])
 
-    for strategy_name, strategy_config in config['STRATEGIES_TO_RUN'].items():
+    for i, (strategy_name, strategy_config) in enumerate(config['STRATEGIES_TO_RUN'].items()):
+        if progress_callback:
+            progress = i / num_strategies
+            progress_callback(progress, f"Simulating strategy: {strategy_name} ({i+1}/{num_strategies})...")
+
         strategy_seed = master_rng.integers(1, 1_000_000_000)
         all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
@@ -1218,7 +1227,12 @@ def run_full_analysis(config):
         )
 
     # Generate the final qualitative analysis report
+    if progress_callback:
+        progress_callback(0.95, "Generating qualitative analysis...")
     analysis_report = generate_qualitative_analysis(all_results, config)
+
+    if progress_callback:
+        progress_callback(1.0, "Finalizing report...")
 
     return {
         "results": all_results,

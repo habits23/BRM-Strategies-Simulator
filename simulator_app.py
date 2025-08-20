@@ -917,10 +917,23 @@ if st.session_state.run_simulation:
     if inputs_are_valid:
         st.header("Simulation Results")
         try:
-            with st.spinner("Running thousands of simulations... this may take a moment."):
-                # THIS IS WHERE WE CALL OUR REFACTORED ENGINE
-                # Store results in session state so they persist across reruns
-                st.session_state.simulation_output = engine.run_full_analysis(config)
+            # --- Progress Bar Setup ---
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            status_text.text("Starting simulation...")
+
+            def update_progress(progress, message):
+                progress_bar.progress(progress)
+                status_text.text(message)
+
+            # THIS IS WHERE WE CALL OUR REFACTORED ENGINE
+            # Pass the callback function to the engine
+            st.session_state.simulation_output = engine.run_full_analysis(config, progress_callback=update_progress)
+
+            # Clean up the progress bar and status text after completion
+            status_text.text("Simulation complete! Displaying results...")
+            progress_bar.empty()
+            status_text.empty()
         except ValueError as e:
             st.error(f"A configuration error prevented the simulation from running: {e}")
             st.info("Please check your strategy rules and stake definitions for issues.")
