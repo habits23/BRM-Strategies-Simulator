@@ -1037,6 +1037,12 @@ def generate_qualitative_analysis(all_results, config):
         underwater_pct = all_results[worst_downswing]['median_time_underwater_pct']
         insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f} and spent {underwater_pct:.0f}% of the time 'underwater'.")
 
+    best_pain, _ = find_best_worst_with_ties('median_integrated_drawdown', higher_is_better=False)
+    if best_pain:
+        names = f"'{best_pain[0]}'" if len(best_pain) == 1 else f"'{', '.join(best_pain)}'"
+        verb = "offered" if len(best_pain) == 1 else "were tied for offering"
+        insights.append(f"\n**🧠 Least Painful Journey:** The **{names}** strategy {verb} the most psychologically comfortable ride. It had the lowest 'Integrated Drawdown', meaning it minimized both the size and duration of downswings, reducing overall financial stress.")
+
     best_efficiency, _ = find_best_worst_with_ties('efficiency_score', higher_is_better=True)
     if best_efficiency:
         names = f"'{best_efficiency[0]}'" if len(best_efficiency) == 1 else f"'{', '.join(best_efficiency)}'"
