@@ -456,23 +456,22 @@ with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
 with st.sidebar.expander("Withdrawal & Deposit Settings", expanded=False):
     st.checkbox("Enable Monthly Withdrawals", key="enable_withdrawals", help="If enabled, the simulation will attempt to withdraw funds periodically based on the rules below.")
     if st.session_state.enable_withdrawals:
-        # To detect automatic clamping, we need to compare the value from the *previous*
-        # run against the *new* minimum value for the widget in *this* run.
-        old_monthly_volume = st.session_state.monthly_volume_hands
-        new_min_value = st.session_state.hands_per_check
+        # Enforce the rule that Monthly Volume must be >= Hands per Check.
+        # If the user changes Hands per Check to be larger than Monthly Volume,
+        # we manually adjust Monthly Volume and show a warning. This is better UX
+        # than letting the number_input widget clamp the value silently.
+        hands_per_check_val = st.session_state.hands_per_check
+        if st.session_state.monthly_volume_hands < hands_per_check_val:
+            st.session_state.monthly_volume_hands = hands_per_check_val
+            st.warning(f"Monthly Volume was automatically adjusted to {hands_per_check_val:,} to be at least as large as 'Hands per Bankroll Check'.")
 
         st.number_input(
             "Monthly Volume (Hands)",
-            min_value=new_min_value, # Must be at least one check period
+            min_value=hands_per_check_val,
             step=1000,
             key="monthly_volume_hands",
             help="The number of hands that constitutes a 'month'. A withdrawal will be attempted after this many hands are played."
         )
-
-        # Check if the value was automatically clamped because the user changed 'Hands per Bankroll Check'.
-        # This is true only if the old value was less than the new minimum.
-        if old_monthly_volume < new_min_value:
-            st.warning(f"Monthly Volume was automatically adjusted to {st.session_state.monthly_volume_hands:,} to be at least as large as 'Hands per Bankroll Check' ({new_min_value:,}).")
 
         st.selectbox(
             "Withdrawal Strategy",
