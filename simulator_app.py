@@ -1227,15 +1227,10 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
         st.success(f"Successfully started rendering the detailed report for **{strategy_name}**.")
         st.write("If you can see this, the hang is caused by one of the `st.metric`, `st.dataframe`, or `st.pyplot` calls that were previously here.")
 
-    # --- Loop through all results and call the helper function to display them ---
-    for strategy_name, result in all_results.items():
-        try:
-            display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
-        except Exception as e:
-            # This is a critical fallback. If any part of the detailed report fails to render,
-            # this will catch the error, display it, and allow the rest of the app to load.
-            st.error(f"A critical error occurred while rendering the detailed report for '{strategy_name}'.")
-            st.exception(e)
+    # --- DEBUGGING: The for loop below is temporarily disabled to isolate the hang. ---
+    # If the PDF Download button appears after this change, we know the problem is
+    # within the for loop or the display_detailed_strategy_results function.
+    st.warning("DEBUG: The detailed analysis section is temporarily disabled to isolate a UI hang.")
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
