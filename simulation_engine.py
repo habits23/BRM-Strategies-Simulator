@@ -2323,6 +2323,7 @@ def run_full_analysis(config, progress_callback=None):
     This function is called by the Streamlit app.
     It now accepts an optional progress_callback function to report progress to the UI.
     """
+    diagnostic_log = [f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Diagnostic log initialized."]
     all_results = {}
     stake_level_map = {stake['name']: i for i, stake in enumerate(sorted(config['STAKES_DATA'], key=lambda s: s['bb_size']))}
     stake_name_map = {v: k for k, v in stake_level_map.items()}
@@ -2330,68 +2331,84 @@ def run_full_analysis(config, progress_callback=None):
     num_strategies = len(config['STRATEGIES_TO_RUN'])
     if num_strategies == 0:
         raise ValueError("No strategies are defined. Please add at least one strategy.")
+    
+    try:
+        master_rng = np.random.default_rng(config['SEED'])
+        diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Master RNG created.")
 
-    # Create a master RNG to generate unique, deterministic seeds for each strategy.
-    # This ensures each strategy gets its own "deck of cards" while the overall
-    # simulation remains reproducible from the main seed.
-    master_rng = np.random.default_rng(config['SEED'])
+        for i, (strategy_name, strategy_config) in enumerate(config['STRATEGIES_TO_RUN'].items()):
+            try:
+                diagnostic_log.append(f"--- Starting Strategy: {strategy_name} ({i+1}/{num_strategies}) ---")
+                if progress_callback:
+                    progress = i / num_strategies
+                    progress_callback(progress, f"Simulating strategy: {strategy_name} ({i+1}/{num_strategies})...")
 
-    for i, (strategy_name, strategy_config) in enumerate(config['STRATEGIES_TO_RUN'].items()):
-        if progress_callback:
-            progress = i / num_strategies
-            progress_callback(progress, f"Simulating strategy: {strategy_name} ({i+1}/{num_strategies})...")
+                strategy_seed = master_rng.integers(1, 1_000_000_000)
+                all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
+                strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
+                diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Parameters and win rates set up for '{strategy_name}'.")
 
-        strategy_seed = master_rng.integers(1, 1_000_000_000)
-        all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
-        strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
+                if isinstance(strategy_obj, HysteresisStrategy):
+                    sim_results_tuple = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+                else:
+                    sim_results_tuple = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+                diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Vectorized simulation loop completed for '{strategy_name}'.")
 
-        # Determine which simulation function to use based on the class type
-        if isinstance(strategy_obj, HysteresisStrategy):
-            sim_results_tuple = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
-        else:
-            sim_results_tuple = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+                (bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
+                 demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count,
+                 integrated_drawdown, total_withdrawn_histories,
+                 downswing_depth_exceeded, downswing_duration_exceeded) = sim_results_tuple
 
-        # --- Unpack and Sanitize Simulation Results ---
-        # This is the most robust place to clean the data. We ensure all raw arrays are free of non-finite
-        # numbers (NaN, inf) before they are passed to any analysis or plotting function. This prevents hangs.
-        (bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
-         demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count,
-         integrated_drawdown, total_withdrawn_histories,
-         downswing_depth_exceeded, downswing_duration_exceeded) = sim_results_tuple
+                safe_bankroll_histories = np.nan_to_num(bankroll_histories, nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
+                safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
+                safe_integrated_drawdown = np.nan_to_num(integrated_drawdown, nan=0)
+                safe_total_withdrawn = np.nan_to_num(total_withdrawn_histories, nan=0)
+                diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Raw data sanitized for '{strategy_name}'.")
 
-        safe_bankroll_histories = np.nan_to_num(bankroll_histories, nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
-        safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
-        safe_integrated_drawdown = np.nan_to_num(integrated_drawdown, nan=0)
-        safe_total_withdrawn = np.nan_to_num(total_withdrawn_histories, nan=0)
+                diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Starting analysis for '{strategy_name}'...")
+                all_results[strategy_name] = analyze_strategy_results(
+                    strategy_name=strategy_name, strategy_obj=strategy_obj,
+                    bankroll_histories=safe_bankroll_histories, hands_per_stake_histories=hands_per_stake_histories,
+                    rakeback_histories=rakeback_histories, all_win_rates=all_win_rates, rng=rng,
+                    peak_stake_levels=peak_stake_levels, demotion_flags=demotion_flags,
+                    stake_level_map=stake_level_map, stake_name_map=stake_name_map,
+                    max_drawdowns=safe_max_drawdowns, stop_loss_triggers=stop_loss_triggers,
+                    underwater_hands_count=underwater_hands_count, integrated_drawdown=safe_integrated_drawdown,
+                    total_withdrawn_histories=safe_total_withdrawn,
+                    downswing_depth_exceeded=downswing_depth_exceeded, downswing_duration_exceeded=downswing_duration_exceeded,
+                    config=config
+                )
+                diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Analysis complete for '{strategy_name}'.")
 
-        # Analyze the results and store them
-        all_results[strategy_name] = analyze_strategy_results(
-            strategy_name=strategy_name,
-            strategy_obj=strategy_obj,
-            bankroll_histories=safe_bankroll_histories,
-            hands_per_stake_histories=hands_per_stake_histories,
-            rakeback_histories=rakeback_histories,
-            all_win_rates=all_win_rates,
-            rng=rng,
-            peak_stake_levels=peak_stake_levels, demotion_flags=demotion_flags, stake_level_map=stake_level_map, stake_name_map=stake_name_map,
-            max_drawdowns=safe_max_drawdowns,
-            stop_loss_triggers=stop_loss_triggers,
-            underwater_hands_count=underwater_hands_count,
-            integrated_drawdown=safe_integrated_drawdown,
-            total_withdrawn_histories=safe_total_withdrawn,
-            downswing_depth_exceeded=downswing_depth_exceeded, downswing_duration_exceeded=downswing_duration_exceeded,
-            config=config
-        )
+            except Exception as e:
+                import traceback
+                error_msg = f"CRITICAL ERROR during simulation for '{strategy_name}': {e}"
+                diagnostic_log.append(error_msg)
+                diagnostic_log.append(traceback.format_exc())
+                continue # Continue to the next strategy
+
+    except Exception as e:
+        import traceback
+        diagnostic_log.append(f"FATAL ERROR in main analysis loop: {e}")
+        diagnostic_log.append(traceback.format_exc())
 
     # Generate the final qualitative analysis report
-    if progress_callback:
-        progress_callback(0.95, "Generating qualitative analysis...")
-    analysis_report = generate_qualitative_analysis(all_results, config)
-
+    try:
+        if progress_callback:
+            progress_callback(0.95, "Generating qualitative analysis...")
+        diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Generating qualitative analysis...")
+        analysis_report = generate_qualitative_analysis(all_results, config)
+        diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Qualitative analysis generated successfully.")
+    except Exception as e:
+        import traceback
+        analysis_report = "Error generating qualitative analysis. See diagnostic log for details."
+        diagnostic_log.append(f"CRITICAL ERROR during qualitative analysis: {e}")
+        diagnostic_log.append(traceback.format_exc())
     if progress_callback:
         progress_callback(1.0, "Finalizing report...")
-
+    diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Full analysis complete. Returning results to UI.")
     return {
         "results": all_results,
-        "analysis_report": analysis_report
+        "analysis_report": analysis_report,
+        "diagnostic_log": diagnostic_log
     }

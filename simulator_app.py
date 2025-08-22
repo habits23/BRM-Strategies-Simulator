@@ -1052,6 +1052,7 @@ if st.session_state.run_simulation:
 if st.session_state.get("simulation_output"):
     all_results = st.session_state.simulation_output['results']
     analysis_report = st.session_state.simulation_output['analysis_report']
+    diagnostic_log = st.session_state.simulation_output.get('diagnostic_log', []) # Safely get the log
     config = st.session_state.get('config_for_display', {}) # Get the config used for the run
 
     # Calculate a representative input win rate for the "Assigned WR Distribution" plot's label.
@@ -1068,6 +1069,12 @@ if st.session_state.get("simulation_output"):
 
 
     st.header("Simulation Results")
+
+    # --- Display the new Diagnostic Log ---
+    # This is the first thing shown in the results, making it easy to spot issues.
+    if diagnostic_log:
+        with st.expander("🔬 Diagnostic Log", expanded=True):
+            st.code("\n".join(diagnostic_log))
 
     # Display the AI-generated qualitative analysis if it exists.
     if analysis_report:
