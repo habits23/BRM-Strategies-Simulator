@@ -2359,7 +2359,12 @@ def run_full_analysis(config, progress_callback=None):
                  integrated_drawdown, total_withdrawn_histories,
                  downswing_depth_exceeded, downswing_duration_exceeded) = sim_results_tuple
 
+                # --- Sanitize all key numerical arrays ---
+                # This is the most robust place to clean the data. We ensure all raw arrays are free of non-finite
+                # numbers (NaN, inf) before they are passed to any analysis or plotting function. This prevents hangs.
+
                 safe_bankroll_histories = np.nan_to_num(bankroll_histories, nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
+                safe_rakeback_histories = np.nan_to_num(rakeback_histories, nan=0)
                 safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
                 safe_integrated_drawdown = np.nan_to_num(integrated_drawdown, nan=0)
                 safe_total_withdrawn = np.nan_to_num(total_withdrawn_histories, nan=0)
@@ -2367,9 +2372,13 @@ def run_full_analysis(config, progress_callback=None):
 
                 diagnostic_log.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Starting analysis for '{strategy_name}'...")
                 all_results[strategy_name] = analyze_strategy_results(
-                    strategy_name=strategy_name, strategy_obj=strategy_obj,
-                    bankroll_histories=safe_bankroll_histories, hands_per_stake_histories=hands_per_stake_histories,
-                    rakeback_histories=rakeback_histories, all_win_rates=all_win_rates, rng=rng,
+                    strategy_name=strategy_name, 
+                    strategy_obj=strategy_obj,
+                    bankroll_histories=safe_bankroll_histories, 
+                    hands_per_stake_histories=hands_per_stake_histories,
+                    rakeback_histories=safe_rakeback_histories,
+                    all_win_rates=all_win_rates, 
+                    rng=rng,
                     peak_stake_levels=peak_stake_levels, demotion_flags=demotion_flags,
                     stake_level_map=stake_level_map, stake_name_map=stake_name_map,
                     max_drawdowns=safe_max_drawdowns, stop_loss_triggers=stop_loss_triggers,
