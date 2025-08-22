@@ -536,6 +536,136 @@ def add_text_page(text, pdf, title=""):
         plt.close(fig)
     return fig
 
+def plot_summary_table(all_results, strategy_page_map, config, pdf=None):
+    """
+    Creates a comprehensive summary table as an image, mirroring the UI's detail,
+    and saves it to the PDF.
+    """
+    header = [
+        'Strategy', 'Page', 'Median Final BR', 'Median Growth', 'Median Hands',
+        'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile BR', 'P95 Downswing'
+    ]
+    cell_text = []
+
+    for strategy_name, res in all_results.items():
+        row = [
+            strategy_name,
+            str(strategy_page_map.get(strategy_name, '-')),
+            f"€{res.get('median_final_bankroll', 0):,.0f}",
+            f"{res.get('growth_rate', 0):.2%}",
+            f"{res.get('median_hands_played', 0):,.0f}",
+            f"€{res.get('median_rakeback_eur', 0):,.2f}",
+            f"{res.get('risk_of_ruin', 0):.2f}%",
+            f"{res.get('target_prob', 0):.2f}%",
+            f"€{res.get('p5', 0):,.0f}",
+            f"€{res.get('p95_max_downswing', 0):,.0f}"
+        ]
+        cell_text.append(row)
+
+    if not cell_text:
+        return None
+
+    fig, ax = plt.subplots(figsize=(11.69, 8.27)) # A4 landscape
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=cell_text, colLabels=header, cellLoc='center', loc='center')
+    table.automake_col_widths()
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.8)
+
+    ax.set_title('Simulation Summary', pad=20, fontsize=16)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
+def plot_risk_of_demotion_table(result, strategy_name, pdf=None):
+    """
+    Creates a table showing the risk of demotion from each stake level.
+    """
+    risk_data = result.get('risk_of_demotion')
+    if not risk_data:
+        return None
+
+    # Sort stakes by their 'bb_size' from the config for a logical order
+    stakes_data = result.get('stakes_data_for_report', [])
+    stake_order = {s['name']: s['bb_size'] for s in stakes_data}
+    stake_names = sorted(risk_data.keys(), key=lambda s: stake_order.get(s, float('inf')))
+
+    if not stake_names:
+        return None
+
+    cell_text = []
+    for stake in stake_names:
+        data = risk_data[stake]
+        row = [
+            f"{int(data.get('reached_count', 0))}",
+            f"{data.get('prob', 0):.1f}%"
+        ]
+        cell_text.append(row)
+
+    columns = ['Sims Reaching Stake', 'Demotion Probability']
+    rows = stake_names
+
+    fig, ax = plt.subplots(figsize=(8, max(1.5, len(rows) * 0.5)))
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=cell_text, rowLabels=rows, colLabels=columns, cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 1.5)
+
+    ax.set_title(f'Risk of Demotion Analysis for {strategy_name}', pad=20, fontsize=14)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
+def plot_sanity_check_analysis(result, config, pdf=None):
+    """
+    Creates a text-based plot comparing analytical expectations vs. simulation results
+    for the single-stake sanity check.
+    """
+    start_br = config['STARTING_BANKROLL_EUR']
+    total_hands = config['TOTAL_HANDS_TO_SIMULATE']
+    stake_data = config['STAKES_DATA'][0]
+    ev_wr = stake_data['ev_bb_per_100']
+    std_dev = stake_data['std_dev_per_100']
+    bb_size = stake_data['bb_size']
+
+    # Analytical calculations
+    expected_profit = (total_hands / 100) * ev_wr * bb_size
+    expected_final_br = start_br + expected_profit
+    expected_std_dev_eur = (std_dev / np.sqrt(100)) * np.sqrt(total_hands) * bb_size
+
+    # Actual results from simulation
+    actual_median_br = result['median_final_bankroll']
+    actual_std_dev_br = np.std(result['final_bankrolls'])
+
+    # Calculate percentage differences
+    median_diff_pct = ((actual_median_br - expected_final_br) / expected_final_br) * 100 if expected_final_br != 0 else 0
+    std_dev_diff_pct = ((actual_std_dev_br - expected_std_dev_eur) / expected_std_dev_eur) * 100 if expected_std_dev_eur != 0 else 0
+
+    text_content = (
+        "This report compares the simulation's output against known mathematical formulas for a simple, single-stake scenario.\n"
+        "The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.\n\n"
+        "--- Expected (Analytical) ---\n"
+        f"Expected Final Median Bankroll: €{expected_final_br:,.2f}\n"
+        f"Expected Std. Dev. of Final Bankroll: €{expected_std_dev_eur:,.2f}\n\n"
+        "--- Actual (from Simulation) ---\n"
+        f"Actual Final Median Bankroll: €{actual_median_br:,.2f}\n"
+        f"Actual Std. Dev. of Final Bankroll: €{actual_std_dev_br:,.2f}\n\n"
+        "--- Comparison ---\n"
+        f"Difference in Median: {median_diff_pct:+.2f}%\n"
+        f"Difference in Std. Dev.: {std_dev_diff_pct:+.2f}%"
+    )
+
+    # Use the generic text page function to render this content
+    return add_text_page(text_content, pdf, title="Sanity Check Analysis")
+
 def get_initial_table_mix_string(strategy, config):
     """Helper function to describe the starting table mix as a string."""
     rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
