@@ -1385,18 +1385,29 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     strategy_names = list(all_results.keys())
 
     # Define the metrics for the axes
-    # X-axis: Risk (lower is better)
     risk_metric_key = 'risk_of_ruin'
-    risk_values = [res.get(risk_metric_key, 0) for res in all_results.values()]
-    risk_label = 'Risk of Ruin (%)'
-
-    # Y-axis: Reward (higher is better)
     reward_metric_key = 'median_final_bankroll'
-    reward_values = [res.get(reward_metric_key, 0) for res in all_results.values()]
-    reward_label = f"Median Final Bankroll (€)"
 
-    if not strategy_names or len(strategy_names) < 2:
-        return plt.figure() # Don't plot if there's nothing to compare
+    # --- Data Extraction and Cleaning ---
+    # Extract data and filter out any non-finite values (inf, -inf, nan) to prevent plotting errors.
+    # This is a critical robustness improvement.
+    clean_data = []
+    for name in strategy_names:
+        res = all_results[name]
+        risk = res.get(risk_metric_key)
+        reward = res.get(reward_metric_key)
+        if risk is not None and reward is not None and np.isfinite(risk) and np.isfinite(reward):
+            clean_data.append({'name': name, 'risk': risk, 'reward': reward})
+
+    if len(clean_data) < 2:
+        return plt.figure() # Don't plot if there's not enough valid data to compare
+
+    # Unpack the cleaned data for plotting
+    plot_names = [d['name'] for d in clean_data]
+    risk_values = [d['risk'] for d in clean_data]
+    reward_values = [d['reward'] for d in clean_data]
+    risk_label = 'Risk of Ruin (%)'
+    reward_label = f"Median Final Bankroll (€)"
 
     # Use a fixed figure size for the scatter plot for stability.
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -1406,21 +1417,23 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
         colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
         color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
-    plot_colors = [color_map.get(name) for name in strategy_names]
+    # Get colors for the valid, plotted strategies
+    plot_colors = [color_map.get(name) for name in plot_names]
 
     ax.scatter(risk_values, reward_values, s=150, c=plot_colors, alpha=0.7, edgecolors='w', zorder=10)
 
     # Annotate each point with the strategy name using a robust offset
     y_min, y_max = ax.get_ylim()
     y_offset = (y_max - y_min) * 0.02  # A small 2% offset based on the y-axis range
-    for i, name in enumerate(strategy_names):
+    for i, name in enumerate(plot_names):
         ax.text(risk_values[i], reward_values[i] + y_offset, name, fontsize=9, ha='center')
 
-    # Add interpretation quadrants based on the average
-    avg_risk = np.mean(risk_values)
-    avg_reward = np.mean(reward_values)
-    ax.axvline(avg_risk, color='gray', linestyle='--', linewidth=0.8)
-    ax.axhline(avg_reward, color='gray', linestyle='--', linewidth=0.8)
+    # Add interpretation quadrants based on the average of the valid data
+    if risk_values and reward_values:
+        avg_risk = np.mean(risk_values)
+        avg_reward = np.mean(reward_values)
+        ax.axvline(avg_risk, color='gray', linestyle='--', linewidth=0.8)
+        ax.axhline(avg_reward, color='gray', linestyle='--', linewidth=0.8)
 
     ax.set_xlabel(risk_label, fontsize=12)
     ax.set_ylabel(reward_label, fontsize=12)
