@@ -630,9 +630,9 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     (
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
-        peak_bankrolls_so_far, max_drawdowns_so_far, 
-        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands, # New
-        is_stopped_out, stop_loss_triggers,
+        peak_bankrolls_so_far, max_drawdowns_so_far,
+        is_stopped_out, stop_loss_triggers, # Corrected order
+        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands,
         underwater_hands_count, integrated_drawdown
     ) = _initialize_simulation_state(num_sims, num_checks, config)
 
