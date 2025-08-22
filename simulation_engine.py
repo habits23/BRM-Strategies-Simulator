@@ -760,7 +760,8 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
         lines = []
         if 'final_stake_distribution' in res and res['final_stake_distribution']:
             lines.extend(["", "--- Final Stake Distribution ---", "Percentage of simulations ending at each stake/table mix:"])
-            sorted_dist = sorted(res['final_stake_distribution'].items(), key=lambda item: item[1], reverse=True)
+            # Sort by percentage (value) descending, then by mix string (key) ascending as a tie-breaker.
+            sorted_dist = sorted(res['final_stake_distribution'].items(), key=lambda item: (-item[1], str(item[0])))
             for mix_str, pct in sorted_dist:
                 if pct > 0.01:
                     lines.append(f"   - {mix_str}: {pct:.2f}%")

@@ -350,6 +350,12 @@ def sync_stakes_data():
     df['bb_size'] = pd.to_numeric(df['bb_size'], errors='coerce')
     df = df.sort_values(by='bb_size', ascending=True, na_position='last').reset_index(drop=True)
 
+    # --- Validation Logic: Check for missing required values ---
+    invalid_rows = df[df['name'].isnull() | (df['name'].astype(str).str.strip() == '') | df['bb_size'].isnull()]
+    if not invalid_rows.empty:
+        st.error("One or more rows have a missing 'name' or an invalid 'bb_size'. Please fill in all required fields. Changes have not been saved.")
+        return # Abort the sync
+
     # --- Validation Logic: Check for duplicate stake names ---
     # We only consider non-empty, non-null names for duplication checks.
     stake_names = df['name'].dropna().astype(str).str.strip()

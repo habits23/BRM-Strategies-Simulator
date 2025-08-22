@@ -117,8 +117,9 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
 
     for br in final_bankrolls:
         table_mix = strategy_obj.get_table_mix(br)
-        # This part is for the detailed PDF report, so it's still needed.
-        mix_str = ", ".join(f"{s}: {v}" for s, v in sorted(table_mix.items())) if table_mix else "No Play"
+        # Sort by string representation of keys to prevent TypeErrors with mixed-type keys (e.g., 'NL50' and NaN from empty rows)
+        sorted_items = sorted(table_mix.items(), key=lambda item: str(item[0])) if table_mix else []
+        mix_str = ", ".join(f"{s}: {v}" for s, v in sorted_items) if sorted_items else "No Play"
         final_stake_counts[mix_str] += 1
 
         # This is the more direct calculation for the UI summary.
