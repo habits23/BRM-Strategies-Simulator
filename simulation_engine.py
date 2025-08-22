@@ -1762,7 +1762,10 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
         # Strip emoji and bold markers for cleaner text
         line = line.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','').replace('🚀','').replace('😌','').replace('🎢','').replace('💰','').replace('⚠️','').replace('🧠','').replace('💸','').replace('⚡','')
 
-        fig.text(x_pos, y_pos, line, transform=fig.transFigure, size=font_size, weight=font_weight, va='top', ha='left', wrap=True)
+        # The `wrap=True` argument in `fig.text` is a known cause of silent hangs in matplotlib
+        # with certain long or complex strings. Removing it for stability is the most robust fix.
+        # The text may run off the page, but this will prevent the application from freezing.
+        fig.text(x_pos, y_pos, line, transform=fig.transFigure, size=font_size, weight=font_weight, va='top', ha='left')
         y_pos -= 0.04 # Fixed spacing between lines
 
     pdf.savefig(fig)
