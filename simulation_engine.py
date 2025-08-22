@@ -692,13 +692,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
-
-    # --- Data Sanitization: The Definitive Fix ---
-    # This is the most critical step to prevent UI hangs. We ensure that all raw data arrays
-    # are free of non-finite numbers (NaN, inf) before any metrics are calculated from them.
-    final_withdrawn = np.nan_to_num(total_withdrawn_histories[:, -1], nan=0)
-    final_bankrolls = np.nan_to_num(bankroll_histories[:, -1], nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
-    safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
+    final_withdrawn = total_withdrawn_histories[:, -1]
+    final_bankrolls = bankroll_histories[:, -1]
     # --- Calculate Weighted Assigned WR for each simulation ---
     # This is crucial for understanding the distribution of "luck" (assigned win rates)
     final_hands_per_stake = {name: history[:, -1] for name, history in hands_per_stake_histories.items()}
@@ -771,8 +766,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
 
     percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, total_withdrawn_histories, config, bb_size_map)
 
-    median_max_downswing = np.median(safe_max_drawdowns)
-    p95_max_downswing = np.percentile(safe_max_drawdowns, 95)
+    median_max_downswing = np.median(max_drawdowns)
+    p95_max_downswing = np.percentile(max_drawdowns, 95)
 
     # Calculate median rakeback
     final_rakeback = rakeback_histories[:, -1]
@@ -837,7 +832,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'final_highest_stake_distribution': final_highest_stake_distribution,
         'median_max_downswing': median_max_downswing,
         'p95_max_downswing': p95_max_downswing,
-        'max_downswings': safe_max_drawdowns,
+        'max_downswings': max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
         'median_profit_from_play_eur': median_profit_from_play_eur,
         'median_hands_played': median_hands_played,
@@ -978,21 +973,16 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
 
 def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name, config, pdf=None):
     """Plots the median progression with a shaded area for the 25th-75th percentile range."""
-    # --- Data Cleaning: Prevent hangs from non-finite values ---
-    # Replace NaN, +inf, and -inf with plausible numbers to ensure percentile calculations and plotting do not fail.
-    # This is a critical robustness improvement.
-    safe_histories = np.nan_to_num(bankroll_histories, nan=config.get('STARTING_BANKROLL_EUR', 0), posinf=config.get('TARGET_BANKROLL', 5000)*5, neginf=0)
-
     fig, ax = plt.subplots(figsize=(8, 5))
-    median_history = np.median(safe_histories, axis=0)
+    median_history = np.median(bankroll_histories, axis=0)
     # Use the cleaned data for all calculations
-    y_upper_limit = np.percentile(safe_histories, 95) * 1.1 # Add 10% for padding
-    lower_percentile = np.percentile(safe_histories, 25, axis=0)
-    upper_percentile = np.percentile(safe_histories, 75, axis=0)
+    y_upper_limit = np.percentile(bankroll_histories, 95) * 1.1 # Add 10% for padding
+    lower_percentile = np.percentile(bankroll_histories, 25, axis=0)
+    upper_percentile = np.percentile(bankroll_histories, 75, axis=0)
     median_hands = np.median(hands_histories, axis=0)
 
-    for i in range(min(50, len(safe_histories))):
-        ax.plot(hands_histories[i], safe_histories[i], color='gray', alpha=0.1)
+    for i in range(min(50, len(bankroll_histories))):
+        ax.plot(hands_histories[i], bankroll_histories[i], color='gray', alpha=0.1)
 
     ax.fill_between(median_hands, lower_percentile, upper_percentile,
                      color='lightblue', alpha=0.4, label='25th-75th Percentile Range')
@@ -1102,10 +1092,8 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     if color_map and strategy_name in color_map:
         plot_color = color_map[strategy_name]
 
-    # --- Data Cleaning ---
-    safe_bankrolls = final_bankrolls[np.isfinite(final_bankrolls)]
     # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
-    successful_runs = safe_bankrolls[safe_bankrolls > config.get('RUIN_THRESHOLD', 0)]
+    successful_runs = final_bankrolls[final_bankrolls > config.get('RUIN_THRESHOLD', 0)]
 
     if len(successful_runs) > 5:
         upper_percentile = config.get('PLOT_PERCENTILE_LIMIT', 99)
@@ -1198,11 +1186,9 @@ def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=N
     if color_map and strategy_name in color_map:
         hist_color = color_map[strategy_name]
 
-    # --- Data Cleaning ---
-    safe_downswings = max_downswings[np.isfinite(max_downswings)]
     # Filter out extreme outliers for better visibility
-    max_x_limit = np.percentile(safe_downswings, 99.0) if len(safe_downswings) > 0 else 0
-    filtered_downswings = safe_downswings[safe_downswings <= max_x_limit]
+    max_x_limit = np.percentile(max_downswings, 99.0) if len(max_downswings) > 0 else 0
+    filtered_downswings = max_downswings[max_downswings <= max_x_limit]
 
     median_downswing = result.get('median_max_downswing', 0)
     p95_downswing = result['p95_max_downswing']
@@ -1360,12 +1346,10 @@ def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_w
     """
     fig, ax = plt.subplots(figsize=(8, 5))
 
-    # --- Data Cleaning ---
-    safe_data = avg_assigned_wr_per_sim[np.isfinite(avg_assigned_wr_per_sim)]
     # Filter out extreme outliers for better visualization
-    p1 = np.percentile(safe_data, 1) if len(safe_data) > 0 else 0
-    p99 = np.percentile(safe_data, 99) if len(safe_data) > 0 else 0
-    filtered_data = safe_data[(safe_data >= p1) & (safe_data <= p99)]
+    p1 = np.percentile(avg_assigned_wr_per_sim, 1) if len(avg_assigned_wr_per_sim) > 0 else 0
+    p99 = np.percentile(avg_assigned_wr_per_sim, 99) if len(avg_assigned_wr_per_sim) > 0 else 0
+    filtered_data = avg_assigned_wr_per_sim[(avg_assigned_wr_per_sim >= p1) & (avg_assigned_wr_per_sim <= p99)]
 
     ax.hist(filtered_data, bins=50, color='c', edgecolor='black', alpha=0.6, label='Distribution of All Runs\' Luck')
 
@@ -1401,28 +1385,13 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     """
     strategy_names = list(all_results.keys())
 
-    # Define the metrics for the axes
-    risk_metric_key = 'risk_of_ruin'
-    reward_metric_key = 'median_final_bankroll'
+    # Data is now pre-sanitized, so we can extract it directly.
+    risk_values = [res.get('risk_of_ruin', 0) for res in all_results.values()]
+    reward_values = [res.get('median_final_bankroll', 0) for res in all_results.values()]
 
-    # --- Data Extraction and Cleaning ---
-    # Extract data and filter out any non-finite values (inf, -inf, nan) to prevent plotting errors.
-    # This is a critical robustness improvement.
-    clean_data = []
-    for name in strategy_names:
-        res = all_results[name]
-        risk = res.get(risk_metric_key)
-        reward = res.get(reward_metric_key)
-        if risk is not None and reward is not None and np.isfinite(risk) and np.isfinite(reward):
-            clean_data.append({'name': name, 'risk': risk, 'reward': reward})
-
-    if len(clean_data) < 2:
+    if len(strategy_names) < 2:
         return plt.figure() # Don't plot if there's not enough valid data to compare
 
-    # Unpack the cleaned data for plotting
-    plot_names = [d['name'] for d in clean_data]
-    risk_values = [d['risk'] for d in clean_data]
-    reward_values = [d['reward'] for d in clean_data]
     risk_label = 'Risk of Ruin (%)'
     reward_label = f"Median Final Bankroll (€)"
 
@@ -1430,22 +1399,18 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     fig, ax = plt.subplots(figsize=(8, 6))
 
     if color_map is None:
-        # Fallback for generating colors internally if no map is provided
         colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
         color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
-    # Get colors for the valid, plotted strategies
-    plot_colors = [color_map.get(name) for name in plot_names]
+    plot_colors = [color_map.get(name) for name in strategy_names]
 
     ax.scatter(risk_values, reward_values, s=150, c=plot_colors, alpha=0.7, edgecolors='w', zorder=10)
 
-    # Annotate each point with the strategy name using a robust offset
     y_min, y_max = ax.get_ylim()
     y_offset = (y_max - y_min) * 0.02  # A small 2% offset based on the y-axis range
-    for i, name in enumerate(plot_names):
+    for i, name in enumerate(strategy_names):
         ax.text(risk_values[i], reward_values[i] + y_offset, name, fontsize=9, ha='center')
 
-    # Add interpretation quadrants based on the average of the valid data
     if risk_values and reward_values:
         avg_risk = np.mean(risk_values)
         avg_reward = np.mean(reward_values)
@@ -2382,22 +2347,38 @@ def run_full_analysis(config, progress_callback=None):
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, downswing_depth_exceeded, downswing_duration_exceeded = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            sim_results_tuple = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, downswing_depth_exceeded, downswing_duration_exceeded = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            sim_results_tuple = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+
+        # --- Unpack and Sanitize Simulation Results ---
+        # This is the most robust place to clean the data. We ensure all raw arrays are free of non-finite
+        # numbers (NaN, inf) before they are passed to any analysis or plotting function. This prevents hangs.
+        (bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
+         demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count,
+         integrated_drawdown, total_withdrawn_histories,
+         downswing_depth_exceeded, downswing_duration_exceeded) = sim_results_tuple
+
+        safe_bankroll_histories = np.nan_to_num(bankroll_histories, nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
+        safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
+        safe_integrated_drawdown = np.nan_to_num(integrated_drawdown, nan=0)
+        safe_total_withdrawn = np.nan_to_num(total_withdrawn_histories, nan=0)
 
         # Analyze the results and store them
         all_results[strategy_name] = analyze_strategy_results(
             strategy_name=strategy_name,
             strategy_obj=strategy_obj,
-            bankroll_histories=bankroll_histories,
+            bankroll_histories=safe_bankroll_histories,
             hands_per_stake_histories=hands_per_stake_histories,
             rakeback_histories=rakeback_histories,
             all_win_rates=all_win_rates,
             rng=rng,
             peak_stake_levels=peak_stake_levels, demotion_flags=demotion_flags, stake_level_map=stake_level_map, stake_name_map=stake_name_map,
-            max_drawdowns=max_drawdowns, stop_loss_triggers=stop_loss_triggers, underwater_hands_count=underwater_hands_count,
-            integrated_drawdown=integrated_drawdown, total_withdrawn_histories=total_withdrawn_histories,
+            max_drawdowns=safe_max_drawdowns,
+            stop_loss_triggers=stop_loss_triggers,
+            underwater_hands_count=underwater_hands_count,
+            integrated_drawdown=safe_integrated_drawdown,
+            total_withdrawn_histories=safe_total_withdrawn,
             downswing_depth_exceeded=downswing_depth_exceeded, downswing_duration_exceeded=downswing_duration_exceeded,
             config=config
         )
