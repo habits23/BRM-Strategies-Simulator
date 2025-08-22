@@ -330,8 +330,11 @@ def resolve_proportions(rule, rng):
             else:
                 try:
                     percentages[stake] = float(sanitized_val)
-                except ValueError:
-                    pass
+                except (ValueError, TypeError):
+                    raise ValueError(
+                        f"Invalid table mix value '{val}' for stake '{stake}'. "
+                        "Please use an integer (e.g., 1), a percentage (e.g., '50%'), or a range (e.g., '20-40%')."
+                    )
         elif isinstance(val, int) and val > 0:
             fixed_ratios[stake] = val
 

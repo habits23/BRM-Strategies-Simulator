@@ -1200,14 +1200,18 @@ if st.session_state.get("simulation_output"):
         st.pyplot(fig)
         plt.close(fig)
     
-    # --- Display new withdrawal plot if applicable, inside a column to maintain size ---
-    fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
-    if fig_withdrawn:
-        comp_col5, _ = st.columns(2)
-        with comp_col5:
-            st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
-            st.pyplot(fig_withdrawn)
-            plt.close(fig_withdrawn)
+    # --- Display new withdrawal plot if applicable, with robust error handling ---
+    try:
+        fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
+        if fig_withdrawn:
+            comp_col5, _ = st.columns(2)
+            with comp_col5:
+                st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
+                st.pyplot(fig_withdrawn)
+                plt.close(fig_withdrawn)
+    except Exception as e:
+        st.error("A critical error occurred while generating the 'Total Withdrawn' comparison plot. The application would have hung here.")
+        st.exception(e)
 
 def display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr):
     """
@@ -1505,7 +1509,13 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
 
     # --- Loop through all results and call the helper function to display them ---
     for strategy_name, result in all_results.items():
-        display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+        try:
+            display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+        except Exception as e:
+            # This is a critical fallback. If any part of the detailed report fails to render,
+            # this will catch the error, display it, and allow the rest of the app to load.
+            st.error(f"A critical error occurred while rendering the detailed report for '{strategy_name}'.")
+            st.exception(e)
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
