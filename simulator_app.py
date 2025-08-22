@@ -1215,6 +1215,10 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
     This function is called in a loop to render the results for each strategy,
     which keeps the main part of the script clean and avoids code duplication.
     """
+    # --- DEBUGGING CHECKPOINT ---
+    # This message will tell us if the function is being entered. If it hangs after this,
+    # the problem is inside this function.
+    st.info(f"Rendering detailed report for: **{strategy_name}**...")
     with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
         # --- Special Sanity Check Analysis Box ---
         if strategy_name == "Sanity Check (NL20 Only)":
@@ -1253,14 +1257,20 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
                 st.markdown("###### Bankroll Progression")
-                fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
-                st.pyplot(fig)
-                plt.close(fig)
+                try:
+                    fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.error(f"Could not generate Bankroll Progression plot. Error: {e}")
             with row1_col2:
                 st.markdown("###### Final Bankroll Distribution")
-                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
-                st.pyplot(fig)
-                plt.close(fig)
+                try:
+                    fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.error(f"Could not generate Final Bankroll Distribution plot. Error: {e}")
 
             # Exit early to avoid showing the more complex, irrelevant metrics for this simple strategy.
             return
@@ -1291,14 +1301,20 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
         row1_col1, row1_col2 = st.columns(2)
         with row1_col1:
             st.markdown("###### Bankroll Progression")
-            fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
-            st.pyplot(fig)
-            plt.close(fig)
+            try:
+                fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+                st.pyplot(fig)
+                plt.close(fig)
+            except Exception as e:
+                st.error(f"Could not generate Bankroll Progression plot. Error: {e}")
         with row1_col2:
             st.markdown("###### Final Bankroll Distribution")
-            fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
-            st.pyplot(fig)
-            plt.close(fig)
+            try:
+                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+                st.pyplot(fig)
+                plt.close(fig)
+            except Exception as e:
+                st.error(f"Could not generate Final Bankroll Distribution plot. Error: {e}")
 
         row2_col1, row2_col2 = st.columns(2)
         with row2_col1:
@@ -1309,20 +1325,26 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
             ))
             if 'avg_assigned_wr_per_sim' in result:
-                fig = engine.plot_assigned_wr_distribution(
-                    result['avg_assigned_wr_per_sim'],
-                    result['median_run_assigned_wr'],
-                    weighted_input_wr,
-                    strategy_name
-                )
-                st.pyplot(fig)
-                plt.close(fig)
+                try:
+                    fig = engine.plot_assigned_wr_distribution(
+                        result['avg_assigned_wr_per_sim'],
+                        result['median_run_assigned_wr'],
+                        weighted_input_wr,
+                        strategy_name
+                    )
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.error(f"Could not generate Assigned Luck plot. Error: {e}")
         with row2_col2:
             st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
             if 'max_downswings' in result:
-                fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
-                st.pyplot(fig)
-                plt.close(fig)
+                try:
+                    fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.error(f"Could not generate Max Downswing plot. Error: {e}")
 
         # --- Downswing Extent & Stretch Analysis ---
         def display_downswing_table(title, data, column_names):
@@ -1483,11 +1505,7 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
 
     # --- Loop through all results and call the helper function to display them ---
     for strategy_name, result in all_results.items():
-        # --- DEBUGGING CHECKPOINT ---
-        st.info(f"Attempting to render detailed report for: **{strategy_name}**...")
         display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
-        st.success(f"Successfully rendered detailed report for: **{strategy_name}**.")
-        # --- END DEBUGGING ---
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
