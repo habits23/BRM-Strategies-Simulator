@@ -1957,21 +1957,16 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
 
     if not cell_text: return
 
-    col_widths = [len(h) for h in header]
-    for row in cell_text:
-        for i, cell in enumerate(row):
-            col_widths[i] = max(col_widths[i], len(str(cell)))
-
-    total_width = sum(col_widths)
-    col_widths_ratio = [w / total_width for w in col_widths]
-
-    fig, ax = plt.subplots(figsize=(16, 2 + len(cell_text) * 0.5))
+    # Use a fixed, wide figure size for stability. Dynamic sizing can be fragile.
+    fig, ax = plt.subplots(figsize=(14, 2 + len(cell_text) * 0.4))
     ax.axis('tight')
     ax.axis('off')
-    the_table = ax.table(cellText=cell_text, colLabels=header, loc='center', cellLoc='center', colWidths=col_widths_ratio)
+    # Remove the complex and fragile manual column width calculation.
+    # Use table.scale() instead, which is more robust.
+    the_table = ax.table(cellText=cell_text, colLabels=header, loc='center', cellLoc='center')
     the_table.auto_set_font_size(False)
     the_table.set_fontsize(9)
-    the_table.scale(1, 1.5)
+    the_table.scale(1, 1.8) # Adjust row height for readability
     ax.set_title('Strategy Comparison Summary', fontweight="bold", pad=20)
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
