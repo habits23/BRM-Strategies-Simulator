@@ -1483,7 +1483,11 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
 
     # --- Loop through all results and call the helper function to display them ---
     for strategy_name, result in all_results.items():
+        # --- DEBUGGING CHECKPOINT ---
+        st.info(f"Attempting to render detailed report for: **{strategy_name}**...")
         display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+        st.success(f"Successfully rendered detailed report for: **{strategy_name}**.")
+        # --- END DEBUGGING ---
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
