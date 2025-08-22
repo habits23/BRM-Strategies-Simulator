@@ -1398,11 +1398,8 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     if not strategy_names or len(strategy_names) < 2:
         return plt.figure() # Don't plot if there's nothing to compare
 
-    # Make height dynamic to match the "Time Spent Underwater" plot it's paired with.
-    # This ensures visual uniformity in the UI layout.
-    num_strategies = len(strategy_names)
-    fig_height = max(4, 2.0 + num_strategies * 0.7)
-    fig, ax = plt.subplots(figsize=(8, fig_height))
+    # Use a fixed figure size for the scatter plot for stability.
+    fig, ax = plt.subplots(figsize=(8, 6))
 
     if color_map is None:
         # Fallback for generating colors internally if no map is provided
@@ -1413,9 +1410,11 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
 
     ax.scatter(risk_values, reward_values, s=150, c=plot_colors, alpha=0.7, edgecolors='w', zorder=10)
 
-    # Annotate each point with the strategy name
+    # Annotate each point with the strategy name using a robust offset
+    y_min, y_max = ax.get_ylim()
+    y_offset = (y_max - y_min) * 0.02  # A small 2% offset based on the y-axis range
     for i, name in enumerate(strategy_names):
-        ax.text(risk_values[i], reward_values[i] + np.std(reward_values)*0.03, name, fontsize=9, ha='center')
+        ax.text(risk_values[i], reward_values[i] + y_offset, name, fontsize=9, ha='center')
 
     # Add interpretation quadrants based on the average
     avg_risk = np.mean(risk_values)
