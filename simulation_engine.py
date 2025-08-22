@@ -486,22 +486,24 @@ def _process_simulation_block(
     # Reset the stretch counter for sims that made a new peak
     current_underwater_stretch_hands[made_new_peak_mask] = 0
 
-    # --- Maximum Drawdown Calculation ---
-    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
-    current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
-    np.maximum(max_drawdowns_so_far, current_drawdowns, out=max_drawdowns_so_far)
-
     # --- Downswing Analysis (Depth) ---
+    # This must be done BEFORE updating the peak bankroll for the current block.
     depth_thresholds_bb = np.array(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []))
     if len(depth_thresholds_bb) > 0:
         # Update the BB size at the time of the peak for any sims that made a new high
         bb_size_at_peak[made_new_peak_mask] = bb_sizes_eur[made_new_peak_mask]
-        # Calculate current downswing in EUR
+        # Calculate current downswing in EUR from the PREVIOUS peak
         current_downswings_eur = peak_bankrolls_so_far - new_bankrolls
         valid_peak_mask = bb_size_at_peak > 0
         downswings_bb = np.divide(current_downswings_eur, bb_size_at_peak, out=np.zeros_like(current_downswings_eur), where=valid_peak_mask)
         depth_check = downswings_bb[:, np.newaxis] >= depth_thresholds_bb
         downswing_depth_exceeded |= depth_check
+
+    # --- Maximum Drawdown Calculation ---
+    # Now we can update the peak bankroll with the results from the current block.
+    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
+    current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    np.maximum(max_drawdowns_so_far, current_drawdowns, out=max_drawdowns_so_far)
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
