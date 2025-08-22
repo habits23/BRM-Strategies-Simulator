@@ -327,6 +327,47 @@ def plot_total_withdrawn_comparison(all_results, config, color_map=None, pdf=Non
         plt.close(fig)
     return fig
 
+def plot_downswing_comparison(all_results, config, color_map=None, pdf=None):
+    """
+    Creates a bar chart comparing the 95th percentile maximum downswing for each strategy.
+    """
+    strategy_names = list(all_results.keys())
+    # Use the P95 max downswing as the key risk metric for comparison
+    downswing_values = [res.get('p95_max_downswing', 0) for res in all_results.values()]
+
+    if color_map is None:
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
+    plot_colors = [color_map.get(name) for name in strategy_names]
+
+    if not strategy_names:
+        return plt.figure()
+
+    # Dynamic height to ensure bars are not too squished with many strategies
+    num_strategies = len(strategy_names)
+    fig_height = max(4, 2.0 + num_strategies * 0.7)
+    fig, ax = plt.subplots(figsize=(8, fig_height))
+    bars = ax.barh(strategy_names, downswing_values, color=plot_colors)
+
+    ax.set_xlabel('95th Percentile Maximum Downswing (€)', fontsize=12)
+    ax.set_title('Volatility Comparison: Maximum Downswing Risk', fontsize=16)
+    ax.invert_yaxis()
+    ax.grid(axis='x', linestyle='--', alpha=0.7)
+
+    # Add labels to the bars
+    for bar in bars:
+        width = bar.get_width()
+        ax.text(width * 1.01, bar.get_y() + bar.get_height()/2, f'€{width:,.0f}', va='center', ha='left')
+
+    if downswing_values and max(downswing_values) > 0:
+        ax.set_xlim(right=max(downswing_values) * 1.2)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_wr, average_input_wr, strategy_name, pdf=None):
     """
     Plots the distribution of the weighted average 'Assigned WR' for all simulations.
@@ -542,7 +583,7 @@ def plot_summary_table(all_results, strategy_page_map, config, pdf=None):
     and saves it to the PDF.
     """
     header = [
-        'Strategy', 'Page', 'Median Final BR', 'Median Growth', 'Median Hands',
+        'Strategy', 'Page', 'Median Final BR', 'Mode Final BR', 'Median Growth', 'Median Hands',
         'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile BR', 'P95 Downswing'
     ]
     cell_text = []
@@ -552,6 +593,7 @@ def plot_summary_table(all_results, strategy_page_map, config, pdf=None):
             strategy_name,
             str(strategy_page_map.get(strategy_name, '-')),
             f"€{res.get('median_final_bankroll', 0):,.0f}",
+            f"€{res.get('final_bankroll_mode', 0):,.0f}",
             f"{res.get('growth_rate', 0):.2%}",
             f"{res.get('median_hands_played', 0):,.0f}",
             f"€{res.get('median_rakeback_eur', 0):,.2f}",
