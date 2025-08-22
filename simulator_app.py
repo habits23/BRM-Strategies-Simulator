@@ -1340,23 +1340,6 @@ if st.session_state.get("simulation_output"):
     if not all_results:
         st.error("The simulation ran, but no results were generated. Please check the settings and the diagnostic log above, then try again.")
     else:
-        # --- PDF Download Button ---
-        with st.spinner("Generating PDF report..."):
-            # The config used for the simulation is already stored in `config`
-            # We just need to call the engine function.
-            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            pdf_bytes = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
-
-            st.download_button(
-                label="**Download Full PDF Report**",
-                data=pdf_bytes,
-                file_name=f"poker_sim_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                help="Click to download a detailed, multi-page PDF report of the simulation results."
-            )
-        st.markdown("---")
-
         # Calculate a representative input win rate for the "Assigned WR Distribution" plot's label.
         weighted_input_wr = 1.5 # Default fallback
         stakes_data = config.get('STAKES_DATA', [])
@@ -1467,3 +1450,21 @@ if st.session_state.get("simulation_output"):
             except Exception as e:
                 st.error(f"A critical error occurred while rendering the detailed report for '{strategy_name}'.")
                 st.exception(e)
+
+        # --- PDF Download Button at the bottom of the report ---
+        st.markdown("---")
+        st.subheader("Download Full Report")
+        with st.spinner("Generating PDF report..."):
+            # The config used for the simulation is already stored in `config`
+            # We just need to call the engine function.
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            pdf_bytes = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
+
+            st.download_button(
+                label="**Download Full PDF Report**",
+                data=pdf_bytes,
+                file_name=f"poker_sim_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                help="Click to download a detailed, multi-page PDF report of the simulation results."
+            )
