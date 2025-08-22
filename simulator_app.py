@@ -1092,12 +1092,12 @@ if st.session_state.get("simulation_output"):
     comp_col1, comp_col2 = st.columns(2)
     with comp_col1:
         st.markdown("###### Median Bankroll Progression")
-        fig = engine.reporting.plot_median_progression_comparison(all_results, config, color_map=color_map)
+        fig = engine.plot_median_progression_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
     with comp_col2:
         st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
-        fig = engine.reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
+        fig = engine.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
 
@@ -1105,17 +1105,17 @@ if st.session_state.get("simulation_output"):
     comp_col3, comp_col4 = st.columns(2)
     with comp_col3:
         st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
-        fig = engine.reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map)
+        fig = engine.plot_time_underwater_comparison(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
     with comp_col4:
         st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
-        fig = engine.reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map)
+        fig = engine.plot_risk_reward_scatter(all_results, config, color_map=color_map)
         st.pyplot(fig)
         plt.close(fig)
     
     # --- Display new withdrawal plot if applicable, inside a column to maintain size ---
-    fig_withdrawn = engine.reporting.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
+    fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
     if fig_withdrawn:
         comp_col5, _ = st.columns(2)
         with comp_col5:
@@ -1181,12 +1181,12 @@ if st.session_state.get("simulation_output"):
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
                 st.markdown("###### Bankroll Progression")
-                fig = engine.reporting.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+                fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
                 st.pyplot(fig)
                 plt.close(fig)
             with row1_col2:
                 st.markdown("###### Final Bankroll Distribution")
-                fig = engine.reporting.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
                 st.pyplot(fig)
                 plt.close(fig)
 
@@ -1199,7 +1199,7 @@ if st.session_state.get("simulation_output"):
                     "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
                 ))
                 if 'avg_assigned_wr_per_sim' in result:
-                    fig = engine.reporting.plot_assigned_wr_distribution(
+                    fig = engine.plot_assigned_wr_distribution(
                         result['avg_assigned_wr_per_sim'],
                         result['median_run_assigned_wr'],
                         weighted_input_wr,
@@ -1210,7 +1210,7 @@ if st.session_state.get("simulation_output"):
             with row2_col2:
                 st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
                 if 'max_downswings' in result:
-                    fig = engine.reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
+                    fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
                     st.pyplot(fig)
                     plt.close(fig)
 
