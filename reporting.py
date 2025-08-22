@@ -150,7 +150,7 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     median_br = result.get('median_final_bankroll')
     mode_br = result.get('final_bankroll_mode')
     p5_br = result.get('p5')
-    p95_br = np.percentile(final_bankrolls, 95) if len(final_bankrolls) > 0 else None
+    p95_br = result.get('p95') # Use pre-calculated percentile for consistency
     target_br = config.get('TARGET_BANKROLL')
 
     if median_br is not None:
@@ -416,6 +416,120 @@ def plot_risk_reward_scatter(all_results, config, color_map=None, pdf=None):
     ax.set_ylabel(reward_label, fontsize=12)
     ax.set_title('Risk vs. Reward Analysis', fontsize=16)
     ax.grid(True, linestyle=':', alpha=0.5)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
+def plot_hands_distribution_table(result, strategy_name, pdf=None):
+    """
+    Creates a table summarizing the hands distribution and win rates per stake
+    and saves it to the PDF.
+    """
+    hands_dist = result.get('hands_distribution_pct')
+    avg_wr = result.get('avg_assigned_wr_per_stake')
+    trust = result.get('trust_per_stake')
+
+    if not hands_dist or not avg_wr or not trust:
+        return None # Not enough data to plot
+
+    # Sort stakes by their 'bb_size' from the config for a logical order
+    stakes_data = result.get('stakes_data_for_report', [])
+    stake_order = {s['name']: s['bb_size'] for s in stakes_data}
+    stake_names = sorted(hands_dist.keys(), key=lambda s: stake_order.get(s, float('inf')))
+
+    if not stake_names:
+        return None
+
+    # Prepare data for the table
+    cell_text = []
+    for stake in stake_names:
+        row = [
+            f"{hands_dist.get(stake, 0):.1f}%",
+            f"{avg_wr.get(stake, 0):.2f}",
+            f"{trust.get(stake, 0):.1f}%"
+        ]
+        cell_text.append(row)
+
+    columns = ['% of Hands', 'Avg. Assigned WR', 'Input Trust']
+    rows = stake_names
+
+    fig, ax = plt.subplots(figsize=(8, max(1.5, len(rows) * 0.5))) # Dynamic height
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=cell_text, rowLabels=rows, colLabels=columns, cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 1.5) # Adjust column width and row height
+
+    ax.set_title(f'Hands Distribution & Trust for {strategy_name}', pad=20, fontsize=14)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
+def plot_percentile_wr_analysis_table(result, strategy_name, pdf=None):
+    """
+    Creates a table showing the win rate breakdown for key percentile runs
+    and saves it to the PDF.
+    """
+    percentile_wrs = result.get('percentile_win_rates')
+    if not percentile_wrs:
+        return None
+
+    # Define the order of rows (percentiles)
+    row_order = [p for p in ['p5', 'p25', 'p50_median', 'p75', 'p95'] if p in percentile_wrs]
+    if not row_order:
+        return None
+
+    # Prepare data for the table
+    cell_text = []
+    for percentile_key in row_order:
+        data = percentile_wrs[percentile_key]
+        row = [
+            f"{data.get('assigned_wr', 0):.2f}",
+            f"{data.get('play_wr', 0):.2f}",
+            f"{data.get('rakeback_wr', 0):.2f}",
+            f"{data.get('variance_impact', 0):.2f}"
+        ]
+        cell_text.append(row)
+
+    columns = ['Assigned WR', 'Play WR', 'Rakeback WR', 'Variance Impact']
+    row_labels = {
+        'p5': '5th Percentile', 'p25': '25th Percentile', 'p50_median': 'Median Run',
+        'p75': '75th Percentile', 'p95': '95th Percentile'
+    }
+    rows = [row_labels.get(key, key) for key in row_order]
+
+    fig, ax = plt.subplots(figsize=(8, max(1.5, len(rows) * 0.5))) # Dynamic height
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=cell_text, rowLabels=rows, colLabels=columns, cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 1.5)
+
+    ax.set_title(f'Percentile Win Rate Analysis (bb/100) for {strategy_name}', pad=20, fontsize=14)
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
+def add_text_page(text, pdf, title=""):
+    """
+    Creates a matplotlib figure with wrapped text and adds it to the PDF.
+    Useful for adding analysis summaries or other text blocks.
+    """
+    fig = plt.figure(figsize=(8.27, 11.69)) # A4 size in inches
+    fig.clf()
+    if title:
+        fig.suptitle(title, fontsize=16, y=0.95)
+
+    # Place text with wrapping
+    fig.text(0.05, 0.9, text, va='top', ha='left', wrap=True, fontsize=10)
 
     if pdf:
         pdf.savefig(fig)
