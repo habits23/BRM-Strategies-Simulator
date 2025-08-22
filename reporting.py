@@ -715,6 +715,45 @@ def plot_sanity_check_analysis(result, config, pdf=None):
     # Use the generic text page function to render this content
     return add_text_page(text_content, pdf, title="Sanity Check Analysis")
 
+def plot_downswing_analysis_tables(result, strategy_name, pdf=None):
+    """
+    Creates two table images for downswing depth and duration probabilities,
+    and adds them to the PDF.
+    """
+    downswing_analysis = result.get('downswing_analysis', {})
+    depth_data = downswing_analysis.get('depth_probabilities', {})
+    duration_data = downswing_analysis.get('duration_probabilities', {})
+
+    # Don't create plots if there's no data
+    if not depth_data and not duration_data:
+        return
+
+    # Create a figure that can hold two tables side-by-side
+    fig, axes = plt.subplots(1, 2, figsize=(11.69, 5)) # A4 landscape half-page
+    fig.suptitle(f'Downswing Probabilities for {strategy_name}', fontsize=16, y=0.98)
+
+    for ax, data, title, cols in [
+        (axes[0], depth_data, 'Depth (BB)', ['Depth', 'Probability']),
+        (axes[1], duration_data, 'Duration (Hands)', ['Duration', 'Probability'])
+    ]:
+        ax.axis('tight')
+        ax.axis('off')
+        ax.set_title(title, pad=20, fontsize=12)
+
+        if data:
+            cell_data = [[f"{k:,}+", f"{v:.2f}%"] for k, v in sorted(data.items())]
+            table = ax.table(cellText=cell_data, colLabels=cols, cellLoc='center', loc='center')
+            table.auto_set_font_size(False)
+            table.set_fontsize(10)
+            table.scale(1.2, 1.5)
+        else:
+            ax.text(0.5, 0.5, 'No data available', ha='center', va='center')
+
+    if pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+    return fig
+
 def get_initial_table_mix_string(strategy, config):
     """Helper function to describe the starting table mix as a string."""
     rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])

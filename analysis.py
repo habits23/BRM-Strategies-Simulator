@@ -67,7 +67,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, downswing_depth_exceeded, downswing_duration_exceeded, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
@@ -193,6 +193,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     total_return_per_sim = (final_bankrolls - config['STARTING_BANKROLL_EUR']) + final_withdrawn
     median_total_return = np.median(total_return_per_sim)
 
+
     return {
         'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
         'final_bankroll_mode': final_bankroll_mode, 'growth_rate': median_growth_rate,
@@ -225,4 +226,18 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'p95_total_withdrawn': p95_total_withdrawn,
         'median_total_return': median_total_return,
         'total_withdrawn_histories': total_withdrawn_histories,
+        'downswing_analysis': (lambda: {
+            'depth_probabilities': {
+                int(t): p for t, p in zip(
+                    config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []),
+                    np.mean(downswing_depth_exceeded, axis=0) * 100
+                )
+            } if downswing_depth_exceeded is not None and len(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', [])) > 0 else {},
+            'duration_probabilities': {
+                int(t): p for t, p in zip(
+                    config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []),
+                    np.mean(downswing_duration_exceeded, axis=0) * 100
+                )
+            } if downswing_duration_exceeded is not None and len(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', [])) > 0 else {}
+        })(),
     }

@@ -10,6 +10,13 @@ import matplotlib.pyplot as plt
 # Import the actual simulation engine we just built
 import simulation_engine as engine
 
+# --- Downswing Analysis Configuration ---
+# These are the thresholds used to generate the "Downswing Extents" and "Downswing Stretches" analysis,
+# inspired by Prime Dope's variance calculator.
+DOWNSWING_DEPTH_THRESHOLDS_BB = [300, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500]
+DOWNSWING_DURATION_THRESHOLDS_HANDS = [5000, 7500, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000, 200000, 300000]
+
+
 # --- Default Data for First Run ---
 DEFAULT_STAKES_DATA = pd.DataFrame([
     # Using more realistic win rates for today's online games, based on user feedback.
@@ -909,6 +916,10 @@ if st.session_state.run_simulation:
             "min_bankroll": st.session_state.min_br_for_withdrawal
         } if st.session_state.enable_withdrawals else {"enabled": False},
         "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
+        # --- Pass Downswing Analysis Config to Engine ---
+        # These are defined at the top of the file.
+        "DOWNSWING_DEPTH_THRESHOLDS_BB": DOWNSWING_DEPTH_THRESHOLDS_BB,
+        "DOWNSWING_DURATION_THRESHOLDS_HANDS": DOWNSWING_DURATION_THRESHOLDS_HANDS,
     }
 
     # --- 2. Parse and validate the inputs for stakes and strategies ---
@@ -1202,6 +1213,34 @@ if st.session_state.get("simulation_output"):
                     fig = engine.reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
                     st.pyplot(fig)
                     plt.close(fig)
+
+            # --- Downswing Extent & Stretch Analysis ---
+            st.markdown("---")
+            st.subheader("Downswing Probabilities")
+            st.markdown("These tables show the probability that a simulation experienced at least one downswing of a given depth or duration.")
+
+            col1, col2 = st.columns(2)
+            downswing_analysis = result.get('downswing_analysis', {})
+
+            with col1:
+                st.markdown("##### Downswing Depth (in BBs)")
+                depth_data = downswing_analysis.get('depth_probabilities', {})
+                if depth_data:
+                    df_depth = pd.DataFrame(list(depth_data.items()), columns=['Depth (BB)', 'Probability'])
+                    df_depth['Probability'] = df_depth['Probability'].map('{:,.2f}%'.format)
+                    st.dataframe(df_depth.style.hide(axis="index"), use_container_width=True)
+                else:
+                    st.info("No downswing depth data available.")
+
+            with col2:
+                st.markdown("##### Downswing Duration (in Hands)")
+                duration_data = downswing_analysis.get('duration_probabilities', {})
+                if duration_data:
+                    df_duration = pd.DataFrame(list(duration_data.items()), columns=['Duration (Hands)', 'Probability'])
+                    df_duration['Probability'] = df_duration['Probability'].map('{:,.2f}%'.format)
+                    st.dataframe(df_duration.style.hide(axis="index"), use_container_width=True)
+                else:
+                    st.info("No downswing duration data available.")
 
             st.subheader("Key Strategy Insights")
             st.markdown("_For a full breakdown, please download the PDF report._")

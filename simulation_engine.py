@@ -366,30 +366,47 @@ def _initialize_simulation_state(num_sims, num_checks, config):
     # Underwater state
     underwater_hands_count = np.zeros(num_sims, dtype=int)
     integrated_drawdown = np.zeros(num_sims, dtype=float)
+    
+    # --- Downswing Extent/Stretch Analysis Initialization ---
+    depth_thresholds_bb = np.array(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []))
+    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
+    # We will store a boolean flag for each sim and each threshold
+    downswing_depth_exceeded = np.zeros((num_sims, len(depth_thresholds_bb)), dtype=bool)
+    downswing_duration_exceeded = np.zeros((num_sims, len(duration_thresholds_hands)), dtype=bool)
+    # Track the BB size at the time of the peak for accurate downswing depth calculation
+    bb_size_at_peak = np.zeros(num_sims, dtype=float)
+    current_underwater_stretch_hands = np.zeros(num_sims, dtype=int)
 
     return (
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
-        is_stopped_out, stop_loss_triggers,
+        is_stopped_out, stop_loss_triggers, 
+        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands, # New
         underwater_hands_count, integrated_drawdown
     )
 
 def _process_simulation_block(
-    i, num_sims, rng, config, all_win_rates, stake_bb_size_map,
-    proportions_per_stake,
+    # --- Loop variables ---
+    i, rng,
+    # --- Static config & data ---
+    config, all_win_rates, stake_bb_size_map,
+    # --- Per-block calculated data ---
+    proportions_per_stake, bb_sizes_eur,
     # Mutable state variables
     bankroll_history, hands_per_stake_histories, rakeback_histories,
     total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
     peak_bankrolls_so_far, max_drawdowns_so_far,
     is_stopped_out, stop_loss_triggers,
-    underwater_hands_count, integrated_drawdown
+    underwater_hands_count, integrated_drawdown,
+    downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands
 ):
     """
     Processes a single block/step of the simulation for all runs.
     This function contains the logic common to both standard and sticky strategies.
     It mutates the state arrays in place and returns a boolean indicating if the loop should continue.
     """
+    num_sims = bankroll_history.shape[0]
     current_bankrolls = bankroll_history[:, i]
     total_proportions = sum(proportions_per_stake.values())
     # Determine who is active this block (not ruined, has a table mix, and is not stopped out)
@@ -407,7 +424,6 @@ def _process_simulation_block(
     block_profits_eur, hands_per_stake_this_block, block_rakeback_eur = calculate_hand_block_outcome(
         current_bankrolls, proportions_per_stake, all_win_rates, rng, active_mask, config
     )
-
     # --- Stop-Loss Logic ---
     if config.get("STOP_LOSS_BB", 0) > 0:
         highest_bb_size = np.zeros(num_sims)
@@ -445,6 +461,11 @@ def _process_simulation_block(
     new_bankrolls = temp_bankrolls
     bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
+    # --- Downswing Analysis (Duration Part 1: Update current stretch) ---
+    # Identify which simulations are currently underwater and add hands to their current stretch
+    is_underwater_mask = new_bankrolls < peak_bankrolls_so_far
+    current_underwater_stretch_hands[is_underwater_mask] += config['HANDS_PER_CHECK']
+
     # --- Underwater Time Calculation ---
     underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
     if np.any(underwater_mask):
@@ -452,10 +473,35 @@ def _process_simulation_block(
         drawdown_amount = peak_bankrolls_so_far - bankroll_history[:, i+1]
         integrated_drawdown[underwater_mask] += drawdown_amount[underwater_mask] * config['HANDS_PER_CHECK']
 
+    # Identify simulations that made a new peak in this block
+    made_new_peak_mask = new_bankrolls > peak_bankrolls_so_far
+
+    # --- Downswing Analysis (Duration Part 2: Check thresholds for ended stretches) ---
+    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
+    if np.any(made_new_peak_mask) and len(duration_thresholds_hands) > 0:
+        ended_stretch_durations = current_underwater_stretch_hands[made_new_peak_mask]
+        duration_check = ended_stretch_durations[:, np.newaxis] >= duration_thresholds_hands
+        downswing_duration_exceeded[made_new_peak_mask] |= duration_check
+
+    # Reset the stretch counter for sims that made a new peak
+    current_underwater_stretch_hands[made_new_peak_mask] = 0
+
     # --- Maximum Drawdown Calculation ---
     np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
     current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
     np.maximum(max_drawdowns_so_far, current_drawdowns, out=max_drawdowns_so_far)
+
+    # --- Downswing Analysis (Depth) ---
+    depth_thresholds_bb = np.array(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []))
+    if len(depth_thresholds_bb) > 0:
+        # Update the BB size at the time of the peak for any sims that made a new high
+        bb_size_at_peak[made_new_peak_mask] = bb_sizes_eur[made_new_peak_mask]
+        # Calculate current downswing in EUR
+        current_downswings_eur = peak_bankrolls_so_far - new_bankrolls
+        valid_peak_mask = bb_size_at_peak > 0
+        downswings_bb = np.divide(current_downswings_eur, bb_size_at_peak, out=np.zeros_like(current_downswings_eur), where=valid_peak_mask)
+        depth_check = downswings_bb[:, np.newaxis] >= depth_thresholds_bb
+        downswing_depth_exceeded |= depth_check
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
@@ -476,7 +522,8 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
-        is_stopped_out, stop_loss_triggers,
+        is_stopped_out, stop_loss_triggers, 
+        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands, # New
         underwater_hands_count, integrated_drawdown
     ) = _initialize_simulation_state(num_sims, num_checks, config)
 
@@ -536,19 +583,41 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         # Update peak levels for the next session
         peak_stake_levels = np.maximum(previous_peak_levels, current_levels)
 
+        # Calculate bb_sizes_eur for the current block
+        bb_sizes_eur = np.zeros(num_sims, dtype=float)
+        for stake_name, prop_array in proportions_per_stake.items():
+            bb_sizes_eur += prop_array * stake_bb_size_map[stake_name]
+
         should_continue = _process_simulation_block(
-            i, num_sims, rng, config, all_win_rates, stake_bb_size_map,
-            proportions_per_stake,
+            i, rng,
+            config, all_win_rates, stake_bb_size_map,
+            proportions_per_stake, bb_sizes_eur,
             bankroll_history, hands_per_stake_histories, rakeback_histories,
             total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
             peak_bankrolls_so_far, max_drawdowns_so_far,
             is_stopped_out, stop_loss_triggers,
-            underwater_hands_count, integrated_drawdown
+            underwater_hands_count, integrated_drawdown,
+            downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands
         )
         if not should_continue:
             break
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories
+    # --- Final Downswing Analysis Check ---
+    # For sims that are still underwater at the very end, check their final stretch duration
+    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
+    if len(duration_thresholds_hands) > 0:
+        final_underwater_mask = bankroll_history[:, -1] < peak_bankrolls_so_far
+        if np.any(final_underwater_mask):
+            final_stretch_durations = current_underwater_stretch_hands[final_underwater_mask]
+            duration_check = final_stretch_durations[:, np.newaxis] >= duration_thresholds_hands
+            downswing_duration_exceeded[final_underwater_mask] |= duration_check
+
+    return (
+        bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
+        demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count,
+        integrated_drawdown, total_withdrawn_histories,
+        downswing_depth_exceeded, downswing_duration_exceeded # New return values
+    )
 
 def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -561,7 +630,8 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     (
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
-        peak_bankrolls_so_far, max_drawdowns_so_far,
+        peak_bankrolls_so_far, max_drawdowns_so_far, 
+        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands, # New
         is_stopped_out, stop_loss_triggers,
         underwater_hands_count, integrated_drawdown
     ) = _initialize_simulation_state(num_sims, num_checks, config)
@@ -621,19 +691,40 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             for stake_name, prop in resolved_proportions.items():
                 proportions_per_stake[stake_name][at_this_stake_mask] = prop
 
+        # Calculate bb_sizes_eur for the current block
+        bb_sizes_eur = np.zeros(num_sims, dtype=float)
+        for stake_name, prop_array in proportions_per_stake.items():
+            bb_sizes_eur += prop_array * stake_bb_size_map[stake_name]
+
         should_continue = _process_simulation_block(
-            i, num_sims, rng, config, all_win_rates, stake_bb_size_map,
-            proportions_per_stake,
+            i, rng,
+            config, all_win_rates, stake_bb_size_map,
+            proportions_per_stake, bb_sizes_eur,
             bankroll_history, hands_per_stake_histories, rakeback_histories,
             total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
             peak_bankrolls_so_far, max_drawdowns_so_far,
             is_stopped_out, stop_loss_triggers,
-            underwater_hands_count, integrated_drawdown
+            underwater_hands_count, integrated_drawdown,
+            downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands
         )
         if not should_continue:
             break
 
-    return bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories
+    # --- Final Downswing Analysis Check ---
+    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
+    if len(duration_thresholds_hands) > 0:
+        final_underwater_mask = bankroll_history[:, -1] < peak_bankrolls_so_far
+        if np.any(final_underwater_mask):
+            final_stretch_durations = current_underwater_stretch_hands[final_underwater_mask]
+            duration_check = final_stretch_durations[:, np.newaxis] >= duration_thresholds_hands
+            downswing_duration_exceeded[final_underwater_mask] |= duration_check
+
+    return (
+        bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
+        demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count,
+        integrated_drawdown, total_withdrawn_histories,
+        downswing_depth_exceeded, downswing_duration_exceeded # New return values
+    )
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
 # =================================================================================
@@ -889,26 +980,35 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
 
-    # Page counting: Title(1) + Summary(1) + Analysis(1) + CompPlots(5) = 8 pages before details
-    # The number of comparison plots increases by 1 if withdrawals are enabled.
-    num_comparison_plots = 4
+    # --- Refactored Page Counting Logic ---
+    # Define the plots to be generated to avoid "magic numbers" for page counting.
+    comparison_plots = [
+        'Median Progression', 'Final Bankroll Distribution', 'Time Underwater', 'Risk vs Reward'
+    ]
     if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
-        num_comparison_plots += 1
+        comparison_plots.append('Total Withdrawn')
+    num_comparison_plots = len(comparison_plots)
 
+    strategy_detail_plots = [
+        'Strategy Progression', 'Final Bankroll Distribution', 'Assigned WR Distribution',
+        'Max Downswing Distribution', 'Downswing Probabilities'
+    ]
+    num_plot_pages_per_strategy = len(strategy_detail_plots)
+
+    # Calculate the starting page number for the detailed reports section.
+    # Title(1) + Summary(1) + Comparison Plots + Optional Analysis Report(1)
     page_counter_for_map = 2 + num_comparison_plots + (1 if analysis_report else 0)
     lines_per_page = 45
 
     for strategy_name, result in all_results.items():
         strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
         strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA']) # noqa
-
         # The page this strategy's report starts on
         strategy_page_map[strategy_name] = page_counter_for_map + 1
 
         report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
         num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page # Ceiling division
-        num_plot_pages = 4
-        page_counter_for_map += num_text_pages + num_plot_pages
+        page_counter_for_map += num_text_pages + num_plot_pages_per_strategy
 
     # Calculate a representative input win rate for the plot's label
     total_sample_hands = sum(s['sample_hands'] for s in config['STAKES_DATA'])
@@ -950,6 +1050,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
                 strategy_name,
                 pdf=pdf)
             reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf, color_map=color_map)
+            reporting.plot_downswing_analysis_tables(result, strategy_name, pdf=pdf)
 
     pdf_buffer.seek(0)
     return pdf_buffer
@@ -1223,14 +1324,16 @@ def run_full_analysis(config, progress_callback=None):
 
         # Determine which simulation function to use based on the class type
         if isinstance(strategy_obj, HysteresisStrategy):
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, downswing_depth_exceeded, downswing_duration_exceeded = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
         else:
-            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+            bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels, demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, downswing_depth_exceeded, downswing_duration_exceeded = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
 
         # Analyze the results and store them
         all_results[strategy_name] = analysis.analyze_strategy_results(
             strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng,
-            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, config
+            peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories,
+            downswing_depth_exceeded, downswing_duration_exceeded, # Pass new data
+            config
         )
 
     # Generate the final qualitative analysis report
