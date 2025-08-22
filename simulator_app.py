@@ -1229,7 +1229,7 @@ if st.session_state.get("simulation_output"):
             st.subheader(
                 "Downswing Probabilities",
                 help=(
-                    "These tables, inspired by the Prime Dope variance calculator, show the probability that a simulation will experience at least one downswing of a certain magnitude.\n\n"
+                    "These tables show the probability that a simulation will experience at least one downswing of a certain magnitude.\n\n"
                     "- **Downswing Depth:** The probability of experiencing a peak-to-trough loss of at least X big blinds.\n\n"
                     "- **Downswing Duration:** The probability of spending at least X consecutive hands below a previous bankroll peak (i.e., 'underwater')."
                 )
