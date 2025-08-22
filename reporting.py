@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from scipy.stats import gaussian_kde
 
 def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name, config, pdf=None):
@@ -478,8 +479,11 @@ def plot_hands_distribution_table(result, strategy_name, pdf=None):
     # Sort stakes by their 'bb_size' from the config for a logical order
     stakes_data = result.get('stakes_data_for_report', [])
     stake_order = {s['name']: s['bb_size'] for s in stakes_data}
-    stake_names = sorted(hands_dist.keys(), key=lambda s: stake_order.get(s, float('inf')))
+    stake_names_sorted = sorted(hands_dist.keys(), key=lambda s: stake_order.get(s, float('inf')))
 
+    # Filter out potential NaN/None stakes from empty config rows and ensure they were played.
+    stake_names = [s for s in stake_names_sorted if pd.notna(s) and hands_dist.get(s, 0) > 0]
+    
     if not stake_names:
         return None
 
@@ -494,7 +498,7 @@ def plot_hands_distribution_table(result, strategy_name, pdf=None):
         cell_text.append(row)
 
     columns = ['% of Hands', 'Avg. Assigned WR', 'Input Trust']
-    rows = stake_names
+    rows = [str(s) for s in stake_names] # Ensure all labels are strings
 
     fig, ax = plt.subplots(figsize=(8, max(1.5, len(rows) * 0.5))) # Dynamic height
     ax.axis('tight')
@@ -634,8 +638,11 @@ def plot_risk_of_demotion_table(result, strategy_name, pdf=None):
     # Sort stakes by their 'bb_size' from the config for a logical order
     stakes_data = result.get('stakes_data_for_report', [])
     stake_order = {s['name']: s['bb_size'] for s in stakes_data}
-    stake_names = sorted(risk_data.keys(), key=lambda s: stake_order.get(s, float('inf')))
+    stake_names_sorted = sorted(risk_data.keys(), key=lambda s: stake_order.get(s, float('inf')))
 
+    # Filter out potential NaN/None stakes that can result from empty rows in config
+    stake_names = [s for s in stake_names_sorted if pd.notna(s)]
+    
     if not stake_names:
         return None
 
@@ -649,7 +656,7 @@ def plot_risk_of_demotion_table(result, strategy_name, pdf=None):
         cell_text.append(row)
 
     columns = ['Sims Reaching Stake', 'Demotion Probability']
-    rows = stake_names
+    rows = [str(s) for s in stake_names] # Ensure all labels are strings
 
     fig, ax = plt.subplots(figsize=(8, max(1.5, len(rows) * 0.5)))
     ax.axis('tight')
@@ -713,5 +720,8 @@ def get_initial_table_mix_string(strategy, config):
     rule = strategy.get_table_mix(config['STARTING_BANKROLL_EUR'])
     if not rule:
         return "No Play"
-    mix_parts = [f"{stake}: {value}" for stake, value in sorted(rule.items())]
+    # Sort by the string representation of the key to prevent TypeErrors
+    # if a strategy returns mixed-type keys (e.g., strings and numbers).
+    sorted_items = sorted(rule.items(), key=lambda item: str(item[0]))
+    mix_parts = [f"{stake}: {value}" for stake, value in sorted_items]
     return ", ".join(mix_parts) if mix_parts else "No Play"
