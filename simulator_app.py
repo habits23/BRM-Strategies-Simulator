@@ -1322,175 +1322,148 @@ if st.session_state.run_simulation:
 # This block displays the results if they exist in the session state.
 # It runs on every script rerun as long as `simulation_output` is present.
 if st.session_state.get("simulation_output"):
-    all_results = st.session_state.simulation_output['results']
-    analysis_report = st.session_state.simulation_output['analysis_report']
-    diagnostic_log = st.session_state.simulation_output.get('diagnostic_log', []) # Safely get the log
+    # Unpack results from session state
+    output = st.session_state.simulation_output
+    all_results = output.get("results", {})
+    analysis_report = output.get("analysis_report", "")
+    diagnostic_log = output.get("diagnostic_log", [])
     config = st.session_state.get('config_for_display', {}) # Get the config used for the run
 
-    # Calculate a representative input win rate for the "Assigned WR Distribution" plot's label.
-    weighted_input_wr = 1.5 # Default fallback
-    # This logic handles cases where sample hands might be 0 to avoid division by zero.
-    if config: # Ensure config exists before trying to access it
+    st.header("Simulation Results")
+
+    # --- Display the Diagnostic Log ---
+    if diagnostic_log:
+        with st.expander("🔬 Diagnostic Log", expanded=True):
+            st.code("\n".join(diagnostic_log))
+
+    # Check if results were actually generated
+    if not all_results:
+        st.error("The simulation ran, but no results were generated. Please check the settings and the diagnostic log above, then try again.")
+    else:
+        # --- PDF Download Button ---
+        with st.spinner("Generating PDF report..."):
+            # The config used for the simulation is already stored in `config`
+            # We just need to call the engine function.
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            pdf_bytes = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
+
+            st.download_button(
+                label="**Download Full PDF Report**",
+                data=pdf_bytes,
+                file_name=f"poker_sim_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                help="Click to download a detailed, multi-page PDF report of the simulation results."
+            )
+        st.markdown("---")
+
+        # Calculate a representative input win rate for the "Assigned WR Distribution" plot's label.
+        weighted_input_wr = 1.5 # Default fallback
         stakes_data = config.get('STAKES_DATA', [])
         total_sample_hands = sum(s.get('sample_hands', 0) for s in stakes_data)
         if total_sample_hands > 0:
             weighted_input_wr = sum(s.get('ev_bb_per_100', 0) * s.get('sample_hands', 0) for s in stakes_data) / total_sample_hands
         elif stakes_data:
-            # Fallback if no sample hands are provided
             weighted_input_wr = stakes_data[0].get('ev_bb_per_100', 1.5)
 
+        # Display the AI-generated qualitative analysis if it exists.
+        if analysis_report:
+            with st.expander("Automated Strategy Analysis", expanded=False):
+                st.markdown(analysis_report)
 
-    st.header("Simulation Results")
+        st.subheader("Strategy Comparison")
 
-    # --- Display the new Diagnostic Log ---
-    # This is the first thing shown in the results, making it easy to spot issues.
-    if diagnostic_log:
-        with st.expander("🔬 Diagnostic Log", expanded=True):
-            st.code("\n".join(diagnostic_log))
+        # --- Assemble and Display the Main Summary Table ---
+        summary_data = []
+        for name, res in all_results.items():
+            summary_data.append({
+                "Strategy": name,
+                "Median Final BR": res['median_final_bankroll'],
+                "Mode Final BR": res['final_bankroll_mode'],
+                "Median Growth": res['growth_rate'],
+                "Median Hands Played": res.get('median_hands_played', 0),
+                "Median Profit (Play)": res.get('median_profit_from_play_eur', 0.0),
+                "Median Total Withdrawn": res.get('median_total_withdrawn', 0.0),
+                "Median Total Return": res.get('median_total_return', 0.0),
+                "Median Rakeback": res.get('median_rakeback_eur', 0.0),
+                "Risk of Ruin (%)": res['risk_of_ruin'],
+                "Target Prob (%)": res['target_prob'],
+                "5th %ile BR": res['p5'],
+                "P95 Max Downswing": res['p95_max_downswing']
+            })
+        summary_df = pd.DataFrame(summary_data)
 
-    # Display the AI-generated qualitative analysis if it exists.
-    if analysis_report:
-        with st.expander("Automated Strategy Analysis", expanded=False):
-            st.markdown(analysis_report)
+        st.dataframe(
+            summary_df.style.format({
+                "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
+                "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}",
+                "Median Profit (Play)": "€{:,.2f}", "Median Total Withdrawn": "€{:,.2f}",
+                "Median Total Return": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
+                "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
+                "P95 Max Downswing": "€{:,.2f}"
+            }).hide(axis="index"),
+            column_config={
+                "Strategy": st.column_config.TextColumn(help="The name of the bankroll management strategy."),
+                "Median Final BR": st.column_config.TextColumn(help="The median (50th percentile) final bankroll across all simulations. This value includes both profit from play and rakeback."),
+                "Mode Final BR": st.column_config.TextColumn(help="The most frequently occurring final bankroll outcome, calculated using Kernel Density Estimation."),
+                "Median Growth": st.column_config.TextColumn(help="The median percentage growth from the starting bankroll."),
+                "Median Hands Played": st.column_config.TextColumn(help="The median number of hands played. This can be lower than the 'Total Hands to Simulate' if a stop-loss is frequently triggered."),
+                "Median Profit (Play)": st.column_config.TextColumn(help="The median profit from gameplay only, excluding rakeback. This shows how much was won or lost at the tables."),
+                "Median Total Withdrawn": st.column_config.TextColumn(help="The median amount of money withdrawn over the entire simulation. This represents the typical income generated by the strategy."),
+                "Median Total Return": st.column_config.TextColumn(help="The median total value generated. Calculated as: (Final Bankroll - Starting Bankroll) + Total Withdrawn."),
+                "Median Rakeback": st.column_config.TextColumn(help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."),
+                "Risk of Ruin (%)": st.column_config.TextColumn(help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'."),
+                "Target Prob (%)": st.column_config.TextColumn(help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point."),
+                "5th %ile BR": st.column_config.TextColumn(help="The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value."),
+                "P95 Max Downswing": st.column_config.TextColumn(help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value."),
+            }
+        )
+        # --- Display Comparison Plots in a 2-column layout ---
+        st.subheader("Strategy Comparison Visuals")
 
-    st.subheader("Strategy Comparison")
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
-    # --- Assemble and Display the Main Summary Table ---
-    summary_data = []
-    for name, res in all_results.items():
-        summary_data.append({
-            "Strategy": name,
-            "Median Final BR": res['median_final_bankroll'],
-            "Mode Final BR": res['final_bankroll_mode'],
-            "Median Growth": res['growth_rate'],
-            "Median Hands Played": res.get('median_hands_played', 0),
-            "Median Profit (Play)": res.get('median_profit_from_play_eur', 0.0),
-            "Median Total Withdrawn": res.get('median_total_withdrawn', 0.0),
-            "Median Total Return": res.get('median_total_return', 0.0),
-            "Median Rakeback": res.get('median_rakeback_eur', 0.0),
-            "Risk of Ruin (%)": res['risk_of_ruin'],
-            "Target Prob (%)": res['target_prob'],
-            "5th %ile BR": res['p5'],
-            "P95 Max Downswing": res['p95_max_downswing']
-        })
-    summary_df = pd.DataFrame(summary_data)
+        comp_col1, comp_col2 = st.columns(2)
+        with comp_col1:
+            st.markdown("###### Median Bankroll Progression")
+            fig = engine.plot_median_progression_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+        with comp_col2:
+            st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
+            fig = engine.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
 
-    # Use st.dataframe with style formatting for a clean, professional look.
-    st.dataframe(
-        summary_df.style.format({
-            "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
-            "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}",
-            "Median Profit (Play)": "€{:,.2f}", "Median Total Withdrawn": "€{:,.2f}",
-            "Median Total Return": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
-            "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
-            "P95 Max Downswing": "€{:,.2f}"
-        }).hide(axis="index"),
-        column_config={
-            "Strategy": st.column_config.TextColumn(
-                "Strategy",
-                help="The name of the bankroll management strategy."
-            ),
-            "Median Final BR": st.column_config.TextColumn(
-                "Median Final BR",
-                help="The median (50th percentile) final bankroll across all simulations. This value includes both profit from play and rakeback."
-            ),
-            "Mode Final BR": st.column_config.TextColumn(
-                "Mode Final BR",
-                help="The most frequently occurring final bankroll outcome, calculated using Kernel Density Estimation."
-            ),
-            "Median Growth": st.column_config.TextColumn(
-                "Median Growth",
-                help="The median percentage growth from the starting bankroll."
-            ),
-            "Median Hands Played": st.column_config.TextColumn(
-                "Median Hands Played",
-                help="The median number of hands played. This can be lower than the 'Total Hands to Simulate' if a stop-loss is frequently triggered."
-            ),
-            "Median Profit (Play)": st.column_config.TextColumn(
-                "Median Profit (Play)",
-                help="The median profit from gameplay only, excluding rakeback. This shows how much was won or lost at the tables."
-            ),
-            "Median Total Withdrawn": st.column_config.TextColumn(
-                "Median Total Withdrawn",
-                help="The median amount of money withdrawn over the entire simulation. This represents the typical income generated by the strategy."
-            ),
-            "Median Total Return": st.column_config.TextColumn(
-                "Median Total Return",
-                help="The median total value generated. Calculated as: (Final Bankroll - Starting Bankroll) + Total Withdrawn."
-            ),
-            "Median Rakeback": st.column_config.TextColumn(
-                "Median Rakeback",
-                help="The median amount of rakeback earned in Euros. Compare this to 'Median Profit (Play)' to see how much the strategy relies on rakeback."
-            ),
-            "Risk of Ruin (%)": st.column_config.TextColumn(
-                "Risk of Ruin (%)",
-                help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'."
-            ),
-            "Target Prob (%)": st.column_config.TextColumn(
-                "Target Prob (%)",
-                help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point."
-            ),
-            "5th %ile BR": st.column_config.TextColumn(
-                "5th %ile BR",
-                help="The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value."
-            ),
-            "P95 Max Downswing": st.column_config.TextColumn(
-                "P95 Max Downswing",
-                help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value."
-            ),
-        }
-    )
-    # --- Display Comparison Plots in a 2-column layout ---
-    st.subheader("Strategy Comparison Visuals")
-
-    # Create a consistent, colorblind-friendly color map to use for all comparison plots.
-    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-    color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
-
-    comp_col1, comp_col2 = st.columns(2)
-    with comp_col1:
-        st.markdown("###### Median Bankroll Progression")
-        fig = engine.plot_median_progression_comparison(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
-    with comp_col2:
-        st.markdown("###### Final Bankroll Distribution", help="This chart shows the full range of outcomes for each strategy. A taller, narrower peak indicates more consistent results. A wider, flatter curve with a long tail to the right indicates higher risk but also higher reward potential.")
-        fig = engine.plot_final_bankroll_comparison(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
-
-    # --- Display new comparison plots in a second 2-column layout ---
-    comp_col3, comp_col4 = st.columns(2)
-    with comp_col3:
-        st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
-        fig = engine.plot_time_underwater_comparison(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
-    with comp_col4:
-        st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
-        fig = engine.plot_risk_reward_scatter(all_results, config, color_map=color_map)
-        st.pyplot(fig)
-        plt.close(fig)
-    
-    # --- Display new withdrawal plot if applicable, with robust error handling ---
-    try:
-        fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
-        if fig_withdrawn:
-            comp_col5, _ = st.columns(2)
-            with comp_col5:
-                st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
-                st.pyplot(fig_withdrawn)
-                plt.close(fig_withdrawn)
-    except Exception as e:
-        st.error("A critical error occurred while generating the 'Total Withdrawn' comparison plot. The application would have hung here.")
-        st.exception(e)
-
-    # --- Loop through all results and call the helper function to display them ---
-    for strategy_name, result in all_results.items():
+        comp_col3, comp_col4 = st.columns(2)
+        with comp_col3:
+            st.markdown("###### Psychological Cost: Time Spent Below Bankroll Peak", help="This chart shows the median percentage of hands a strategy spends 'underwater' (with a bankroll below a previous all-time high). A lower percentage indicates a smoother, less stressful journey.")
+            fig = engine.plot_time_underwater_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+        with comp_col4:
+            st.markdown("###### Risk vs. Reward Analysis", help="This scatter plot shows the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward). Strategies in the bottom-right are clearly inferior.")
+            fig = engine.plot_risk_reward_scatter(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+        
         try:
-            display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+            fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
+            if fig_withdrawn:
+                comp_col5, _ = st.columns(2)
+                with comp_col5:
+                    st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
+                    st.pyplot(fig_withdrawn)
+                    plt.close(fig_withdrawn)
         except Exception as e:
-            # This is a critical fallback. If any part of the detailed report fails to render,
-            # this will catch the error, display it, and allow the rest of the app to load.
-            st.error(f"A critical error occurred while rendering the detailed report for '{strategy_name}'.")
+            st.error("A critical error occurred while generating the 'Total Withdrawn' comparison plot. The application would have hung here.")
             st.exception(e)
+
+        # --- Loop through all results and call the helper function to display them ---
+        for strategy_name, result in all_results.items():
+            try:
+                display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+            except Exception as e:
+                st.error(f"A critical error occurred while rendering the detailed report for '{strategy_name}'.")
+                st.exception(e)
