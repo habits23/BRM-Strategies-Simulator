@@ -980,8 +980,9 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     pdf_buffer = io.BytesIO()
     strategy_page_map = {}
 
-    # --- Refactored Page Counting Logic ---
-    # Define the plots to be generated to avoid "magic numbers" for page counting.
+    # --- Define the plots to be generated to avoid "magic numbers" for page counting. ---
+    # These lists explicitly define which plots are included in the PDF report.
+    # If a plot is added or removed, only these lists need to be updated.
     comparison_plots = [
         'Median Progression', 'Final Bankroll Distribution', 'Time Underwater', 'Risk vs Reward'
     ]
@@ -989,14 +990,19 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         comparison_plots.append('Total Withdrawn')
     num_comparison_plots = len(comparison_plots)
 
+    # Plots generated for each individual strategy's detailed report section.
     strategy_detail_plots = [
         'Strategy Progression', 'Final Bankroll Distribution', 'Assigned WR Distribution',
         'Max Downswing Distribution', 'Downswing Probabilities'
     ]
     num_plot_pages_per_strategy = len(strategy_detail_plots)
 
-    # Calculate the starting page number for the detailed reports section.
-    # Title(1) + Summary(1) + Comparison Plots + Optional Analysis Report(1)
+    # --- Calculate the starting page number for the detailed reports section. ---
+    # This calculation is now dynamic based on the defined plot lists.
+    # 1 (Title Page)
+    # + 1 (Summary Table Page)
+    # + num_comparison_plots (for the comparison charts)
+    # + (1 if analysis_report else 0) (for the qualitative analysis page)
     page_counter_for_map = 2 + num_comparison_plots + (1 if analysis_report else 0)
     lines_per_page = 45
 
