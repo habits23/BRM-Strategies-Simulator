@@ -1495,7 +1495,13 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
 
     # --- Loop through all results and call the helper function to display them ---
     for strategy_name, result in all_results.items():
-        display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+        try:
+            display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
+        except Exception as e:
+            # This is a critical fallback. If any part of the detailed report fails to render,
+            # this will catch the error, display it, and allow the rest of the app to load.
+            st.error(f"A critical error occurred while rendering the detailed report for '{strategy_name}'. The application would have hung here.")
+            st.exception(e)
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
