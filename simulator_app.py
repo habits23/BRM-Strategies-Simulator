@@ -1240,6 +1240,24 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
                 col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
+            # For the sanity check, we only want to show the core validation and the two most relevant plots.
+            # The other detailed metrics (downswings, time underwater, etc.) are not relevant for this simple validation.
+            st.subheader("Visual Confirmation")
+            row1_col1, row1_col2 = st.columns(2)
+            with row1_col1:
+                st.markdown("###### Bankroll Progression")
+                fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+                st.pyplot(fig)
+                plt.close(fig)
+            with row1_col2:
+                st.markdown("###### Final Bankroll Distribution")
+                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+                st.pyplot(fig)
+                plt.close(fig)
+
+            # Exit early to avoid showing the more complex, irrelevant metrics for this simple strategy.
+            return
+
         # --- Display Key Metrics in a multi-column layout ---
         st.subheader(f"Key Metrics for '{strategy_name}'")
         num_metrics = 12 if config.get("STOP_LOSS_BB", 0) > 0 else 11
