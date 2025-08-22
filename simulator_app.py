@@ -268,6 +268,7 @@ def setup_sanity_check():
     st.session_state.prior_sample = 10_000_000 # Effectively disable Bayesian model
     st.session_state.ruin_thresh = 0 # Set ruin to 0 to avoid truncating results
     st.session_state.enable_stop_loss = False # Ensure stop-loss is off for validation
+    st.session_state.enable_withdrawals = False # Ensure withdrawals are off for validation
     st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
 
 def add_strategy():
