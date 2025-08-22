@@ -1,4 +1,20 @@
+"""
+This script creates a comprehensive Streamlit web application for simulating poker bankroll progression.
+
+It allows users to:
+- Define their own win rates, standard deviations, and other statistics for various poker stakes.
+- Create and compare multiple bankroll management (BRM) strategies, including standard threshold-based rules
+  and a "sticky" hysteresis model.
+- Configure global simulation parameters like starting bankroll, simulation length, and rakeback.
+- Run thousands of simulations to generate robust statistical data on the performance of each strategy.
+- View detailed results through interactive tables, plots, and an automated qualitative analysis.
+- Save and load their entire configuration to a JSON file for later use.
+
+The application is structured to separate the UI (this file) from the core simulation logic (simulation_engine.py).
+It heavily utilizes Streamlit's session state to provide a seamless, interactive user experience.
+"""
 import streamlit as st
+# --- Core Libraries ---
 import pandas as pd
 import datetime
 import traceback
@@ -6,11 +22,14 @@ import json
 import copy
 import numpy as np
 import matplotlib.pyplot as plt
-
-# Import the actual simulation engine we just built
+# --- Custom Simulation Engine ---
+# This imports the file containing all the core Monte Carlo simulation logic,
+# statistical analysis, and plotting functions.
 import simulation_engine as engine
 
 # --- Downswing Analysis Configuration ---
+# These constants define the thresholds for analyzing downswing severity and duration.
+# They are passed to the simulation engine to generate specific probability tables.
 # These are the thresholds used to generate the "Downswing Extents" and "Downswing Stretches" analysis,
 # inspired by Prime Dope's variance calculator.
 DOWNSWING_DEPTH_THRESHOLDS_BB = [300, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500]
@@ -18,6 +37,8 @@ DOWNSWING_DURATION_THRESHOLDS_HANDS = [5000, 7500, 10000, 15000, 20000, 30000, 5
 
 
 # --- Default Data for First Run ---
+# This section defines the default data that populates the application when a user visits for the first time.
+# It provides a sensible starting point to demonstrate the app's functionality.
 DEFAULT_STAKES_DATA = pd.DataFrame([
     # Using more realistic win rates for today's online games, based on user feedback.
     {"name": "NL20", "bb_size": 0.20, "bb_per_100": 2.0, "ev_bb_per_100": 2.0, "std_dev_per_100": 100.0, "sample_hands": 50000, "win_rate_drop": 0.0, "rake_bb_per_100": 10.0},
@@ -69,12 +90,16 @@ DEFAULT_STRATEGIES = {
     }
 }
 
+# --- Page and UI Configuration ---
 st.set_page_config(layout="wide", page_title="Poker Bankroll Simulator")
 
 st.title("Poker Bankroll Simulator")
 st.write("An interactive tool to simulate poker bankroll progression based on your data and strategies. Based on the logic from `Final BR Simulator v1_5.py`.")
 
+# The user guide is placed in an expander to avoid cluttering the main interface.
 with st.expander("Need Help? Click here for the User Guide"):
+    # The guide is written in Markdown for easy formatting. It explains every feature of the app
+    # to help users understand the inputs and interpret the results correctly.
     st.markdown("""
     ## A User's Guide to the Poker Bankroll Simulator
 
@@ -221,6 +246,10 @@ with st.expander("Need Help? Click here for the User Guide"):
     """)
 
 # --- Session State Initialization ---
+# This is a crucial block for any complex Streamlit app. It ensures that all necessary keys
+# are present in `st.session_state` when the app first loads.
+# By checking for each key individually, we can add new features and settings over time
+# without breaking the app for users who might have an older version of the session state in their browser cache.
 # Initialize each key separately to ensure new features work for users with old session states.
 if 'start_br' not in st.session_state: st.session_state.start_br = 2500
 if 'target_br' not in st.session_state: st.session_state.target_br = 3000
@@ -241,15 +270,21 @@ if 'withdrawal_value' not in st.session_state: st.session_state.withdrawal_value
 if 'min_br_for_withdrawal' not in st.session_state: st.session_state.min_br_for_withdrawal = 2000
 if 'plot_percentile_limit' not in st.session_state: st.session_state.plot_percentile_limit = 99
 
+# Initialize flags and data containers.
 if 'run_simulation' not in st.session_state:
     st.session_state.run_simulation = False
     st.session_state.simulation_output = None
 
+# Load default data into session state if it doesn't already exist.
 if 'stakes_data' not in st.session_state:
     st.session_state.stakes_data = DEFAULT_STAKES_DATA
 
 if 'strategy_configs' not in st.session_state:
     st.session_state.strategy_configs = DEFAULT_STRATEGIES.copy()
+
+# --- Callback Functions ---
+# Callbacks are functions that are executed in response to a user interaction, like clicking a button
+# or editing a widget. They are essential for creating a dynamic and responsive UI.
 
 def click_run_button():
     """Callback function to set the simulation flag when the button is clicked."""
@@ -257,7 +292,11 @@ def click_run_button():
     st.session_state.simulation_output = None # Clear old results when a new run is requested
 
 def setup_sanity_check():
-    """Callback to load a simple config for validating the simulation engine."""
+    """
+    Callback to load a simple, predictable configuration for validating the simulation engine.
+    This setup uses a single stake with a very large sample size to minimize the Bayesian "luck" model,
+    allowing the simulation results to be compared directly against standard variance calculator formulas.
+    """
     st.session_state.stakes_data = pd.DataFrame([
         {"name": "NL20", "bb_size": 0.20, "bb_per_100": 5.0, "ev_bb_per_100": 5.0, "std_dev_per_100": 100.0, "sample_hands": 10_000_000, "win_rate_drop": 0.0, "rake_bb_per_100": 0.0},
     ])
@@ -279,7 +318,11 @@ def setup_sanity_check():
     st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
 
 def add_strategy():
-    """Callback to add a new, blank strategy with a unique name."""
+    """
+    Callback to add a new, blank strategy to the `strategy_configs` dictionary.
+    It finds a unique name (e.g., "New Strategy 1", "New Strategy 2") to avoid conflicts
+    and pre-populates the strategy with a sensible default rule.
+    """
     i = st.session_state.get('strategy_counter', 0) + 1
     while True:
         new_name = f"New Strategy {i}"
@@ -288,7 +331,7 @@ def add_strategy():
             break
         i += 1
 
-    # Use the first available stake as a sensible default
+    # Use the first available stake from the user's data as a sensible default for the new rule.
     available_stakes = [
         name for name in st.session_state.stakes_data['name']
         if pd.notna(name) and str(name).strip()
@@ -305,12 +348,16 @@ def add_strategy():
     }
 
 def remove_strategy(name_to_remove):
-    """Callback to remove a strategy."""
+    """Callback to remove a strategy from the `strategy_configs` dictionary."""
     if name_to_remove in st.session_state.strategy_configs:
         del st.session_state.strategy_configs[name_to_remove]
 
 def clone_strategy(name_to_clone):
-    """Callback to clone a strategy with a unique name."""
+    """
+    Callback to clone an existing strategy.
+    It finds a unique name for the clone and performs a `copy.deepcopy()` to ensure that
+    the new strategy is a completely independent object, preventing unintended side effects.
+    """
     if name_to_clone not in st.session_state.strategy_configs:
         return  # Should not happen
 
@@ -331,12 +378,13 @@ def clone_strategy(name_to_clone):
 def sync_stakes_data():
     """
     Callback to apply edits from the data_editor to the main stakes_data DataFrame.
-    This function correctly handles the dictionary of changes provided by Streamlit's
-    on_change callback for st.data_editor.
+    This function is triggered by the "Save and Sort Stakes" button and handles the dictionary
+    of changes (`edited_rows`, `added_rows`, `deleted_rows`) provided by `st.data_editor`.
     """
     editor_state = st.session_state.stakes_data_editor
 
     # Make a copy of the original DataFrame to apply changes to
+    # This is a good practice to avoid modifying the state directly until all validation passes.
     df = st.session_state.stakes_data.copy()
 
     # Apply deletions first, in reverse order to not mess up indices
@@ -354,7 +402,7 @@ def sync_stakes_data():
         added_df = pd.DataFrame(editor_state["added_rows"])
         df = pd.concat([df, added_df], ignore_index=True)
 
-    # --- Sorting Logic ---
+    # --- Sorting Logic: Ensure stakes are always ordered by bb_size ---
     df['bb_size'] = pd.to_numeric(df['bb_size'], errors='coerce')
     df = df.sort_values(by='bb_size', ascending=True, na_position='last').reset_index(drop=True)
 
@@ -379,7 +427,11 @@ def sync_stakes_data():
     st.session_state.stakes_data = df
 
 def sync_strategy_rules(strategy_name):
-    """Callback to sync a strategy's data editor state back to the strategy config."""
+    """
+    Callback to sync a "Standard" strategy's data editor state back to the main `strategy_configs` dictionary.
+    This is more complex than `sync_stakes_data` because it needs to convert the edited DataFrame
+    back into the specific list-of-dictionaries format that the simulation engine expects.
+    """
     edits = st.session_state[f"rules_{strategy_name}"]
     original_rules = st.session_state.strategy_configs[strategy_name].get("rules", [])
 
@@ -389,7 +441,7 @@ def sync_strategy_rules(strategy_name):
     ]
     expected_columns = ['threshold'] + available_stakes
 
-    # Convert the original rules to a DataFrame to work with
+    # Convert the original rules from list-of-dicts to a DataFrame to make editing easier.
     df = pd.DataFrame(
         [{'threshold': r['threshold'], **r.get('tables', {})} for r in original_rules],
         columns=expected_columns
@@ -406,11 +458,11 @@ def sync_strategy_rules(strategy_name):
         added_df = pd.DataFrame(edits["added_rows"], columns=expected_columns)
         df = pd.concat([df, added_df], ignore_index=True)
 
-    # --- Sorting Logic ---
+    # --- Sorting Logic: Rules must be sorted by threshold, descending ---
     df['threshold'] = pd.to_numeric(df['threshold'], errors='coerce')
     df = df.sort_values(by='threshold', ascending=False, na_position='last').reset_index(drop=True)
 
-    # Convert the modified DataFrame back into the list-of-dicts format
+    # Convert the modified DataFrame back into the required list-of-dicts format for the engine.
     new_rules = []
     for _, row in df.iterrows():
         threshold_val = row.get('threshold')
@@ -418,6 +470,8 @@ def sync_strategy_rules(strategy_name):
             continue
         tables = {}
         for stake in available_stakes:
+            # Check if the stake column exists and has a non-empty value.
+            # This handles cases where columns might be missing or have NaN values.
             if stake in row and pd.notna(row[stake]) and row[stake] != "":
                 try:
                     tables[stake] = int(row[stake])
@@ -430,6 +484,7 @@ def sync_strategy_rules(strategy_name):
     st.session_state.strategy_configs[strategy_name]['rules'] = new_rules
 
 # --- Sidebar for User Inputs ---
+# The sidebar contains all the global parameters for the simulation.
 st.sidebar.header("Simulation Parameters")
 
 st.sidebar.button(
@@ -440,6 +495,7 @@ st.sidebar.button(
     help="Click to run the simulation with the current settings."
 )
 
+# Using expanders helps organize the large number of settings into logical groups.
 with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Starting Bankroll (€)", min_value=0, step=100, help="The amount of money you are starting with for the simulation.", key="start_br")
     st.number_input("Target Bankroll (€)", min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
@@ -544,10 +600,12 @@ with st.sidebar.expander("Model Validation", expanded=False):
 
 def randomize_seed():
     """Generates a new random seed."""
+    # This is a simple helper to provide a new random number for the seed.
     import random
     st.session_state.seed = random.randint(1, 1_000_000)
 
 st.sidebar.caption("Random Seed")
+# Using columns to place the "randomize" button next to the input field.
 seed_col1, seed_col2 = st.sidebar.columns([3, 1])
 with seed_col1:
     st.number_input("Random Seed", label_visibility="collapsed", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
@@ -557,7 +615,11 @@ with seed_col2:
 st.sidebar.header("Save & Load Configuration")
 
 def get_full_config_as_json():
-    """Gathers all relevant session state into a dictionary and returns it as a JSON string."""
+    """
+    Gathers all relevant session state variables into a single dictionary.
+    This dictionary is then serialized to a JSON string, which can be downloaded by the user.
+    This function is called by the `st.download_button`.
+    """
     config = {
         "parameters": {
             "start_br": st.session_state.start_br, "target_br": st.session_state.target_br,
@@ -586,7 +648,11 @@ st.sidebar.download_button(
 )
 
 def process_uploaded_config():
-    """Callback to load a configuration from an uploaded JSON file stored in session state."""
+    """
+    Callback to load a configuration from an uploaded JSON file.
+    This function is triggered when a user uploads a file to the `st.file_uploader`.
+    It parses the JSON, validates its structure, and updates the session state with the loaded values.
+    """
     uploaded_file = st.session_state.get("config_uploader")
     if uploaded_file is None:
         return
@@ -640,6 +706,7 @@ st.sidebar.file_uploader(
 )
 
 # --- Main Area for Data and Strategy Inputs ---
+# The main area of the app is organized into tabs for a clean user experience.
 st.header("Player & Strategy Configuration")
 
 tab1, tab2 = st.tabs(["Stakes Data", "Bankroll Management Strategies"])
@@ -647,6 +714,7 @@ tab1, tab2 = st.tabs(["Stakes Data", "Bankroll Management Strategies"])
 with tab1:
     st.subheader("Stakes Data")
     st.write("Enter your performance statistics for each stake you play. You can add or remove rows.")
+    # The `st.data_editor` widget provides a powerful, Excel-like interface for editing DataFrames.
     # The data_editor now uses a key and an on_change callback to prevent losing
     # uncommitted data during a rerun. This provides a much smoother editing experience.
     st.data_editor(
@@ -697,6 +765,7 @@ with tab1:
     )
     st.button(
         "Save and Sort Stakes",
+        # This button triggers the `sync_stakes_data` callback to process and save the user's changes.
         on_click=sync_stakes_data,
         help="Click to save any changes and sort the table by 'bb_size'. This is required for the Hysteresis strategy."
     )
@@ -711,9 +780,9 @@ with tab2:
     st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
     st.write("---")
 
-    # Get the list of available stake names from the stakes data tab
-    # This is crucial for creating the columns in the data editor
-    # We filter out any empty/NaN names that can occur when a user adds a new row.
+    # Get the list of available stake names from the stakes data tab.
+    # This is crucial for dynamically creating the columns in the strategy rules editor.
+    # We filter out any empty/NaN names that can occur when a user adds a new row but hasn't filled it in yet.
     available_stakes = [
         name for name in st.session_state.stakes_data['name']
         if pd.notna(name) and str(name).strip()
@@ -724,6 +793,7 @@ with tab2:
         if name not in st.session_state.strategy_configs:
             continue # Skip if it was just removed
 
+        # Each strategy gets its own expander to keep the UI clean.
         with st.expander(f"Edit Strategy: {name}", expanded=False):
             current_config = st.session_state.strategy_configs[name]
 
@@ -747,7 +817,7 @@ with tab2:
                 st.write("")  # Spacer
                 st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), use_container_width=True)
 
-            # Update state if name changed
+            # Handle strategy renaming.
             if new_name != name:
                 if not new_name.strip():
                     st.warning("Strategy name cannot be empty.")
@@ -755,12 +825,14 @@ with tab2:
                     st.warning(f"A strategy named '{new_name}' already exists. Please choose a unique name.")
                 else:
                     st.session_state.strategy_configs[new_name] = st.session_state.strategy_configs.pop(name)
+                    # A rerun is necessary to rebuild the UI with the new strategy name and keys.
                     st.rerun()
 
             st.session_state.strategy_configs[name]['type'] = strategy_type
 
-            # --- Row 2: Type-specific inputs ---
+            # --- Row 2: Display type-specific inputs ---
             if strategy_type == 'hysteresis':
+                # The Hysteresis strategy has a simpler UI with just buy-in buffer inputs.
                 st.info(
                     "**How Hysteresis (Sticky) Strategy Works:**\n\n"
                     "**Important:** This strategy requires the stakes in the 'Stakes Data' tab to be sorted by `bb_size`. Use the 'Sort Stakes' button on that tab.\n\n"
@@ -775,7 +847,7 @@ with tab2:
                 # Get the current config for buy-ins, which can be an int or a dict
                 num_buy_ins_config = current_config.get("num_buy_ins", 40)
 
-                # Determine if we are in per-stake mode based on the data type
+                # Determine if we are in per-stake mode based on the data type of the `num_buy_ins` value.
                 is_per_stake_mode = isinstance(num_buy_ins_config, dict)
 
                 use_per_stake_checkbox = st.checkbox(
@@ -787,7 +859,7 @@ with tab2:
                 if use_per_stake_checkbox:
                     # --- Per-Stake Buy-in Buffer Mode ---
                     if not is_per_stake_mode:
-                        # Transitioning from single to per-stake: initialize dict
+                        # If transitioning from single to per-stake mode, initialize the dictionary with the old value.
                         old_value = num_buy_ins_config if isinstance(num_buy_ins_config, int) else 40
                         new_dict = {stake: old_value for stake in available_stakes}
                         st.session_state.strategy_configs[name]['num_buy_ins'] = new_dict
@@ -808,7 +880,7 @@ with tab2:
                 else:
                     # --- Single Buy-in Buffer Mode ---
                     if is_per_stake_mode:
-                        # Transitioning from per-stake to single: take first value or default
+                        # If transitioning from per-stake to single mode, take the first value from the dict or a default.
                         first_stake_value = next(iter(num_buy_ins_config.values()), 40)
                         st.session_state.strategy_configs[name]['num_buy_ins'] = first_stake_value
                         num_buy_ins_config = first_stake_value # update local var
@@ -818,10 +890,10 @@ with tab2:
                         help="The number of buy-ins (100 bbs) used to calculate the bankroll thresholds for moving between stakes. See the info box above for a detailed explanation of the 'sticky' logic."
                     )
 
+                # Clean up keys from the other strategy type to avoid conflicts.
                 if 'rules' in st.session_state.strategy_configs[name]:
                     del st.session_state.strategy_configs[name]['rules']
             elif strategy_type == 'standard':
-                # Clean up keys from the other strategy type
                 if 'num_buy_ins' in st.session_state.strategy_configs[name]:
                     del st.session_state.strategy_configs[name]['num_buy_ins']
 
@@ -829,7 +901,7 @@ with tab2:
                 rules = current_config.get("rules", [])
 
                 # --- Check for orphaned stake names in rules ---
-                orphaned_stakes = set()
+                orphaned_stakes = set() # Stakes that exist in rules but not in the main stakes data.
                 for rule in rules:
                     for stake_name in rule.get("tables", {}).keys():
                         if stake_name not in available_stakes:
@@ -846,9 +918,9 @@ with tab2:
                         st.warning(f"No rule applies to the starting bankroll of €{start_br}. The simulation will not run for this strategy.")
 
                 # --- Convert rules to a DataFrame for the editor ---
-                # We must ensure all table mix values are strings for the data_editor,
-                # as it's configured with TextColumn. Pandas might otherwise infer
-                # float types for columns with only numbers, causing a type mismatch.
+                # We must ensure all table mix values are strings for the data_editor, as it's configured with
+                # TextColumn. Pandas might otherwise infer float types for columns with only numbers,
+                # which would cause a type mismatch error in Streamlit.
                 rules_list = current_config.get("rules", [])
                 df_data = []
                 for r in rules_list:
@@ -857,14 +929,14 @@ with tab2:
 
                 rules_df = pd.DataFrame(df_data, columns=['threshold'] + available_stakes)
 
-                # CRITICAL FIX: Convert any NaN (float) values in stake columns to empty
-                # strings. This prevents a type mismatch error in st.data_editor where
-                # the data type is float (due to NaN) but the column is configured as Text.
+                # CRITICAL FIX: Convert any NaN (float) values in stake columns to empty strings.
+                # This prevents a type mismatch error in st.data_editor where the data type is float
+                # (due to NaN) but the column is configured as Text.
                 stake_cols_in_df = [col for col in rules_df.columns if col in available_stakes]
                 if stake_cols_in_df:
                     rules_df[stake_cols_in_df] = rules_df[stake_cols_in_df].astype(str).replace('nan', '')
 
-                # --- Display the data editor ---
+                # --- Display the data editor for the standard strategy rules ---
                 st.data_editor(
                     rules_df,
                     key=f"rules_{name}",
@@ -893,7 +965,7 @@ with tab2:
 
 # --- Main Logic to Run Simulation and Display Results ---
 
-# This block runs ONLY when the "Run Simulation" button is clicked
+# This block runs ONLY when the "Run Simulation" button is clicked, which sets the `run_simulation` flag to True.
 if st.session_state.run_simulation:
     # --- 1. Assemble the config dictionary from session_state ---
     config = {
@@ -916,7 +988,7 @@ if st.session_state.run_simulation:
             "min_bankroll": st.session_state.min_br_for_withdrawal
         } if st.session_state.enable_withdrawals else {"enabled": False},
         "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
-        # --- Pass Downswing Analysis Config to Engine ---
+        # Pass Downswing Analysis constants to the engine.
         # These are defined at the top of the file.
         "DOWNSWING_DEPTH_THRESHOLDS_BB": DOWNSWING_DEPTH_THRESHOLDS_BB,
         "DOWNSWING_DURATION_THRESHOLDS_HANDS": DOWNSWING_DURATION_THRESHOLDS_HANDS,
@@ -926,11 +998,10 @@ if st.session_state.run_simulation:
     try:
         # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
         config["STAKES_DATA"] = st.session_state.stakes_data.to_dict('records')
-
-        # The strategies are now directly in the correct dictionary format. No more parsing needed!
+        # The strategies are already in the correct dictionary format in session state.
         config["STRATEGIES_TO_RUN"] = st.session_state.strategy_configs
 
-        # Also store the config used for this run, so we can access it for display later
+        # Store the final config used for this run, so we can access it for display later.
         st.session_state.config_for_display = config
         inputs_are_valid = True
 
@@ -947,12 +1018,13 @@ if st.session_state.run_simulation:
             progress_bar = st.progress(0)
             status_text = st.empty()
             status_text.text("Starting simulation...")
-
+            
+            # Define a callback function that the engine can call to update the UI.
             def update_progress(progress, message):
                 progress_bar.progress(progress)
                 status_text.text(message)
 
-            # THIS IS WHERE WE CALL OUR REFACTORED ENGINE
+            # THIS IS THE MAIN CALL TO THE SIMULATION ENGINE
             # Pass the callback function to the engine
             st.session_state.simulation_output = engine.run_full_analysis(config, progress_callback=update_progress)
 
@@ -969,17 +1041,19 @@ if st.session_state.run_simulation:
             st.exception(e)
             st.session_state.simulation_output = None # Clear results on error
 
-    # --- 4. Reset the run flag so it doesn't run again on the next interaction ---
+    # --- 4. Reset the run flag so the simulation doesn't run again on the next user interaction ---
     st.session_state.run_simulation = False
 
-# This block displays the results if they exist in the session state
+# This block displays the results if they exist in the session state.
+# It runs on every script rerun as long as `simulation_output` is present.
 if st.session_state.get("simulation_output"):
     all_results = st.session_state.simulation_output['results']
     analysis_report = st.session_state.simulation_output['analysis_report']
     config = st.session_state.get('config_for_display', {}) # Get the config used for the run
 
-    # Calculate a representative input win rate for the plot's label
+    # Calculate a representative input win rate for the "Assigned WR Distribution" plot's label.
     weighted_input_wr = 1.5 # Default fallback
+    # This logic handles cases where sample hands might be 0 to avoid division by zero.
     if config: # Ensure config exists before trying to access it
         stakes_data = config.get('STAKES_DATA', [])
         total_sample_hands = sum(s.get('sample_hands', 0) for s in stakes_data)
@@ -992,13 +1066,14 @@ if st.session_state.get("simulation_output"):
 
     st.header("Simulation Results")
 
+    # Display the AI-generated qualitative analysis if it exists.
     if analysis_report:
         with st.expander("Automated Strategy Analysis", expanded=False):
             st.markdown(analysis_report)
 
     st.subheader("Strategy Comparison")
 
-    # --- Display Summary Table ---
+    # --- Assemble and Display the Main Summary Table ---
     summary_data = []
     for name, res in all_results.items():
         summary_data.append({
@@ -1018,6 +1093,7 @@ if st.session_state.get("simulation_output"):
         })
     summary_df = pd.DataFrame(summary_data)
 
+    # Use st.dataframe with style formatting for a clean, professional look.
     st.dataframe(
         summary_df.style.format({
             "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
@@ -1085,7 +1161,7 @@ if st.session_state.get("simulation_output"):
     # --- Display Comparison Plots in a 2-column layout ---
     st.subheader("Strategy Comparison Visuals")
 
-    # Create a consistent, colorblind-friendly color map for all comparison plots
+    # Create a consistent, colorblind-friendly color map to use for all comparison plots.
     colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
     color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
 
@@ -1123,256 +1199,267 @@ if st.session_state.get("simulation_output"):
             st.pyplot(fig_withdrawn)
             plt.close(fig_withdrawn)
 
-    # --- Display Detailed Results for Each Strategy ---
-    for strategy_name, result in all_results.items():
-        with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
-            # --- Special Sanity Check Analysis Box ---
-            if strategy_name == "Sanity Check (NL20 Only)":
-                with st.container(border=True):
-                    st.subheader("🔬 Sanity Check Analysis")
-                    start_br = config['STARTING_BANKROLL_EUR']
-                    total_hands = config['TOTAL_HANDS_TO_SIMULATE']
-                    stake_data = config['STAKES_DATA'][0]
-                    ev_wr = stake_data['ev_bb_per_100']
-                    std_dev = stake_data['std_dev_per_100']
-                    bb_size = stake_data['bb_size']
+def display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr):
+    """
+    Helper function to display the full detailed analysis for a single strategy.
+    This function is called in a loop to render the results for each strategy,
+    which keeps the main part of the script clean and avoids code duplication.
+    """
+    with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
+        # --- Special Sanity Check Analysis Box ---
+        if strategy_name == "Sanity Check (NL20 Only)":
+            with st.container(border=True):
+                st.subheader("🔬 Sanity Check Analysis")
+                start_br = config['STARTING_BANKROLL_EUR']
+                total_hands = config['TOTAL_HANDS_TO_SIMULATE']
+                stake_data = config['STAKES_DATA'][0]
+                ev_wr = stake_data['ev_bb_per_100']
+                std_dev = stake_data['std_dev_per_100']
+                bb_size = stake_data['bb_size']
 
-                    # Analytical calculations
-                    expected_profit = (total_hands / 100) * ev_wr * bb_size
-                    expected_final_br = start_br + expected_profit
-                    expected_std_dev_eur = (std_dev / np.sqrt(100)) * np.sqrt(total_hands) * bb_size
+                # Analytical calculations
+                expected_profit = (total_hands / 100) * ev_wr * bb_size
+                expected_final_br = start_br + expected_profit
+                expected_std_dev_eur = (std_dev / np.sqrt(100)) * np.sqrt(total_hands) * bb_size
 
-                    # Actual results from simulation
-                    actual_median_br = result['median_final_bankroll']
-                    actual_std_dev_br = np.std(result['final_bankrolls'])
+                # Actual results from simulation
+                actual_median_br = result['median_final_bankroll']
+                actual_std_dev_br = np.std(result['final_bankrolls'])
 
-                    # Calculate percentage differences
-                    median_diff_pct = ((actual_median_br - expected_final_br) / expected_final_br) * 100 if expected_final_br != 0 else 0
-                    std_dev_diff_pct = ((actual_std_dev_br - expected_std_dev_eur) / expected_std_dev_eur) * 100 if expected_std_dev_eur != 0 else 0
+                # Calculate percentage differences
+                median_diff_pct = ((actual_median_br - expected_final_br) / expected_final_br) * 100 if expected_final_br != 0 else 0
+                std_dev_diff_pct = ((actual_std_dev_br - expected_std_dev_eur) / expected_std_dev_eur) * 100 if expected_std_dev_eur != 0 else 0
 
-                    st.markdown("This mode compares the simulation's output against known mathematical formulas for a simple, single-stake scenario. The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.")
-                    col1, col2 = st.columns(2)
-                    col1.metric("Expected Median Final Bankroll", f"€{expected_final_br:,.2f}", help="Calculated as: Start BR + (EV Win Rate * Total Hands * bb Size)")
-                    col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f} ({median_diff_pct:+.2f}%)")
-                    col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
-                    col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
+                st.markdown("This mode compares the simulation's output against known mathematical formulas for a simple, single-stake scenario. The 'Actual' values from the simulation should be very close to the 'Expected' values calculated analytically.")
+                col1, col2 = st.columns(2)
+                col1.metric("Expected Median Final Bankroll", f"€{expected_final_br:,.2f}", help="Calculated as: Start BR + (EV Win Rate * Total Hands * bb Size)")
+                col1.metric("Actual Median Final Bankroll", f"€{actual_median_br:,.2f}", delta=f"€{actual_median_br - expected_final_br:,.2f} ({median_diff_pct:+.2f}%)")
+                col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
+                col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
-            st.subheader(f"Key Metrics for '{strategy_name}'")
-            num_metrics = 12 if config.get("STOP_LOSS_BB", 0) > 0 else 11
-            metric_cols = st.columns(num_metrics)
-            (
-                col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11
-            ) = metric_cols[:11]
-            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
-            col2.metric("Median Total Withdrawn", f"€{result.get('median_total_withdrawn', 0.0):,.2f}", help="The median amount of money withdrawn over the entire simulation. This represents the typical income generated by the strategy.")
-            col3.metric("Median Total Return", f"€{result.get('median_total_return', 0.0):,.2f}", help="The median total value generated. Calculated as: (Final Bankroll - Starting Bankroll) + Total Withdrawn.")
-            col4.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
-            col5.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
-            col6.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
-            col7.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
-            col8.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
-            col9.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
-            col10.metric("Integrated Drawdown", f"{result.get('median_integrated_drawdown', 0.0):,.0f}", help="A measure of the total 'pain' of a strategy, combining the size and duration of all time spent 'underwater' (below a bankroll peak). A lower number is better. Units are in Euro-Hands.")
-            col11.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
-            if num_metrics == 12:
-                metric_cols[11].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
+        # --- Display Key Metrics in a multi-column layout ---
+        st.subheader(f"Key Metrics for '{strategy_name}'")
+        num_metrics = 12 if config.get("STOP_LOSS_BB", 0) > 0 else 11
+        metric_cols = st.columns(num_metrics)
+        (
+            col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11
+        ) = metric_cols[:11]
+        col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}", help="The median (50th percentile) final bankroll, including both profit from play and rakeback.")
+        col2.metric("Median Total Withdrawn", f"€{result.get('median_total_withdrawn', 0.0):,.2f}", help="The median amount of money withdrawn over the entire simulation. This represents the typical income generated by the strategy.")
+        col3.metric("Median Total Return", f"€{result.get('median_total_return', 0.0):,.2f}", help="The median total value generated. Calculated as: (Final Bankroll - Starting Bankroll) + Total Withdrawn.")
+        col4.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}", help="The median profit from gameplay only, excluding rakeback. Compare this to Median Rakeback to see the impact of rakeback.")
+        col5.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}", help="The median amount of total rakeback earned over the course of a simulation. This is extra profit on top of what you win at the tables.")
+        col6.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%", help="The percentage of simulations where the bankroll dropped to or below the 'Ruin Threshold'.")
+        col7.metric("Target Probability", f"{result['target_prob']:.2f}%", help="The percentage of simulations where the bankroll reached or exceeded the 'Target Bankroll' at any point.")
+        col8.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}", help="The median of the maximum peak-to-trough loss experienced in each simulation. Represents a typical worst-case downswing.")
+        col9.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}", help="The 95th percentile of the maximum downswing. 5% of simulations experienced a worse downswing (peak-to-trough loss) than this value.")
+        col10.metric("Integrated Drawdown", f"{result.get('median_integrated_drawdown', 0.0):,.0f}", help="A measure of the total 'pain' of a strategy, combining the size and duration of all time spent 'underwater' (below a bankroll peak). A lower number is better. Units are in Euro-Hands.")
+        col11.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}", help="The median number of hands played. This can be lower than the total if a stop-loss is frequently triggered.")
+        if num_metrics == 12:
+            metric_cols[11].metric("Median Stop-Losses", f"{result.get('median_stop_losses', 0):.1f}", help="The median number of times the stop-loss was triggered per simulation run.")
 
-            st.subheader("Visual Analysis")
-            row1_col1, row1_col2 = st.columns(2)
-            with row1_col1:
-                st.markdown("###### Bankroll Progression")
-                fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+        # --- Display the main plots for the individual strategy ---
+        st.subheader("Visual Analysis")
+        row1_col1, row1_col2 = st.columns(2)
+        with row1_col1:
+            st.markdown("###### Bankroll Progression")
+            fig = engine.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config)
+            st.pyplot(fig)
+            plt.close(fig)
+        with row1_col2:
+            st.markdown("###### Final Bankroll Distribution")
+            fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+
+        row2_col1, row2_col2 = st.columns(2)
+        with row2_col1:
+            st.markdown("###### Distribution of Assigned Luck (WR)", help=(
+                "This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations.\n\n"
+                "**Why is the distribution so wide?**\n\n"
+                "The width of this 'luck' distribution is determined by your **'Std Dev (bb/100)'** and **'Sample Hands'** inputs. A high standard deviation and/or a low sample size creates more uncertainty about your true win rate. The simulation reflects this by generating a wider range of possible outcomes (both lucky and unlucky).\n\n"
+                "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
+            ))
+            if 'avg_assigned_wr_per_sim' in result:
+                fig = engine.plot_assigned_wr_distribution(
+                    result['avg_assigned_wr_per_sim'],
+                    result['median_run_assigned_wr'],
+                    weighted_input_wr,
+                    strategy_name
+                )
                 st.pyplot(fig)
                 plt.close(fig)
-            with row1_col2:
-                st.markdown("###### Final Bankroll Distribution")
-                fig = engine.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map)
+        with row2_col2:
+            st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
+            if 'max_downswings' in result:
+                fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
                 st.pyplot(fig)
                 plt.close(fig)
 
-            row2_col1, row2_col2 = st.columns(2)
-            with row2_col1:
-                st.markdown("###### Distribution of Assigned Luck (WR)", help=(
-                    "This chart shows the distribution of 'luck' (the pre-assigned win rate) across all simulations.\n\n"
-                    "**Why is the distribution so wide?**\n\n"
-                    "The width of this 'luck' distribution is determined by your **'Std Dev (bb/100)'** and **'Sample Hands'** inputs. A high standard deviation and/or a low sample size creates more uncertainty about your true win rate. The simulation reflects this by generating a wider range of possible outcomes (both lucky and unlucky).\n\n"
-                    "**How to read this chart:**\n- **Blue Line:** Your average win rate, based on your inputs.\n- **Red Line:** The 'luck' of the specific simulation run that resulted in the median final bankroll."
-                ))
-                if 'avg_assigned_wr_per_sim' in result:
-                    fig = engine.plot_assigned_wr_distribution(
-                        result['avg_assigned_wr_per_sim'],
-                        result['median_run_assigned_wr'],
-                        weighted_input_wr,
-                        strategy_name
-                    )
-                    st.pyplot(fig)
-                    plt.close(fig)
-            with row2_col2:
-                st.markdown("###### Maximum Downswing Distribution", help="This chart shows the distribution of the largest single peak-to-trough loss (a downswing) experienced in each simulation. It gives a clear picture of the potential 'pain' or volatility of a strategy.")
-                if 'max_downswings' in result:
-                    fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
-                    st.pyplot(fig)
-                    plt.close(fig)
+        # --- Downswing Extent & Stretch Analysis ---
+        def display_downswing_table(title, data, column_names):
+            """Nested helper function to display a formatted downswing probability table."""
+            st.markdown(f"##### {title}")
+            if data:
+                df = pd.DataFrame(list(data.items()), columns=column_names)
+                df[column_names[1]] = df[column_names[1]].map('{:,.2f}%'.format)
+                st.dataframe(df.style.hide(axis="index"), use_container_width=True)
+            else:
+                st.info(f"No {title.lower()} data available.")
 
-            # --- Downswing Extent & Stretch Analysis ---
-            def display_downswing_table(title, data, column_names):
-                """Helper function to display a formatted downswing probability table."""
-                st.markdown(f"##### {title}")
-                if data:
-                    df = pd.DataFrame(list(data.items()), columns=column_names)
-                    df[column_names[1]] = df[column_names[1]].map('{:,.2f}%'.format)
-                    st.dataframe(df.style.hide(axis="index"), use_container_width=True)
-                else:
-                    st.info(f"No {title.lower()} data available.")
+        st.markdown("---")
+        st.subheader(
+            "Downswing Probabilities",
+            help=(
+                "These tables show the probability that a simulation will experience at least one downswing of a certain magnitude.\n\n"
+                "- **Downswing Depth:** The probability of experiencing a peak-to-trough loss of at least X big blinds.\n\n"
+                "- **Downswing Duration:** The probability of spending at least X consecutive hands below a previous bankroll peak (i.e., 'underwater')."
+            )
+        )
 
-            st.markdown("---")
-            st.subheader(
-                "Downswing Probabilities",
+        col1, col2 = st.columns(2)
+        downswing_analysis = result.get('downswing_analysis', {})
+        with col1:
+            display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'])
+        with col2:
+            display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'])
+
+        st.subheader("Detailed Strategy Insights")
+        st.markdown("_For a full breakdown, please download the PDF report._")
+
+        # Check for a dominant stake to provide a key insight
+        if result.get('hands_distribution_pct'):
+            hands_dist = result['hands_distribution_pct']
+            if hands_dist: # Ensure it's not empty
+                dominant_stake = max(hands_dist, key=hands_dist.get)
+                dominant_pct = hands_dist[dominant_stake]
+                if dominant_pct > 75:  # Threshold for being "dominant"
+                    st.info(f"**Key Insight:** This strategy spent the vast majority of its time at **{dominant_stake}** ({dominant_pct:.1f}% of all hands played). The results are therefore heavily influenced by the performance at this single stake.")
+
+        # --- Display Hands Distribution and Final Stake information ---
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown(
+                "**Hands Distribution**",
                 help=(
-                    "These tables show the probability that a simulation will experience at least one downswing of a certain magnitude.\n\n"
-                    "- **Downswing Depth:** The probability of experiencing a peak-to-trough loss of at least X big blinds.\n\n"
-                    "- **Downswing Duration:** The probability of spending at least X consecutive hands below a previous bankroll peak (i.e., 'underwater')."
+                    "This section shows three key metrics for each stake:\n\n"
+                    "1.  **Percentage:** The share of total hands played at this stake.\n\n"
+                    "2.  **Avg. WR:** The average win rate the simulation used for this stake across all runs. This includes the 'luck' factor, so it will differ from your input. It represents the average 'true skill' assigned to players at this stake.\n\n"
+                    "3.  **Trust:** A percentage showing how much the model 'trusts' your input `EV Win Rate`. It's calculated from your `Sample Hands` vs. the `Prior Sample Size`. A higher trust percentage means the model is more confident in your data and will apply less long-term luck (variance) to your win rate."
+                ),
+            )
+            if result.get('hands_distribution_pct'):
+                # Create maps for easy lookup of data needed for display.
+                stakes_data_list = config.get('STAKES_DATA', [])
+                sample_hands_map = {s['name']: s.get('sample_hands', 0) for s in stakes_data_list}
+                prior_sample_size = config.get('PRIOR_SAMPLE_SIZE', 50000)
+
+                stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
+                avg_win_rates = result.get('average_assigned_win_rates', {})
+
+                for stake, pct in sorted_stakes:
+                    if pct > 0.01:
+                        # Calculate the "trust factor" for display.
+                        sample_hands = sample_hands_map.get(stake, 0)
+                        trust_factor = 0.0
+                        if sample_hands > 0 and (sample_hands + prior_sample_size) > 0:
+                            trust_factor = sample_hands / (sample_hands + prior_sample_size)
+
+                        details_parts = []
+                        if stake in avg_win_rates:
+                            details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
+                        details_parts.append(f"Trust: {trust_factor:.0%}")
+
+                        details_str = f" ({', '.join(details_parts)})"
+                        st.write(f"- {stake}: {pct:.2f}%{details_str}")
+            else:
+                st.write("No hands played.")
+
+        with col2:
+            st.markdown("**Final Stake**", help="The percentage of simulations that finished with this as their highest active stake.")
+            if result.get('final_highest_stake_distribution'):
+                stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+                sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
+                for stake, pct in sorted_dist:
+                    if pct > 0.01:
+                        display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
+                        st.write(f"- {display_stake}: {pct:.2f}%")
+            else:
+                st.write("N/A")
+
+        # --- Risk of Demotion Section ---
+        if result.get('risk_of_demotion'):
+            st.markdown("---")
+            st.markdown("**Risk of Demotion**", help="The probability of being demoted from a stake after you've reached it. Calculated as: (Simulations demoted from Stake X) / (Simulations that ever reached Stake X). A high percentage indicates an unstable strategy.")
+            stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+            sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
+
+            demotion_markdown = ""
+            for stake, data in sorted_demotions:
+                if data['reached_count'] > 0: # Only show relevant stakes
+                    demotion_markdown += f"- From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_\n"
+            st.markdown(demotion_markdown)
+
+        # --- Percentile Win Rate Analysis Section: A deep dive into why outcomes vary ---
+        if result.get('percentile_win_rates'):
+            st.markdown("---")
+            st.markdown(
+                "**Percentile Win Rate Analysis (bb/100)**",
+                help=(
+                    "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
+                    "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
+                    "- **Play WR:** The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
+                    "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
+                    "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
                 )
             )
+            st.caption(
+                "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
+                "The `Realized WR (Play)` includes short-term variance, so it will naturally differ from the `Assigned WR` even for this median-outcome run. "
+                "This is expected statistical noise."
+            )
 
-            col1, col2 = st.columns(2)
-            downswing_analysis = result.get('downswing_analysis', {})
-            with col1:
-                display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'])
-            with col2:
-                display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'])
+            percentile_wrs = result.get('percentile_win_rates', {})
+            # Define the percentiles we want to show in the UI.
+            percentiles_to_show = {
+                "2.5th": "2.5th Percentile",
+                "5th": "5th Percentile",
+                "25th": "25th Percentile",
+                "Median": "Median Percentile",
+                "75th": "75th Percentile",
+                "95th": "95th Percentile",
+                "97.5th": "97.5th Percentile"
+            }
 
-            st.subheader("Key Strategy Insights")
-            st.markdown("_For a full breakdown, please download the PDF report._")
+            # Filter to only show percentiles that were actually calculated by the engine.
+            # This also preserves the correct order from the dictionary definition.
+            available_percentiles = {
+                short: long for short, long in percentiles_to_show.items() if long in percentile_wrs
+            }
 
-            # Check for a dominant stake to provide a key insight
-            if result.get('hands_distribution_pct'):
-                hands_dist = result['hands_distribution_pct']
-                if hands_dist: # Ensure it's not empty
-                    dominant_stake = max(hands_dist, key=hands_dist.get)
-                    dominant_pct = hands_dist[dominant_stake]
-                    if dominant_pct > 75:  # Threshold for being "dominant"
-                        st.info(f"**Key Insight:** This strategy spent the vast majority of its time at **{dominant_stake}** ({dominant_pct:.1f}% of all hands played). The results are therefore heavily influenced by the performance at this single stake.")
+            if not available_percentiles:
+                st.write("No percentile data available.")
+            else:
+                # Create a dynamic number of columns to display the percentile data.
+                cols = st.columns(len(available_percentiles))
+                for i, (short_name, long_name) in enumerate(available_percentiles.items()):
+                    with cols[i]:
+                        st.markdown(f"**{short_name} %ile**")
+                        data = percentile_wrs.get(long_name, {})
+                        st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
+                        st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}", help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).")
+                        st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
+                        st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
 
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown(
-                    "**Hands Distribution**",
-                    help=(
-                        "This section shows three key metrics for each stake:\n\n"
-                        "1.  **Percentage:** The share of total hands played at this stake.\n\n"
-                        "2.  **Avg. WR:** The average win rate the simulation used for this stake across all runs. This includes the 'luck' factor, so it will differ from your input. It represents the average 'true skill' assigned to players at this stake.\n\n"
-                        "3.  **Trust:** A percentage showing how much the model 'trusts' your input `EV Win Rate`. It's calculated from your `Sample Hands` vs. the `Prior Sample Size`. A higher trust percentage means the model is more confident in your data and will apply less long-term luck (variance) to your win rate."
-                    ),
-                )
-                if result.get('hands_distribution_pct'):
-                    # Create a map for easy lookup of sample hands
-                    stakes_data_list = config.get('STAKES_DATA', [])
-                    sample_hands_map = {s['name']: s.get('sample_hands', 0) for s in stakes_data_list}
-                    prior_sample_size = config.get('PRIOR_SAMPLE_SIZE', 50000)
-
-                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                    sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
-                    avg_win_rates = result.get('average_assigned_win_rates', {})
-
-                    for stake, pct in sorted_stakes:
-                        if pct > 0.01:
-                            # Calculate data weight (trust factor)
-                            sample_hands = sample_hands_map.get(stake, 0)
-                            trust_factor = 0.0
-                            if sample_hands > 0 and (sample_hands + prior_sample_size) > 0:
-                                trust_factor = sample_hands / (sample_hands + prior_sample_size)
-
-                            details_parts = []
-                            if stake in avg_win_rates:
-                                details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
-                            details_parts.append(f"Trust: {trust_factor:.0%}")
-
-                            details_str = f" ({', '.join(details_parts)})"
-                            st.write(f"- {stake}: {pct:.2f}%{details_str}")
-                else:
-                    st.write("No hands played.")
-
-            with col2:
-                st.markdown("**Final Stake**", help="The percentage of simulations that finished with this as their highest active stake.")
-                if result.get('final_highest_stake_distribution'):
-                    stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                    sorted_dist = sorted(result['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
-                    for stake, pct in sorted_dist:
-                        if pct > 0.01:
-                            display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
-                            st.write(f"- {display_stake}: {pct:.2f}%")
-                else:
-                    st.write("N/A")
-
-            # --- Risk of Demotion Section ---
-            if result.get('risk_of_demotion'):
-                st.markdown("---")
-                st.markdown("**Risk of Demotion**", help="The probability of being demoted from a stake after you've reached it. Calculated as: (Simulations demoted from Stake X) / (Simulations that ever reached Stake X). A high percentage indicates an unstable strategy.")
-                stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-                sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
-
-                demotion_markdown = ""
-                for stake, data in sorted_demotions:
-                    if data['reached_count'] > 0: # Only show relevant stakes
-                        demotion_markdown += f"- From **{stake}**: **{data['prob']:.2f}%** _(of {int(data['reached_count']):,} sims)_\n"
-                st.markdown(demotion_markdown)
-
-            # --- Percentile Win Rate Analysis Section ---
-            if result.get('percentile_win_rates'):
-                st.markdown("---")
-                st.markdown(
-                    "**Percentile Win Rate Analysis (bb/100)**",
-                    help=(
-                        "This section shows the win rates for simulations that ended near key percentiles. This helps explain *why* the final bankrolls landed where they did.\n\n"
-                        "- **Assigned WR:** The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev. It models if a player is on a career-long heater or cooler.\n\n"
-                        "- **Play WR:** The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).\n\n"
-                        "- **Rakeback WR:** The effective win rate gained from rakeback.\n\n"
-                        "- **Variance Impact:** The difference between Play WR and Assigned WR, showing the net effect of short-term variance over the entire simulation."
-                    )
-                )
-                st.caption(
-                    "**Important:** The 'Median' column shows stats for the single simulation that had the median *final bankroll*, not the median of all stats. "
-                    "The `Realized WR (Play)` includes short-term variance, so it will naturally differ from the `Assigned WR` even for this median-outcome run. "
-                    "This is expected statistical noise."
-                )
-
-                percentile_wrs = result.get('percentile_win_rates', {})
-                # Show a 7-number summary to match the data calculated in the analysis module
-                percentiles_to_show = {
-                    "2.5th": "2.5th Percentile",
-                    "5th": "5th Percentile",
-                    "25th": "25th Percentile",
-                    "Median": "Median Percentile",
-                    "75th": "75th Percentile",
-                    "95th": "95th Percentile",
-                    "97.5th": "97.5th Percentile"
-                }
-
-                # Filter to only show percentiles that were actually calculated
-                # This also preserves the correct order from the dictionary definition
-                available_percentiles = {
-                    short: long for short, long in percentiles_to_show.items() if long in percentile_wrs
-                }
-
-                if not available_percentiles:
-                    st.write("No percentile data available.")
-                else:
-                    cols = st.columns(len(available_percentiles))
-                    for i, (short_name, long_name) in enumerate(available_percentiles.items()):
-                        with cols[i]:
-                            st.markdown(f"**{short_name} %ile**")
-                            data = percentile_wrs.get(long_name, {})
-                            st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
-                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}", help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).")
-                            st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
-                            st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
-
+    # --- Loop through all results and call the helper function to display them ---
+    for strategy_name, result in all_results.items():
+        display_detailed_strategy_results(strategy_name, result, config, color_map, weighted_input_wr)
 
     # --- PDF Download Button ---
     st.subheader("Download Full Report")
+    # The PDF generation can be slow, so it's wrapped in a spinner to give the user feedback.
     with st.spinner("Generating PDF report..."):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         pdf_buffer = engine.generate_pdf_report(all_results, analysis_report, config, timestamp)
