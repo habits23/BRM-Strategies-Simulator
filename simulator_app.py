@@ -1215,32 +1215,32 @@ if st.session_state.get("simulation_output"):
                     plt.close(fig)
 
             # --- Downswing Extent & Stretch Analysis ---
+            def display_downswing_table(title, data, column_names):
+                """Helper function to display a formatted downswing probability table."""
+                st.markdown(f"##### {title}")
+                if data:
+                    df = pd.DataFrame(list(data.items()), columns=column_names)
+                    df[column_names[1]] = df[column_names[1]].map('{:,.2f}%'.format)
+                    st.dataframe(df.style.hide(axis="index"), use_container_width=True)
+                else:
+                    st.info(f"No {title.lower()} data available.")
+
             st.markdown("---")
-            st.subheader("Downswing Probabilities")
-            st.markdown("These tables show the probability that a simulation experienced at least one downswing of a given depth or duration.")
+            st.subheader(
+                "Downswing Probabilities",
+                help=(
+                    "These tables, inspired by the Prime Dope variance calculator, show the probability that a simulation will experience at least one downswing of a certain magnitude.\n\n"
+                    "- **Downswing Depth:** The probability of experiencing a peak-to-trough loss of at least X big blinds.\n\n"
+                    "- **Downswing Duration:** The probability of spending at least X consecutive hands below a previous bankroll peak (i.e., 'underwater')."
+                )
+            )
 
             col1, col2 = st.columns(2)
             downswing_analysis = result.get('downswing_analysis', {})
-
             with col1:
-                st.markdown("##### Downswing Depth (in BBs)")
-                depth_data = downswing_analysis.get('depth_probabilities', {})
-                if depth_data:
-                    df_depth = pd.DataFrame(list(depth_data.items()), columns=['Depth (BB)', 'Probability'])
-                    df_depth['Probability'] = df_depth['Probability'].map('{:,.2f}%'.format)
-                    st.dataframe(df_depth.style.hide(axis="index"), use_container_width=True)
-                else:
-                    st.info("No downswing depth data available.")
-
+                display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'])
             with col2:
-                st.markdown("##### Downswing Duration (in Hands)")
-                duration_data = downswing_analysis.get('duration_probabilities', {})
-                if duration_data:
-                    df_duration = pd.DataFrame(list(duration_data.items()), columns=['Duration (Hands)', 'Probability'])
-                    df_duration['Probability'] = df_duration['Probability'].map('{:,.2f}%'.format)
-                    st.dataframe(df_duration.style.hide(axis="index"), use_container_width=True)
-                else:
-                    st.info("No downswing duration data available.")
+                display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'])
 
             st.subheader("Key Strategy Insights")
             st.markdown("_For a full breakdown, please download the PDF report._")
