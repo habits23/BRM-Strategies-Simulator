@@ -974,15 +974,21 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
 
 def plot_strategy_progression(bankroll_histories, hands_histories, strategy_name, config, pdf=None):
     """Plots the median progression with a shaded area for the 25th-75th percentile range."""
-    fig, ax = plt.subplots(figsize=(8, 5)) # Further reduced size for a more compact app layout
-    median_history = np.median(bankroll_histories, axis=0)
-    y_upper_limit = np.percentile(bankroll_histories, 95) * 1.1 # Add 10% for padding
-    lower_percentile = np.percentile(bankroll_histories, 25, axis=0)
-    upper_percentile = np.percentile(bankroll_histories, 75, axis=0)
+    # --- Data Cleaning: Prevent hangs from non-finite values ---
+    # Replace NaN, +inf, and -inf with plausible numbers to ensure percentile calculations and plotting do not fail.
+    # This is a critical robustness improvement.
+    safe_histories = np.nan_to_num(bankroll_histories, nan=config.get('STARTING_BANKROLL_EUR', 0), posinf=config.get('TARGET_BANKROLL', 5000)*5, neginf=0)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    median_history = np.median(safe_histories, axis=0)
+    # Use the cleaned data for all calculations
+    y_upper_limit = np.percentile(safe_histories, 95) * 1.1 # Add 10% for padding
+    lower_percentile = np.percentile(safe_histories, 25, axis=0)
+    upper_percentile = np.percentile(safe_histories, 75, axis=0)
     median_hands = np.median(hands_histories, axis=0)
 
-    for i in range(min(50, len(bankroll_histories))):
-        ax.plot(hands_histories[i], bankroll_histories[i], color='gray', alpha=0.1)
+    for i in range(min(50, len(safe_histories))):
+        ax.plot(hands_histories[i], safe_histories[i], color='gray', alpha=0.1)
 
     ax.fill_between(median_hands, lower_percentile, upper_percentile,
                      color='lightblue', alpha=0.4, label='25th-75th Percentile Range')
@@ -1019,9 +1025,10 @@ def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None
     # --- Dynamically determine the x-axis range for a clearer plot --- #
     # Combine all results to find a global range that fits all strategies well. #
     all_final_bankrolls = np.concatenate([res['final_bankrolls'] for res in all_results.values() if len(res['final_bankrolls']) > 0])
+    all_final_bankrolls = all_final_bankrolls[np.isfinite(all_final_bankrolls)] # Clean the data
 
     # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
-    successful_runs = all_final_bankrolls[all_final_bankrolls > config['RUIN_THRESHOLD']]
+    successful_runs = all_final_bankrolls[all_final_bankrolls > config.get('RUIN_THRESHOLD', 0)]
 
     if len(successful_runs) > 5: # Need a few points to calculate percentiles robustly
         # Use the user-defined percentile to control the plot's "zoom".
@@ -1056,7 +1063,7 @@ def plot_final_bankroll_comparison(all_results, config, color_map=None, pdf=None
                 # This prevents extreme outliers (the top 1% we've already
                 # excluded from the x-axis) from skewing the density plot.
                 # The result is a plot that better represents the main body of the distribution.
-                filtered_bankrolls = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max) & (final_bankrolls > config['RUIN_THRESHOLD'])]
+                filtered_bankrolls = final_bankrolls[(final_bankrolls >= x_min) & (final_bankrolls <= x_max) & (final_bankrolls > config.get('RUIN_THRESHOLD', 0))]
                 if len(filtered_bankrolls) < 2: # Need at least 2 points for KDE
                     ax.hist(final_bankrolls, bins=50, density=True, alpha=0.5, label=f"{strategy_name} (hist)", color=color)
                     continue
@@ -1091,8 +1098,10 @@ def plot_final_bankroll_distribution(final_bankrolls, result, strategy_name, con
     if color_map and strategy_name in color_map:
         plot_color = color_map[strategy_name]
 
+    # --- Data Cleaning ---
+    safe_bankrolls = final_bankrolls[np.isfinite(final_bankrolls)]
     # Filter out ruined runs to focus the plot on the distribution of successful outcomes.
-    successful_runs = final_bankrolls[final_bankrolls > config['RUIN_THRESHOLD']]
+    successful_runs = safe_bankrolls[safe_bankrolls > config.get('RUIN_THRESHOLD', 0)]
 
     if len(successful_runs) > 5:
         upper_percentile = config.get('PLOT_PERCENTILE_LIMIT', 99)
@@ -1185,11 +1194,13 @@ def plot_max_downswing_distribution(max_downswings, result, strategy_name, pdf=N
     if color_map and strategy_name in color_map:
         hist_color = color_map[strategy_name]
 
+    # --- Data Cleaning ---
+    safe_downswings = max_downswings[np.isfinite(max_downswings)]
     # Filter out extreme outliers for better visibility
-    max_x_limit = np.percentile(max_downswings, 99.0)
-    filtered_downswings = max_downswings[max_downswings <= max_x_limit]
+    max_x_limit = np.percentile(safe_downswings, 99.0) if len(safe_downswings) > 0 else 0
+    filtered_downswings = safe_downswings[safe_downswings <= max_x_limit]
 
-    median_downswing = result['median_max_downswing']
+    median_downswing = result.get('median_max_downswing', 0)
     p95_downswing = result['p95_max_downswing']
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -1345,10 +1356,12 @@ def plot_assigned_wr_distribution(avg_assigned_wr_per_sim, median_run_assigned_w
     """
     fig, ax = plt.subplots(figsize=(8, 5))
 
+    # --- Data Cleaning ---
+    safe_data = avg_assigned_wr_per_sim[np.isfinite(avg_assigned_wr_per_sim)]
     # Filter out extreme outliers for better visualization
-    p1 = np.percentile(avg_assigned_wr_per_sim, 1)
-    p99 = np.percentile(avg_assigned_wr_per_sim, 99)
-    filtered_data = avg_assigned_wr_per_sim[(avg_assigned_wr_per_sim >= p1) & (avg_assigned_wr_per_sim <= p99)]
+    p1 = np.percentile(safe_data, 1) if len(safe_data) > 0 else 0
+    p99 = np.percentile(safe_data, 99) if len(safe_data) > 0 else 0
+    filtered_data = safe_data[(safe_data >= p1) & (safe_data <= p99)]
 
     ax.hist(filtered_data, bins=50, color='c', edgecolor='black', alpha=0.6, label='Distribution of All Runs\' Luck')
 
