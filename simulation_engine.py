@@ -2052,10 +2052,10 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
 
     with PdfPages(pdf_buffer) as pdf:
         create_title_page(pdf, timestamp_str)
-        save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
-
-        if analysis_report:
-            write_analysis_report_to_pdf(pdf, analysis_report)
+        # --- DEBUGGING: Temporarily disable the two most likely causes of the hang. ---
+        # save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
+        # if analysis_report:
+        #     write_analysis_report_to_pdf(pdf, analysis_report)
 
         # --- Generate Comparison Plots Dynamically ---
         # This loop is driven by the `comparison_plots` list defined above.
