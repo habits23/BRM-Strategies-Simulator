@@ -973,6 +973,27 @@ def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
 
+def _get_plot_callables(all_results, result, strategy_name, config, color_map, weighted_input_wr, pdf):
+    """Helper to map plot names to their actual plotting function calls with correct arguments."""
+    
+    # Note: The keys here must match the strings in the plot lists in generate_pdf_report
+    comparison_plot_map = {
+        'Median Progression': lambda: reporting.plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf),
+        'Final Bankroll Distribution': lambda: reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf),
+        'Total Withdrawn': lambda: reporting.plot_total_withdrawn_comparison(all_results, config, color_map=color_map, pdf=pdf),
+        'Time Underwater': lambda: reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf),
+        'Risk vs Reward': lambda: reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf),
+    }
+
+    strategy_plot_map = {
+        'Strategy Progression': lambda: reporting.plot_strategy_progression(result.get('bankroll_histories'), result.get('hands_histories'), strategy_name, config, pdf=pdf),
+        'Final Bankroll Distribution': lambda: reporting.plot_final_bankroll_distribution(result.get('final_bankrolls'), result, strategy_name, config, pdf=pdf, color_map=color_map),
+        'Assigned WR Distribution': lambda: reporting.plot_assigned_wr_distribution(result.get('avg_assigned_wr_per_sim'), result.get('median_run_assigned_wr'), weighted_input_wr, strategy_name, pdf=pdf),
+        'Max Downswing Distribution': lambda: reporting.plot_max_downswing_distribution(result.get('max_downswings'), result, strategy_name, pdf=pdf, color_map=color_map),
+        'Downswing Probabilities': lambda: reporting.plot_downswing_analysis_tables(result, strategy_name, pdf=pdf),
+    }
+    return comparison_plot_map, strategy_plot_map
+
 def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     """
     Generates the entire multi-page PDF report, writing to an in-memory buffer.
@@ -1035,11 +1056,12 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         if analysis_report:
             write_analysis_report_to_pdf(pdf, analysis_report)
 
-        reporting.plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        reporting.plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        reporting.plot_total_withdrawn_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        reporting.plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
-        reporting.plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
+        # --- Generate Comparison Plots Dynamically ---
+        # This loop is driven by the `comparison_plots` list defined above.
+        comparison_plot_calls, _ = _get_plot_callables(all_results, None, None, config, color_map, None, pdf)
+        for plot_name in comparison_plots:
+            if plot_name in comparison_plot_calls:
+                comparison_plot_calls[plot_name]()
 
         for strategy_name, result in all_results.items():
             strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
@@ -1047,16 +1069,12 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
             page_num = strategy_page_map.get(strategy_name, 0)
             report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
             write_strategy_report_to_pdf(pdf, report_lines_for_writing, start_page_num=page_num)
-            reporting.plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
-            reporting.plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, pdf=pdf, color_map=color_map)
-            reporting.plot_assigned_wr_distribution(
-                result['avg_assigned_wr_per_sim'],
-                result['median_run_assigned_wr'],
-                weighted_input_wr,
-                strategy_name,
-                pdf=pdf)
-            reporting.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf, color_map=color_map)
-            reporting.plot_downswing_analysis_tables(result, strategy_name, pdf=pdf)
+            
+            # --- Generate Strategy-Specific Plots Dynamically ---
+            _, strategy_plot_calls = _get_plot_callables(all_results, result, strategy_name, config, color_map, weighted_input_wr, pdf)
+            for plot_name in strategy_detail_plots:
+                if plot_name in strategy_plot_calls:
+                    strategy_plot_calls[plot_name]()
 
     pdf_buffer.seek(0)
     return pdf_buffer
