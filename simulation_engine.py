@@ -1581,10 +1581,11 @@ def plot_summary_table(all_results, strategy_page_map, config, pdf=None):
     ax.axis('tight')
     ax.axis('off')
     table = ax.table(cellText=cell_text, colLabels=header, cellLoc='center', loc='center')
-    table.automake_col_widths()
+    # The automake_col_widths() function is a known cause of hangs in matplotlib.
+    # We replace it with manual scaling for better stability.
     table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 1.8)
+    table.set_fontsize(8) # Use a slightly smaller font to ensure content fits
+    table.scale(1.2, 2.0) # Manually adjust column width and row height
 
     ax.set_title('Simulation Summary', pad=20, fontsize=16)
 
