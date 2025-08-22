@@ -692,9 +692,13 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
-    final_withdrawn = total_withdrawn_histories[:, -1]
-    final_bankrolls = bankroll_histories[:, -1]
 
+    # --- Data Sanitization: The Definitive Fix ---
+    # This is the most critical step to prevent UI hangs. We ensure that all raw data arrays
+    # are free of non-finite numbers (NaN, inf) before any metrics are calculated from them.
+    final_withdrawn = np.nan_to_num(total_withdrawn_histories[:, -1], nan=0)
+    final_bankrolls = np.nan_to_num(bankroll_histories[:, -1], nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
+    safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
     # --- Calculate Weighted Assigned WR for each simulation ---
     # This is crucial for understanding the distribution of "luck" (assigned win rates)
     final_hands_per_stake = {name: history[:, -1] for name, history in hands_per_stake_histories.items()}
@@ -767,8 +771,8 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
 
     percentile_win_rates = _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, total_withdrawn_histories, config, bb_size_map)
 
-    median_max_downswing = np.median(max_drawdowns)
-    p95_max_downswing = np.percentile(max_drawdowns, 95)
+    median_max_downswing = np.median(safe_max_drawdowns)
+    p95_max_downswing = np.percentile(safe_max_drawdowns, 95)
 
     # Calculate median rakeback
     final_rakeback = rakeback_histories[:, -1]
@@ -822,7 +826,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'bankroll_histories': bankroll_histories, 'hands_histories': total_hands_histories,
         'median_history': np.median(bankroll_histories, axis=0),
         'hands_history': np.mean(total_hands_histories, axis=0),
-        'target_prob': (target_achieved_count / config['NUMBER_OF_SIMULATIONS']) * 100,
+        'target_prob': (target_achieved_count / config['NUMBER_OF_SIMULATIONS']) * 100 if config['NUMBER_OF_SIMULATIONS'] > 0 else 0,
         'above_threshold_hit_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories >= rule["threshold"], axis=1))
                                       for rule in strategy_obj.rules if rule["threshold"] > config['STARTING_BANKROLL_EUR']},
         'below_threshold_drop_counts': {rule["threshold"]: np.sum(np.any(bankroll_histories <= rule["threshold"], axis=1))
@@ -833,7 +837,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'final_highest_stake_distribution': final_highest_stake_distribution,
         'median_max_downswing': median_max_downswing,
         'p95_max_downswing': p95_max_downswing,
-        'max_downswings': max_drawdowns,
+        'max_downswings': safe_max_drawdowns,
         'median_rakeback_eur': median_rakeback_eur,
         'median_profit_from_play_eur': median_profit_from_play_eur,
         'median_hands_played': median_hands_played,
