@@ -315,6 +315,9 @@ def setup_sanity_check():
     st.session_state.ruin_thresh = 0 # Set ruin to 0 to avoid truncating results
     st.session_state.enable_stop_loss = False # Ensure stop-loss is off for validation
     st.session_state.enable_withdrawals = False # Ensure withdrawals are off for validation
+    st.session_state.hands_per_check = 1000 # Reset to a standard value for consistency
+    st.session_state.zero_hands_weight = 0.5 # Reset to default, though not used in this mode
+    st.session_state.plot_percentile_limit = 99 # Reset plot zoom to default
     st.toast("Sanity Check configuration loaded. You can now click 'Run Simulation'.", icon="🔬")
 
 def add_strategy():
