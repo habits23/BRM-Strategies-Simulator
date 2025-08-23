@@ -1907,11 +1907,10 @@ def write_detailed_strategy_report_to_pdf(pdf, strategy_name, result, config):
     y_pos = 0.92
 
     def new_page_check(required_space=0.1):
-        nonlocal y_pos
+        nonlocal y_pos, fig
         if y_pos < required_space:
             pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
-            nonlocal fig
             fig = plt.figure(figsize=(11, 8.5))
             y_pos = 0.92
             return True
