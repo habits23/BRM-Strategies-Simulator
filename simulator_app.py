@@ -1535,6 +1535,6 @@ if st.session_state.get("simulation_output"):
                 data=pdf_bytes,
                 file_name=f"poker_sim_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
-                use_container_width=True,
+                use_container_width=False,
                 help="Click to download a detailed, multi-page PDF report of the simulation results."
             )
