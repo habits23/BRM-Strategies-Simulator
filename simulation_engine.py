@@ -1733,45 +1733,6 @@ def get_initial_table_mix_string(strategy, config):
     mix_parts = [f"{stake}: {value}" for stake, value in sorted_items]
     return ", ".join(mix_parts) if mix_parts else "No Play"
 
-def write_analysis_report_to_pdf(pdf, analysis_report):
-    """Writes the qualitative analysis report to a PDF page."""
-    fig = plt.figure(figsize=(11, 8.5))
-
-    lines = analysis_report.split('\n')
-    y_pos = 0.90
-
-    for line in lines:
-        line = line.strip()
-        if not line: # Add vertical space for empty lines
-            y_pos -= 0.02
-            continue
-
-        font_size = 11
-        font_weight = 'normal'
-        x_pos = 0.05
-
-        # Simple markdown parsing for PDF
-        if line.startswith('### '):
-            font_size = 16
-            font_weight = 'bold'
-            line = line[4:]
-            y_pos -= 0.02 # Extra space before header
-        elif line.startswith('- '):
-            x_pos = 0.07
-            line = f"• {line[2:]}" # Use a bullet point character
-
-        # Strip emoji and bold markers for cleaner text
-        line = line.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','').replace('🚀','').replace('😌','').replace('🎢','').replace('💰','').replace('⚠️','').replace('🧠','').replace('💸','').replace('⚡','')
-
-        # The `wrap=True` argument in `fig.text` is a known cause of silent hangs in matplotlib
-        # with certain long or complex strings. Removing it for stability is the most robust fix.
-        # The text may run off the page, but this will prevent the application from freezing.
-        fig.text(x_pos, y_pos, line, transform=fig.transFigure, size=font_size, weight=font_weight, va='top', ha='left')
-        y_pos -= 0.04 # Fixed spacing between lines
-
-    pdf.savefig(fig)
-    plt.close(fig)
-
 def create_title_page(pdf, timestamp):
     """Creates a title page for the PDF report."""
     fig = plt.figure(figsize=(11, 8.5))
