@@ -1456,6 +1456,7 @@ if st.session_state.get("simulation_output"):
                 "Median Final BR": "€{:,.2f}", "Mode Final BR": "€{:,.2f}",
                 "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}",
                 "Median Profit (Play)": "€{:,.2f}", "Median Total Withdrawn": "€{:,.2f}",
+                "Median Total Return": "€{:,.2f}",
                 "Median Total Return": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
                 "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
                 "P95 Max Downswing": "€{:,.2f}"
@@ -1505,18 +1506,22 @@ if st.session_state.get("simulation_output"):
             fig = engine.plot_risk_reward_scatter(all_results, config, color_map=color_map)
             st.pyplot(fig)
             plt.close(fig)
-        
-        try:
-            fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
-            if fig_withdrawn:
-                comp_col5, _ = st.columns(2)
-                with comp_col5:
+
+        comp_col5, comp_col6 = st.columns(2)
+        with comp_col5:
+            st.markdown("###### Volatility Comparison: Max Downswing", help="This plot shows the distribution of maximum downswings for each strategy. A wider distribution indicates higher volatility and risk.")
+            fig = engine.plot_downswing_comparison(all_results, config, color_map=color_map)
+            st.pyplot(fig)
+            plt.close(fig)
+        with comp_col6:
+            try:
+                fig_withdrawn = engine.plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
+                if fig_withdrawn:
                     st.markdown("###### Income Generation: Median Total Withdrawn", help="This chart shows the median total amount of money withdrawn over the course of the simulation for each strategy. It's a direct measure of the income-generating potential of a strategy.")
                     st.pyplot(fig_withdrawn)
                     plt.close(fig_withdrawn)
-        except Exception as e:
-            st.error("A critical error occurred while generating the 'Total Withdrawn' comparison plot. The application would have hung here.")
-            st.exception(e)
+            except Exception as e:
+                st.error("An error occurred while generating the 'Total Withdrawn' comparison plot.")
 
         # --- Loop through all results and call the helper function to display them ---
         for strategy_name, result in all_results.items():

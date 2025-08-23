@@ -1748,24 +1748,30 @@ def write_summary_table_to_pdf(pdf, all_results):
     """Creates a PDF page with the main strategy comparison summary table."""
     summary_data = []
     for name, res in all_results.items():
+        # This data structure now mirrors the web app's table for consistency.
         summary_data.append({
             "Strategy": name,
             "Median Final BR": f"€{res['median_final_bankroll']:,.2f}",
+            "Mode Final BR": f"€{res.get('final_bankroll_mode', 0.0):,.2f}",
+            "Median Growth": f"{res.get('growth_rate', 0.0):.2%}",
+            "Median Hands": f"{res.get('median_hands_played', 0):,.0f}",
+            "Median Profit (Play)": f"€{res.get('median_profit_from_play_eur', 0.0):,.2f}",
+            "Median Rakeback": f"€{res.get('median_rakeback_eur', 0.0):,.2f}",
             "Median Total Return": f"€{res.get('median_total_return', 0.0):,.2f}",
             "Risk of Ruin (%)": f"{res['risk_of_ruin']:.2f}",
             "Target Prob (%)": f"{res['target_prob']:.2f}",
+            "5th %ile BR": f"€{res.get('p5', 0.0):,.2f}",
             "P95 Max Downswing": f"€{res['p95_max_downswing']:,.2f}",
-            "Median W/D": f"€{res.get('median_total_withdrawn', 0.0):,.2f}",
         })
     df = pd.DataFrame(summary_data)
 
-    fig, ax = plt.subplots(figsize=(11, 8.5))
+    fig, ax = plt.subplots(figsize=(16, 8.5)) # Make figure wider to accommodate more columns
     ax.axis('tight')
     ax.axis('off')
     table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
     table.auto_set_font_size(False)
-    table.set_fontsize(8)
-    table.scale(1, 1.8)  # Adjust row height
+    table.set_fontsize(7) # Use a smaller font to fit all data
+    table.scale(1, 2.0)  # Adjust row height
 
     # Style header
     for (i, j), cell in table.get_celld().items():
@@ -2009,6 +2015,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
         plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
         plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
+        plot_downswing_comparison(all_results, config, color_map=color_map, pdf=pdf)
 
         # Add the withdrawn plot if applicable
         if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
