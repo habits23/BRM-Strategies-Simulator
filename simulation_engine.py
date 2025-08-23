@@ -1856,8 +1856,8 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
             if y_pos < 0.25: new_page()
             if y_pos < 0.9: y_pos -= 0.04 # Add space before header
             header_text = line[4:]
-            fig.text(0.1, y_pos, header_text, ha='left', va='top', fontsize=16, weight='bold', color=colors['header'])
-            y_pos -= 0.07
+            fig.text(0.1, y_pos, header_text, ha='left', va='top', fontsize=14, weight='bold', color=colors['header'])
+            y_pos -= 0.06
             continue
 
         # --- Handle Bullet Points (- ) ---
@@ -1867,11 +1867,11 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
             text = line[2:]
             wrapped_text = textwrap.wrap(text, width=85)
 
-            fig.text(0.12, y_pos, bullet, ha='left', va='top', fontsize=11, color=colors['bullet'])
+            fig.text(0.12, y_pos, bullet, ha='left', va='top', fontsize=10, color=colors['bullet'])
             for j, wrapped_line in enumerate(wrapped_text):
-                if y_pos < 0.1: new_page(); fig.text(0.12, y_pos, bullet, ha='left', va='top', fontsize=11, color=colors['bullet'])
-                fig.text(0.15, y_pos, wrapped_line, ha='left', va='top', fontsize=10, color=colors['text'])
-                y_pos -= 0.03
+                if y_pos < 0.1: new_page(); fig.text(0.12, y_pos, bullet, ha='left', va='top', fontsize=10, color=colors['bullet'])
+                fig.text(0.15, y_pos, wrapped_line, ha='left', va='top', fontsize=9, color=colors['text'])
+                y_pos -= 0.028
             y_pos -= 0.01
             continue
 
@@ -1884,130 +1884,149 @@ def write_analysis_report_to_pdf(pdf, analysis_report):
                 description = parts[1].strip()
                 wrapped_description = textwrap.wrap(description, width=65)
 
-                fig.text(0.1, y_pos, category, ha='left', va='top', fontsize=10, weight='bold', color=colors['category'])
+                fig.text(0.1, y_pos, category, ha='left', va='top', fontsize=9, weight='bold', color=colors['category'])
                 for j, wrapped_line in enumerate(wrapped_description):
-                    if y_pos < 0.1: new_page(); fig.text(0.1, y_pos, category, ha='left', va='top', fontsize=10, weight='bold', color=colors['category'])
-                    fig.text(0.4, y_pos, wrapped_line, ha='left', va='top', fontsize=10, color=colors['text'])
-                    y_pos -= 0.03
+                    if y_pos < 0.1: new_page(); fig.text(0.1, y_pos, category, ha='left', va='top', fontsize=9, weight='bold', color=colors['category'])
+                    fig.text(0.4, y_pos, wrapped_line, ha='left', va='top', fontsize=9, color=colors['text'])
+                    y_pos -= 0.028
                 y_pos -= 0.02
                 continue
 
-def write_text_page_to_pdf(pdf, title, text_content, font_size=9, font_family='monospace'):
-    """Writes a block of text to a new PDF page with a title, handling pagination."""
-    lines_per_page = 50 if font_family == 'monospace' else 38
-    # Simple word wrap for the analysis report
-    if font_family != 'monospace':
-        wrapped_lines = []
-        # Strip markdown and emojis for cleaner text rendering in the PDF.
-        # This prevents the "Glyph missing from font" warnings.
-        clean_content = text_content.replace('**', '').replace('### ', '').replace('- ', '• ') \
-            .replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','') \
-            .replace('🚀','').replace('😌','').replace('🎢','').replace('🧠','') \
-            .replace('⚡','').replace('💸','').replace('💰','').replace('⚠️','')
-        for line in clean_content.split('\n'):
-            wrapped_lines.extend(textwrap.wrap(line, width=100))
-        lines = wrapped_lines
-    else:
-        lines = text_content.split('\n')
+def write_detailed_strategy_report_to_pdf(pdf, strategy_name, result, config):
+    """
+    Writes the detailed strategy report to the PDF with enhanced,
+    user-friendly formatting, including pagination.
+    """
+    colors = {
+        "header": "#064E3B",  # Dark Green
+        "category": "#1F2937",# Dark Gray
+        "text": "#4B5563",    # Medium Gray
+    }
 
-    pages_of_lines = [lines[i:i + lines_per_page] for i in range(0, len(lines), lines_per_page)]
+    fig = plt.figure(figsize=(11, 8.5))
+    y_pos = 0.92
 
-    for i, page_lines in enumerate(pages_of_lines):
-        report_text = "\n".join(page_lines)
-        fig = plt.figure(figsize=(11, 8.5))
+    def new_page_check(required_space=0.1):
+        nonlocal y_pos
+        if y_pos < required_space:
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close(fig)
+            nonlocal fig
+            fig = plt.figure(figsize=(11, 8.5))
+            y_pos = 0.92
+            return True
+        return False
 
-        page_title = title if i == 0 else f"{title} (cont.)"
-        fig.suptitle(page_title, fontsize=16, y=0.95, weight='bold')
+    def render_header(text, size=14):
+        nonlocal y_pos
+        if not new_page_check(y_pos - 0.1):
+             y_pos -= 0.04 # Space before header
+        fig.text(0.1, y_pos, text, ha='left', va='top', fontsize=size, weight='bold', color=colors['header'])
+        y_pos -= (0.04 + size * 0.0015)
 
-        fig.text(0.05, 0.87, report_text, transform=fig.transFigure, size=font_size, va='top', ha='left', fontfamily=font_family)
-        pdf.savefig(fig)
-        plt.close(fig)
+    def render_key_value(key, value, key_x=0.1, val_x=0.45):
+        nonlocal y_pos
+        new_page_check(0.1)
+        fig.text(key_x, y_pos, key, ha='left', va='top', fontsize=9, weight='bold', color=colors['category'])
+        fig.text(val_x, y_pos, value, ha='left', va='top', fontsize=9, color=colors['text'])
+        y_pos -= 0.03
 
-def get_strategy_report_lines(strategy_name, result, config):
-    """Generates a formatted string with all detailed results for a single strategy."""
-    lines = []
-    def add_line(text=""): lines.append(text)
-    def add_header(title, char="="):
-        add_line(f"\n{title}")
-        add_line(char * len(title))
-
-    add_header(f"Detailed Report for Strategy: {strategy_name}")
+    # --- Main Title ---
+    render_header(f"Detailed Report: {strategy_name}", size=16)
 
     # --- Key Metrics ---
-    add_header("Key Metrics", "-")
-    lines.append(f"{'Median Final Bankroll':<28}: €{result['median_final_bankroll']:>12,.2f}")
-    lines.append(f"{'Median Total Withdrawn':<28}: €{result.get('median_total_withdrawn', 0.0):>12,.2f}")
-    lines.append(f"{'Median Total Return':<28}: €{result.get('median_total_return', 0.0):>12,.2f}")
-    lines.append(f"{'Risk of Ruin':<28}: {result['risk_of_ruin']:>11.2f}%")
-    lines.append(f"{'Target Probability':<28}: {result['target_prob']:>11.2f}%")
-    lines.append(f"{'Median Max Downswing':<28}: €{result['median_max_downswing']:>12,.2f}")
-    lines.append(f"{'95th Pct. Downswing':<28}: €{result['p95_max_downswing']:>12,.2f}")
-    lines.append(f"{'Median Hands Played':<28}: {result.get('median_hands_played', 0):>12,.0f}")
+    render_header("Key Metrics")
+    render_key_value("Median Final Bankroll:", f"€{result['median_final_bankroll']:,.2f}")
+    render_key_value("Median Total Withdrawn:", f"€{result.get('median_total_withdrawn', 0.0):,.2f}")
+    render_key_value("Median Total Return:", f"€{result.get('median_total_return', 0.0):,.2f}")
+    render_key_value("Risk of Ruin:", f"{result['risk_of_ruin']:.2f}%")
+    render_key_value("Target Probability:", f"{result['target_prob']:.2f}%")
+    render_key_value("Median Max Downswing:", f"€{result['median_max_downswing']:,.2f}")
+    render_key_value("95th Pct. Downswing:", f"€{result['p95_max_downswing']:,.2f}")
+    render_key_value("Median Hands Played:", f"{result.get('median_hands_played', 0):,.0f}")
 
     # --- Downswing Probabilities ---
-    add_header("Downswing Probabilities", "-")
+    new_page_check(0.4)
+    render_header("Downswing Probabilities")
     downswing_analysis = result.get('downswing_analysis', {})
     depth_probs = downswing_analysis.get('depth_probabilities', {})
-    if depth_probs:
-        add_line("  Depth (BBs):")
-        for depth, prob in depth_probs.items():
-            if prob > 0: lines.append(f"    >= {depth:<5} BB: {prob:>6.2f}%")
     duration_probs = downswing_analysis.get('duration_probabilities', {})
+    fig.text(0.1, y_pos, "Depth (BBs)", ha='left', va='top', fontsize=10, weight='bold', color=colors['category'])
+    fig.text(0.55, y_pos, "Duration (Hands)", ha='left', va='top', fontsize=10, weight='bold', color=colors['category'])
+    y_pos -= 0.04
+
+    start_y = y_pos
+    max_y = y_pos
+
+    if depth_probs:
+        for depth, prob in sorted(depth_probs.items()):
+            if prob > 0: render_key_value(f"  >= {depth} BB:", f"{prob:.2f}%", key_x=0.12, val_x=0.3)
+    max_y = min(max_y, y_pos)
+    y_pos = start_y # Reset for second column
+
     if duration_probs:
-        add_line("\n  Duration (Hands):")
-        for duration, prob in duration_probs.items():
-            if prob > 0: lines.append(f"    >= {duration:<7} Hands: {prob:>6.2f}%")
+        for duration, prob in sorted(duration_probs.items()):
+            if prob > 0: render_key_value(f"  >= {duration} Hands:", f"{prob:.2f}%", key_x=0.57, val_x=0.75)
+    y_pos = min(y_pos, max_y) # Move to the bottom of the longest column
 
-    # --- Risk of Demotion ---
+    # --- Other Data Sections ---
+    sections = []
     if result.get('risk_of_demotion'):
-        add_header("Risk of Demotion", "-")
-        stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-        sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
-        for stake, data in sorted_demotions:
-            if data['reached_count'] > 0 and data['prob'] > 0:
-                add_line(f"  From {stake:<10}: {data['prob']:>5.2f}% (of {int(data['reached_count']):,} sims)")
-
-    # --- Hands Distribution ---
+        sections.append(("Risk of Demotion", result['risk_of_demotion']))
     if result.get('hands_distribution_pct'):
-        add_header("Hands Played Distribution", "-")
-        add_line("Avg. percentage of total hands played at each stake:")
-        stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-        sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
-        for stake_name, pct in sorted_stakes:
-            if pct > 0.01:
-                add_line(f"  - {stake_name:<10}: {pct:>5.2f}%")
-
-    # --- Final Stake Distribution ---
+        sections.append(("Hands Played Distribution", result['hands_distribution_pct']))
     if result.get('final_stake_distribution'):
-        add_header("Final Stake Distribution", "-")
-        add_line("Percentage of simulations ending at each table mix:")
-        # Sort by percentage (value) descending, then by mix string (key) ascending as a tie-breaker.
-        sorted_dist = sorted(result['final_stake_distribution'].items(), key=lambda item: (-item[1], str(item[0])))
-        for mix_str, pct in sorted_dist:
-            if pct > 0.01:
-                add_line(f"  - {mix_str:<30}: {pct:>5.2f}%")
+        sections.append(("Final Stake Distribution", result['final_stake_distribution']))
+
+    for title, data in sections:
+        new_page_check(0.3)
+        render_header(title)
+        if title == "Risk of Demotion":
+            stake_order_map = {s['name']: s['bb_size'] for s in config['STAKES_DATA']}
+            sorted_data = sorted(data.items(), key=lambda i: stake_order_map.get(i[0], float('inf')), reverse=True)
+            for stake, d in sorted_data:
+                if d['reached_count'] > 0 and d['prob'] > 0:
+                    render_key_value(f"From {stake}:", f"{d['prob']:.2f}% (of {int(d['reached_count']):,} sims)")
+        elif title == "Hands Played Distribution":
+            stake_order_map = {s['name']: s['bb_size'] for s in config['STAKES_DATA']}
+            sorted_data = sorted(data.items(), key=lambda i: stake_order_map.get(i[0], float('inf')))
+            for stake, pct in sorted_data:
+                if pct > 0.01: render_key_value(f"{stake}:", f"{pct:.2f}%")
+        elif title == "Final Stake Distribution":
+            sorted_data = sorted(data.items(), key=lambda i: (-i[1], str(i[0])))
+            for mix, pct in sorted_data:
+                if pct > 0.01: render_key_value(f"{mix}:", f"{pct:.2f}%")
 
     # --- Percentile Win Rate Analysis ---
     if result.get('percentile_win_rates'):
-        add_header("Percentile Win Rate Analysis (bb/100)", "-")
+        new_page_check(0.5)
+        render_header("Percentile Win Rate Analysis (bb/100)")
         percentile_wrs = result.get('percentile_win_rates', {})
         percentiles_to_show = {
             "2.5th Percentile": "2.5th", "5th Percentile": "5th", "25th Percentile": "25th",
             "Median Percentile": "Median", "75th Percentile": "75th", "95th Percentile": "95th",
             "97.5th Percentile": "97.5th"
         }
-        add_line(f"{'Percentile':<12} | {'Assigned WR':>12} | {'Play WR':>12} | {'Rakeback WR':>12} | {'Variance Imp.':>15}")
-        add_line("-" * 72)
+        headers = ['Percentile', 'Assigned WR', 'Play WR', 'Rakeback WR', 'Variance Imp.']
+        col_pos = [0.1, 0.3, 0.45, 0.62, 0.8]
+        for i, h in enumerate(headers):
+            fig.text(col_pos[i], y_pos, h, ha='left', va='top', fontsize=9, weight='bold', color=colors['category'])
+        y_pos -= 0.035
+
         for long_name, short_name in percentiles_to_show.items():
             if long_name in percentile_wrs:
+                new_page_check(0.1)
                 data = percentile_wrs[long_name]
-                assigned = data.get('Assigned WR', 'N/A')
-                realized = data.get('Realized WR (Play)', 'N/A')
-                rakeback = data.get('Rakeback (bb/100)', 'N/A')
-                impact = data.get('Variance Impact', 'N/A')
-                add_line(f"{short_name:<12} | {assigned:>12} | {realized:>12} | {rakeback:>12} | {impact:>15}")
+                row_data = [
+                    short_name, data.get('Assigned WR', 'N/A'), data.get('Realized WR (Play)', 'N/A'),
+                    data.get('Rakeback (bb/100)', 'N/A'), data.get('Variance Impact', 'N/A')
+                ]
+                for i, item in enumerate(row_data):
+                    fig.text(col_pos[i], y_pos, item, ha='left', va='top', fontsize=9, color=colors['text'])
+                y_pos -= 0.03
 
-    return "\n".join(lines)
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
 
 def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
     """Generates a comprehensive, multi-page PDF report."""
@@ -2041,8 +2060,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         # Subsequent Pages: Detailed Strategy Reports
         for strategy_name, result in all_results.items():
             # Add detailed text report (can be multiple pages)
-            report_text = get_strategy_report_lines(strategy_name, result, config)
-            write_text_page_to_pdf(pdf, f"Detailed Report: {strategy_name}", report_text)
+            write_detailed_strategy_report_to_pdf(pdf, strategy_name, result, config)
 
             # Add detailed plots for this strategy
             plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
