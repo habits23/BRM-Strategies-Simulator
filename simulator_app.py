@@ -269,6 +269,7 @@ if 'withdrawal_strategy' not in st.session_state: st.session_state.withdrawal_st
 if 'withdrawal_value' not in st.session_state: st.session_state.withdrawal_value = 500
 if 'min_br_for_withdrawal' not in st.session_state: st.session_state.min_br_for_withdrawal = 2000
 if 'plot_percentile_limit' not in st.session_state: st.session_state.plot_percentile_limit = 99
+if 'enable_diagnostic_log' not in st.session_state: st.session_state.enable_diagnostic_log = False
 
 # Initialize flags and data containers.
 if 'run_simulation' not in st.session_state:
@@ -939,6 +940,9 @@ with st.sidebar.expander("Plotting & Display Settings", expanded=False):
         key="plot_percentile_limit"
     )
 
+with st.sidebar.expander("Advanced & Debugging Settings", expanded=False):
+    st.checkbox("Enable Diagnostic Log", key="enable_diagnostic_log", value=False, help="Generate a detailed log of the simulation process. Useful for debugging, but can slightly slow down the simulation.")
+
 with st.sidebar.expander("Model Validation", expanded=False):
     st.button("Load Sanity Check Config", on_click=setup_sanity_check, help="Loads a simple configuration to validate the simulation engine against a standard variance calculator. This will overwrite your current settings.", use_container_width=True)
 
@@ -1333,6 +1337,7 @@ if st.session_state.run_simulation:
             "min_bankroll": st.session_state.min_br_for_withdrawal
         } if st.session_state.enable_withdrawals else {"enabled": False},
         "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
+        "ENABLE_DIAGNOSTIC_LOG": st.session_state.enable_diagnostic_log,
         # Pass Downswing Analysis constants to the engine.
         # These are defined at the top of the file.
         "DOWNSWING_DEPTH_THRESHOLDS_BB": DOWNSWING_DEPTH_THRESHOLDS_BB,
