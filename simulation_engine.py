@@ -478,8 +478,11 @@ def _process_simulation_block(
 
     # --- Maximum Drawdown and Peak Update ---
     # This logic is written explicitly to avoid potential side effects from in-place operations.
-    # 1. First, calculate the drawdown for this block using the peak from the START of the block.
-    current_drawdown = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    # 1. First, calculate the drawdown for this block, but ONLY for active simulations.
+    # For inactive sims, the drawdown for this block is 0.
+    current_drawdown = np.zeros_like(max_drawdowns_so_far)
+    if np.any(active_mask):
+        current_drawdown[active_mask] = peak_bankrolls_so_far[active_mask] - bankroll_history[active_mask, i+1]
     current_drawdown[current_drawdown < 0] = 0 # A drawdown cannot be negative.
     # 2. Next, update the all-time maximum drawdown if the current one is larger.
     np.maximum(max_drawdowns_so_far, current_drawdown, out=max_drawdowns_so_far)
