@@ -9,6 +9,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from collections import defaultdict
 import pandas as pd
 import io
+import textwrap
 
 # =================================================================================
 #   BANKROLL MANAGEMENT STRATEGY CLASS
@@ -1824,7 +1825,7 @@ def write_text_page_to_pdf(pdf, title, text_content, font_size=9, font_family='m
         # Strip markdown for cleaner text rendering
         clean_content = text_content.replace('**', '').replace('### ', '').replace('- ', '• ')
         for line in clean_content.split('\n'):
-            wrapped_lines.extend(plt.textwrap.wrap(line, width=100))
+            wrapped_lines.extend(textwrap.wrap(line, width=100))
         lines = wrapped_lines
     else:
         lines = text_content.split('\n')
