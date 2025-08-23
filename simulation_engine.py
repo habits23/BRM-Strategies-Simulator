@@ -480,6 +480,7 @@ def _process_simulation_block(
     # This logic is written explicitly to avoid potential side effects from in-place operations.
     # 1. First, calculate the drawdown for this block using the peak from the START of the block.
     current_drawdown = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    current_drawdown[current_drawdown < 0] = 0 # A drawdown cannot be negative.
     # 2. Next, update the all-time maximum drawdown if the current one is larger.
     max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdown)
     # 3. Finally, update the peak for the NEXT block.
