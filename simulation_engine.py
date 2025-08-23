@@ -1886,18 +1886,25 @@ def get_strategy_report_lines(strategy_name, result, config):
             if data['reached_count'] > 0 and data['prob'] > 0:
                 add_line(f"  From {stake:<10}: {data['prob']:>5.2f}% (of {int(data['reached_count']):,} sims)")
 
-    # Helper functions for different sections of the report
-    def _write_threshold_analysis(res):
-        lines = ["--- Strategy Threshold Analysis ---"]
-        if 'above_threshold_hit_counts' in res and res['above_threshold_hit_counts']:
-            lines.append("Probability of hitting upper thresholds:")
-            for threshold, count in sorted(res['above_threshold_hit_counts'].items(), reverse=True):
-                lines.append(f"   - €{threshold:,.0f}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
-        if 'below_threshold_drop_counts' in res and res['below_threshold_drop_counts']:
-            lines.append("Probability of dropping to lower thresholds:")
-            for threshold, count in sorted(res['below_threshold_drop_counts'].items(), reverse=True):
-                lines.append(f"   - €{threshold:,.0f}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
-        return lines
+    # --- Hands Distribution ---
+    if result.get('hands_distribution_pct'):
+        add_header("Hands Played Distribution", "-")
+        add_line("Avg. percentage of total hands played at each stake:")
+        stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+        sorted_stakes = sorted(result['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
+        for stake_name, pct in sorted_stakes:
+            if pct > 0.01:
+                add_line(f"  - {stake_name:<10}: {pct:>5.2f}%")
+
+    # --- Final Stake Distribution ---
+    if result.get('final_stake_distribution'):
+        add_header("Final Stake Distribution", "-")
+        add_line("Percentage of simulations ending at each table mix:")
+        # Sort by percentage (value) descending, then by mix string (key) ascending as a tie-breaker.
+        sorted_dist = sorted(result['final_stake_distribution'].items(), key=lambda item: (-item[1], str(item[0])))
+        for mix_str, pct in sorted_dist:
+            if pct > 0.01:
+                add_line(f"  - {mix_str:<30}: {pct:>5.2f}%")
 
     # --- Percentile Win Rate Analysis ---
     if result.get('percentile_win_rates'):
