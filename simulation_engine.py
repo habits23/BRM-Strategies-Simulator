@@ -1822,8 +1822,12 @@ def write_text_page_to_pdf(pdf, title, text_content, font_size=9, font_family='m
     # Simple word wrap for the analysis report
     if font_family != 'monospace':
         wrapped_lines = []
-        # Strip markdown for cleaner text rendering
-        clean_content = text_content.replace('**', '').replace('### ', '').replace('- ', '• ')
+        # Strip markdown and emojis for cleaner text rendering in the PDF.
+        # This prevents the "Glyph missing from font" warnings.
+        clean_content = text_content.replace('**', '').replace('### ', '').replace('- ', '• ') \
+            .replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','') \
+            .replace('🚀','').replace('😌','').replace('🎢','').replace('🧠','') \
+            .replace('⚡','').replace('💸','').replace('💰','').replace('⚠️','')
         for line in clean_content.split('\n'):
             wrapped_lines.extend(textwrap.wrap(line, width=100))
         lines = wrapped_lines
