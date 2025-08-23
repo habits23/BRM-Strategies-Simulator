@@ -367,7 +367,6 @@ def _initialize_simulation_state(num_sims, num_checks, config):
 
     # Underwater state
     underwater_hands_count = np.zeros(num_sims, dtype=int)
-    integrated_drawdown = np.zeros(num_sims, dtype=float)
 
     # --- Downswing Duration Tracking ---
     # We track the *current* stretch and the *maximum* stretch seen so far.
@@ -378,8 +377,8 @@ def _initialize_simulation_state(num_sims, num_checks, config):
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
-        is_stopped_out, stop_loss_triggers, 
-        underwater_hands_count, integrated_drawdown,
+        is_stopped_out, stop_loss_triggers,
+        underwater_hands_count,
         current_underwater_stretch_hands, max_underwater_stretch_so_far
     )
 
@@ -395,7 +394,7 @@ def _process_simulation_block(
     total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
     peak_bankrolls_so_far, max_drawdowns_so_far,
     is_stopped_out, stop_loss_triggers,
-    underwater_hands_count, integrated_drawdown,
+    underwater_hands_count,
     current_underwater_stretch_hands, max_underwater_stretch_so_far
 ):
     """
@@ -469,8 +468,6 @@ def _process_simulation_block(
     underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
     if np.any(underwater_mask):
         underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
-        drawdown_amount = peak_bankrolls_so_far - bankroll_history[:, i+1]
-        integrated_drawdown[underwater_mask] += drawdown_amount[underwater_mask] * config['HANDS_PER_CHECK']
         current_underwater_stretch_hands[underwater_mask] += config['HANDS_PER_CHECK']
 
     # --- Downswing Duration Logic ---
@@ -505,7 +502,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
         is_stopped_out, stop_loss_triggers,
-        underwater_hands_count, integrated_drawdown,
+        underwater_hands_count,
         current_underwater_stretch_hands, max_underwater_stretch_so_far
     ) = _initialize_simulation_state(num_sims, num_checks, config)
 
@@ -578,7 +575,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
             peak_bankrolls_so_far, max_drawdowns_so_far,
             is_stopped_out, stop_loss_triggers,
-            underwater_hands_count, integrated_drawdown,
+            underwater_hands_count,
             current_underwater_stretch_hands, max_underwater_stretch_so_far
         )
         if not should_continue:
@@ -592,7 +589,7 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
     return (
         bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
         demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count,
-        integrated_drawdown, total_withdrawn_histories, max_underwater_stretch_so_far
+        total_withdrawn_histories, max_underwater_stretch_so_far
     )
 
 # =================================================================================
@@ -664,7 +661,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, max_underwater_stretch, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, total_withdrawn_histories, max_underwater_stretch, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
@@ -777,9 +774,6 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     ) * 100
     median_time_underwater_pct = np.median(time_underwater_pct)
 
-    # Calculate median integrated drawdown
-    median_integrated_drawdown = np.median(integrated_drawdown)
-
     final_bankroll_mode = calculate_binned_mode(final_bankrolls, config['RUIN_THRESHOLD'])
     target_achieved_count = np.sum(np.any(bankroll_histories >= config['TARGET_BANKROLL'], axis=1))
     busted_runs = np.sum(np.any(bankroll_histories <= config['RUIN_THRESHOLD'], axis=1))
@@ -836,7 +830,6 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'median_hands_played': median_hands_played,
         'median_stop_losses': median_stop_losses,
         'median_time_underwater_pct': median_time_underwater_pct,
-        'median_integrated_drawdown': median_integrated_drawdown,
         'average_assigned_win_rates': average_assigned_win_rates,
         'avg_assigned_wr_per_sim': avg_assigned_wr_per_sim,
         'median_run_assigned_wr': median_run_assigned_wr,
@@ -862,7 +855,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
         is_stopped_out, stop_loss_triggers,
-        underwater_hands_count, integrated_drawdown,
+        underwater_hands_count,
         current_underwater_stretch_hands, max_underwater_stretch_so_far
     ) = _initialize_simulation_state(num_sims, num_checks, config)
 
@@ -934,7 +927,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
             peak_bankrolls_so_far, max_drawdowns_so_far,
             is_stopped_out, stop_loss_triggers,
-            underwater_hands_count, integrated_drawdown,
+            underwater_hands_count,
             current_underwater_stretch_hands, max_underwater_stretch_so_far
         )
         if not should_continue:
@@ -948,7 +941,7 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
     return (
         bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
         demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count,
-        integrated_drawdown, total_withdrawn_histories, max_underwater_stretch_so_far
+        total_withdrawn_histories, max_underwater_stretch_so_far
     )
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
@@ -1821,12 +1814,6 @@ def generate_qualitative_analysis(all_results, config):
         verb = "offered" if len(best_pain) == 1 else "were tied for offering"
         insights.append(f"\n**🧠 Least Painful Journey:** The **{names}** strategy {verb} the most psychologically comfortable ride. It had the lowest 'Integrated Drawdown', meaning it minimized both the size and duration of downswings, reducing overall financial stress.")
 
-    best_efficiency, _ = find_best_worst_with_ties('efficiency_score', higher_is_better=True)
-    if best_efficiency:
-        names = f"'{best_efficiency[0]}'" if len(best_efficiency) == 1 else f"'{', '.join(best_efficiency)}'"
-        verb = "demonstrated" if len(best_efficiency) == 1 else "were tied for demonstrating"
-        insights.append(f"\n**⚡ Most Efficient:** The **{names}** strategy {verb} the best risk-adjusted return. It generated the most 'total value' (growth + withdrawals) for the amount of 'pain' (downswing) it caused, making it a highly efficient choice.")
-
     # Add insight for withdrawals if enabled
     if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
         best_income, worst_income = find_best_worst_with_ties('median_total_withdrawn', higher_is_better=True)
@@ -2016,8 +2003,7 @@ def run_full_analysis(config, progress_callback=None):
 
                 (bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
                  demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count,
-                 integrated_drawdown, total_withdrawn_histories,
-                 max_underwater_stretch) = sim_results_tuple
+                 total_withdrawn_histories, max_underwater_stretch) = sim_results_tuple
 
                 # --- Sanitize all key numerical arrays ---
                 # This is the most robust place to clean the data. We ensure all raw arrays are free of non-finite
@@ -2026,7 +2012,6 @@ def run_full_analysis(config, progress_callback=None):
                 safe_bankroll_histories = np.nan_to_num(bankroll_histories, nan=config['RUIN_THRESHOLD'], posinf=config['TARGET_BANKROLL']*5, neginf=config['RUIN_THRESHOLD'])
                 safe_rakeback_histories = np.nan_to_num(rakeback_histories, nan=0)
                 safe_max_drawdowns = np.nan_to_num(max_drawdowns, nan=0, posinf=config['STARTING_BANKROLL_EUR']*2, neginf=0)
-                safe_integrated_drawdown = np.nan_to_num(integrated_drawdown, nan=0)
                 safe_total_withdrawn = np.nan_to_num(total_withdrawn_histories, nan=0)
                 log_message(f"Raw data sanitized for '{strategy_name}'.")
 
@@ -2042,7 +2027,7 @@ def run_full_analysis(config, progress_callback=None):
                     peak_stake_levels=peak_stake_levels, demotion_flags=demotion_flags,
                     stake_level_map=stake_level_map, stake_name_map=stake_name_map,
                     max_drawdowns=safe_max_drawdowns, stop_loss_triggers=stop_loss_triggers,
-                    underwater_hands_count=underwater_hands_count, integrated_drawdown=safe_integrated_drawdown,
+                    underwater_hands_count=underwater_hands_count,
                     total_withdrawn_histories=safe_total_withdrawn,
                     max_underwater_stretch=max_underwater_stretch,
                     config=config
