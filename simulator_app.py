@@ -35,6 +35,9 @@ import simulation_engine as engine
 DOWNSWING_DEPTH_THRESHOLDS_BB = [300, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500]
 DOWNSWING_DURATION_THRESHOLDS_HANDS = [5000, 7500, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000, 200000, 300000]
 
+# --- Sanity Check Configuration Name ---
+# Define this as a constant to avoid using a "magic string" in multiple places.
+SANITY_CHECK_STRATEGY_NAME = "Sanity Check (NL20 Only)"
 
 # --- Default Data for First Run ---
 # This section defines the default data that populates the application when a user visits for the first time.
@@ -302,7 +305,7 @@ def setup_sanity_check():
         {"name": "NL20", "bb_size": 0.20, "bb_per_100": 5.0, "ev_bb_per_100": 5.0, "std_dev_per_100": 100.0, "sample_hands": 10_000_000, "win_rate_drop": 0.0, "rake_bb_per_100": 0.0},
     ])
     st.session_state.strategy_configs = {
-        "Sanity Check (NL20 Only)": {
+        SANITY_CHECK_STRATEGY_NAME: {
             "type": "standard",
             "rules": [{"threshold": 0, "tables": {"NL20": "100%"}}]
         }
@@ -495,7 +498,7 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
     """
     with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
         # --- Special Sanity Check Analysis Box ---
-        if strategy_name == "Sanity Check (NL20 Only)":
+        if strategy_name == SANITY_CHECK_STRATEGY_NAME:
             with st.container(border=True):
                 st.subheader("🔬 Sanity Check Analysis")
                 start_br = config['STARTING_BANKROLL_EUR']
