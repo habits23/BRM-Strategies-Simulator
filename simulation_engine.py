@@ -458,29 +458,32 @@ def _process_simulation_block(
     new_bankrolls = temp_bankrolls
     bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
+    # --- Maximum Drawdown, Underwater Time, and Duration ---
+    # These calculations MUST use the peak bankroll from the START of the block.
+    # We identify new peaks and calculate drawdowns BEFORE updating the peak for the next block.
+
+    # Identify simulations that made a new peak in this block
+    made_new_peak_mask = new_bankrolls > peak_bankrolls_so_far
+
     # --- Underwater Time Calculation ---
     underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
     if np.any(underwater_mask):
         underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
         drawdown_amount = peak_bankrolls_so_far - bankroll_history[:, i+1]
         integrated_drawdown[underwater_mask] += drawdown_amount[underwater_mask] * config['HANDS_PER_CHECK']
-        # Also update the current underwater stretch duration
         current_underwater_stretch_hands[underwater_mask] += config['HANDS_PER_CHECK']
 
-    # Identify simulations that made a new peak in this block
-    made_new_peak_mask = new_bankrolls > peak_bankrolls_so_far
+    # --- Downswing Duration Logic ---
     if np.any(made_new_peak_mask):
-        # An underwater stretch has just ended. Check if it was the longest one so far.
         ended_stretch_durations = current_underwater_stretch_hands[made_new_peak_mask]
         np.maximum(max_underwater_stretch_so_far[made_new_peak_mask], ended_stretch_durations, out=max_underwater_stretch_so_far[made_new_peak_mask])
-        # Reset the stretch counter for these sims
         current_underwater_stretch_hands[made_new_peak_mask] = 0
 
-    # --- Maximum Drawdown Calculation ---
-    # Now we can update the peak bankroll with the results from the current block.
-    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
+    # --- Maximum Drawdown and Peak Update ---
     current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    current_drawdowns[current_drawdowns < 0] = 0 # Drawdown cannot be negative
     np.maximum(max_drawdowns_so_far, current_drawdowns, out=max_drawdowns_so_far)
+    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
