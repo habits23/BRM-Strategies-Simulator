@@ -1457,7 +1457,7 @@ if st.session_state.get("simulation_output"):
                 "Median Growth": "{:.2%}", "Median Hands Played": "{:,.0f}",
                 "Median Profit (Play)": "€{:,.2f}", "Median Total Withdrawn": "€{:,.2f}",
                 "Median Total Return": "€{:,.2f}",
-                "Median Total Return": "€{:,.2f}", "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
+                "Median Rakeback": "€{:,.2f}", "Risk of Ruin (%)": "{:.2f}%",
                 "Target Prob (%)": "{:.2f}%", "5th %ile BR": "€{:,.2f}",
                 "P95 Max Downswing": "€{:,.2f}"
             }).hide(axis="index"),
