@@ -368,24 +368,19 @@ def _initialize_simulation_state(num_sims, num_checks, config):
     # Underwater state
     underwater_hands_count = np.zeros(num_sims, dtype=int)
     integrated_drawdown = np.zeros(num_sims, dtype=float)
-    
-    # --- Downswing Extent/Stretch Analysis Initialization ---
-    depth_thresholds_bb = np.array(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []))
-    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
-    # We will store a boolean flag for each sim and each threshold
-    downswing_depth_exceeded = np.zeros((num_sims, len(depth_thresholds_bb)), dtype=bool)
-    downswing_duration_exceeded = np.zeros((num_sims, len(duration_thresholds_hands)), dtype=bool)
-    # Track the BB size at the time of the peak for accurate downswing depth calculation
-    bb_size_at_peak = np.zeros(num_sims, dtype=float)
+
+    # --- Downswing Duration Tracking ---
+    # We track the *current* stretch and the *maximum* stretch seen so far.
     current_underwater_stretch_hands = np.zeros(num_sims, dtype=int)
+    max_underwater_stretch_so_far = np.zeros(num_sims, dtype=int)
 
     return (
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
         is_stopped_out, stop_loss_triggers, 
-        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands, # New
-        underwater_hands_count, integrated_drawdown
+        underwater_hands_count, integrated_drawdown,
+        current_underwater_stretch_hands, max_underwater_stretch_so_far
     )
 
 def _process_simulation_block(
@@ -401,7 +396,7 @@ def _process_simulation_block(
     peak_bankrolls_so_far, max_drawdowns_so_far,
     is_stopped_out, stop_loss_triggers,
     underwater_hands_count, integrated_drawdown,
-    downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands
+    current_underwater_stretch_hands, max_underwater_stretch_so_far
 ):
     """
     Processes a single block/step of the simulation for all runs.
@@ -463,43 +458,23 @@ def _process_simulation_block(
     new_bankrolls = temp_bankrolls
     bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
 
-    # --- Downswing Analysis (Duration Part 1: Update current stretch) ---
-    # Identify which simulations are currently underwater and add hands to their current stretch
-    is_underwater_mask = new_bankrolls < peak_bankrolls_so_far
-    current_underwater_stretch_hands[is_underwater_mask] += config['HANDS_PER_CHECK']
-
     # --- Underwater Time Calculation ---
     underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
     if np.any(underwater_mask):
         underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
         drawdown_amount = peak_bankrolls_so_far - bankroll_history[:, i+1]
         integrated_drawdown[underwater_mask] += drawdown_amount[underwater_mask] * config['HANDS_PER_CHECK']
+        # Also update the current underwater stretch duration
+        current_underwater_stretch_hands[underwater_mask] += config['HANDS_PER_CHECK']
 
     # Identify simulations that made a new peak in this block
     made_new_peak_mask = new_bankrolls > peak_bankrolls_so_far
-
-    # --- Downswing Analysis (Duration Part 2: Check thresholds for ended stretches) ---
-    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
-    if np.any(made_new_peak_mask) and len(duration_thresholds_hands) > 0:
+    if np.any(made_new_peak_mask):
+        # An underwater stretch has just ended. Check if it was the longest one so far.
         ended_stretch_durations = current_underwater_stretch_hands[made_new_peak_mask]
-        duration_check = ended_stretch_durations[:, np.newaxis] >= duration_thresholds_hands
-        downswing_duration_exceeded[made_new_peak_mask] |= duration_check
-
-    # Reset the stretch counter for sims that made a new peak
-    current_underwater_stretch_hands[made_new_peak_mask] = 0
-
-    # --- Downswing Analysis (Depth) ---
-    # This must be done BEFORE updating the peak bankroll for the current block.
-    depth_thresholds_bb = np.array(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []))
-    if len(depth_thresholds_bb) > 0:
-        # Update the BB size at the time of the peak for any sims that made a new high
-        bb_size_at_peak[made_new_peak_mask] = bb_sizes_eur[made_new_peak_mask]
-        # Calculate current downswing in EUR from the PREVIOUS peak
-        current_downswings_eur = peak_bankrolls_so_far - new_bankrolls
-        valid_peak_mask = bb_size_at_peak > 0
-        downswings_bb = np.divide(current_downswings_eur, bb_size_at_peak, out=np.zeros_like(current_downswings_eur), where=valid_peak_mask)
-        depth_check = downswings_bb[:, np.newaxis] >= depth_thresholds_bb
-        downswing_depth_exceeded |= depth_check
+        np.maximum(max_underwater_stretch_so_far[made_new_peak_mask], ended_stretch_durations, out=max_underwater_stretch_so_far[made_new_peak_mask])
+        # Reset the stretch counter for these sims
+        current_underwater_stretch_hands[made_new_peak_mask] = 0
 
     # --- Maximum Drawdown Calculation ---
     # Now we can update the peak bankroll with the results from the current block.
@@ -526,9 +501,9 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
-        is_stopped_out, stop_loss_triggers, 
-        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands, # New
-        underwater_hands_count, integrated_drawdown
+        is_stopped_out, stop_loss_triggers,
+        underwater_hands_count, integrated_drawdown,
+        current_underwater_stretch_hands, max_underwater_stretch_so_far
     ) = _initialize_simulation_state(num_sims, num_checks, config)
 
     # --- Demotion Tracking Initialization ---
@@ -601,26 +576,20 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
             peak_bankrolls_so_far, max_drawdowns_so_far,
             is_stopped_out, stop_loss_triggers,
             underwater_hands_count, integrated_drawdown,
-            downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands
+            current_underwater_stretch_hands, max_underwater_stretch_so_far
         )
         if not should_continue:
             break
 
-    # --- Final Downswing Analysis Check ---
-    # For sims that are still underwater at the very end, check their final stretch duration
-    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
-    if len(duration_thresholds_hands) > 0:
-        final_underwater_mask = bankroll_history[:, -1] < peak_bankrolls_so_far
-        if np.any(final_underwater_mask):
-            final_stretch_durations = current_underwater_stretch_hands[final_underwater_mask]
-            duration_check = final_stretch_durations[:, np.newaxis] >= duration_thresholds_hands
-            downswing_duration_exceeded[final_underwater_mask] |= duration_check
+    # --- Final Downswing Duration Check ---
+    # For sims that are still underwater at the very end, their current stretch is their final one.
+    # We must check if this final stretch was their longest.
+    np.maximum(max_underwater_stretch_so_far, current_underwater_stretch_hands, out=max_underwater_stretch_so_far)
 
     return (
         bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
         demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count,
-        integrated_drawdown, total_withdrawn_histories,
-        downswing_depth_exceeded, downswing_duration_exceeded # New return values
+        integrated_drawdown, total_withdrawn_histories, max_underwater_stretch_so_far
     )
 
 # =================================================================================
@@ -692,7 +661,7 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
 
-def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, downswing_depth_exceeded, downswing_duration_exceeded, config):
+def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, hands_per_stake_histories, rakeback_histories, all_win_rates, rng, peak_stake_levels, demotion_flags, stake_level_map, stake_name_map, max_drawdowns, stop_loss_triggers, underwater_hands_count, integrated_drawdown, total_withdrawn_histories, max_underwater_stretch, config):
     """Takes the raw simulation output and calculates all the necessary metrics and analytics."""
     bb_size_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
     total_hands_histories = np.sum(list(hands_per_stake_histories.values()), axis=0)
@@ -706,6 +675,13 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     weighted_assigned_wr_sum = np.zeros(config['NUMBER_OF_SIMULATIONS'])
     for stake_name, wr_array in all_win_rates.items():
         weighted_assigned_wr_sum += wr_array * final_hands_per_stake[stake_name]
+
+    # Calculate average BB size for each simulation run for accurate downswing conversion
+    weighted_bb_size_sum = np.zeros(config['NUMBER_OF_SIMULATIONS'])
+    for stake_name, hands_array in final_hands_per_stake.items():
+        weighted_bb_size_sum += hands_array * bb_size_map[stake_name]
+
+    avg_bb_size_per_sim = np.divide(weighted_bb_size_sum, total_hands_per_sim, out=np.zeros_like(weighted_bb_size_sum), where=total_hands_per_sim > 0)
 
     # Avoid division by zero for sims with no hands played
     avg_assigned_wr_per_sim = np.divide(
@@ -817,6 +793,21 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
     total_return_per_sim = (final_bankrolls - config['STARTING_BANKROLL_EUR']) + final_withdrawn
     median_total_return = np.median(total_return_per_sim)
 
+    # --- Calculate Downswing Analysis Data ---
+    # This logic is extracted from the return dictionary to fix a syntax error
+    # caused by attempting multi-line statements inside a lambda.
+    depth_probs_data = {}
+    if config.get('DOWNSWING_DEPTH_THRESHOLDS_BB'):
+        max_downswings_bb = np.divide(max_drawdowns, avg_bb_size_per_sim, out=np.zeros_like(max_drawdowns), where=avg_bb_size_per_sim > 0)
+        depth_exceeded = max_downswings_bb[:, np.newaxis] >= np.array(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []))
+        probs = np.mean(depth_exceeded, axis=0) * 100
+        depth_probs_data = {int(t): p for t, p in zip(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []), probs)}
+
+    duration_probs_data = {}
+    if config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS'):
+        duration_exceeded = max_underwater_stretch[:, np.newaxis] >= np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
+        probs = np.mean(duration_exceeded, axis=0) * 100
+        duration_probs_data = {int(t): p for t, p in zip(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []), probs)}
 
     return {
         'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
@@ -850,20 +841,10 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
         'p95_total_withdrawn': p95_total_withdrawn,
         'median_total_return': median_total_return,
         'total_withdrawn_histories': total_withdrawn_histories,
-        'downswing_analysis': (lambda: {
-            'depth_probabilities': {
-                int(t): p for t, p in zip(
-                    config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', []),
-                    np.mean(downswing_depth_exceeded, axis=0) * 100
-                )
-            } if downswing_depth_exceeded is not None and len(config.get('DOWNSWING_DEPTH_THRESHOLDS_BB', [])) > 0 else {},
-            'duration_probabilities': {
-                int(t): p for t, p in zip(
-                    config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []),
-                    np.mean(downswing_duration_exceeded, axis=0) * 100
-                )
-            } if downswing_duration_exceeded is not None and len(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', [])) > 0 else {}
-        })(),
+        'downswing_analysis': {
+            'depth_probabilities': depth_probs_data,
+            'duration_probabilities': duration_probs_data
+        }
     }
 def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
     """
@@ -877,9 +858,9 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         bankroll_history, hands_per_stake_histories, rakeback_histories,
         total_withdrawn_histories, hands_since_last_withdrawal, bankroll_at_last_withdrawal,
         peak_bankrolls_so_far, max_drawdowns_so_far,
-        is_stopped_out, stop_loss_triggers, # Corrected order
-        downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands,
-        underwater_hands_count, integrated_drawdown
+        is_stopped_out, stop_loss_triggers,
+        underwater_hands_count, integrated_drawdown,
+        current_underwater_stretch_hands, max_underwater_stretch_so_far
     ) = _initialize_simulation_state(num_sims, num_checks, config)
 
     # --- Demotion Tracking Initialization ---
@@ -951,25 +932,20 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
             peak_bankrolls_so_far, max_drawdowns_so_far,
             is_stopped_out, stop_loss_triggers,
             underwater_hands_count, integrated_drawdown,
-            downswing_depth_exceeded, downswing_duration_exceeded, bb_size_at_peak, current_underwater_stretch_hands
+            current_underwater_stretch_hands, max_underwater_stretch_so_far
         )
         if not should_continue:
             break
 
-    # --- Final Downswing Analysis Check ---
-    duration_thresholds_hands = np.array(config.get('DOWNSWING_DURATION_THRESHOLDS_HANDS', []))
-    if len(duration_thresholds_hands) > 0:
-        final_underwater_mask = bankroll_history[:, -1] < peak_bankrolls_so_far
-        if np.any(final_underwater_mask):
-            final_stretch_durations = current_underwater_stretch_hands[final_underwater_mask]
-            duration_check = final_stretch_durations[:, np.newaxis] >= duration_thresholds_hands
-            downswing_duration_exceeded[final_underwater_mask] |= duration_check
+    # --- Final Downswing Duration Check ---
+    # For sims that are still underwater at the very end, their current stretch is their final one.
+    # We must check if this final stretch was their longest.
+    np.maximum(max_underwater_stretch_so_far, current_underwater_stretch_hands, out=max_underwater_stretch_so_far)
 
     return (
         bankroll_history, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
         demotion_flags, max_drawdowns_so_far, stop_loss_triggers, underwater_hands_count,
-        integrated_drawdown, total_withdrawn_histories,
-        downswing_depth_exceeded, downswing_duration_exceeded # New return values
+        integrated_drawdown, total_withdrawn_histories, max_underwater_stretch_so_far
     )
 # =================================================================================
 #   PLOTTING AND REPORTING FUNCTIONS
@@ -2038,7 +2014,7 @@ def run_full_analysis(config, progress_callback=None):
                 (bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
                  demotion_flags, max_drawdowns, stop_loss_triggers, underwater_hands_count,
                  integrated_drawdown, total_withdrawn_histories,
-                 downswing_depth_exceeded, downswing_duration_exceeded) = sim_results_tuple
+                 max_underwater_stretch) = sim_results_tuple
 
                 # --- Sanitize all key numerical arrays ---
                 # This is the most robust place to clean the data. We ensure all raw arrays are free of non-finite
@@ -2065,7 +2041,7 @@ def run_full_analysis(config, progress_callback=None):
                     max_drawdowns=safe_max_drawdowns, stop_loss_triggers=stop_loss_triggers,
                     underwater_hands_count=underwater_hands_count, integrated_drawdown=safe_integrated_drawdown,
                     total_withdrawn_histories=safe_total_withdrawn,
-                    downswing_depth_exceeded=downswing_depth_exceeded, downswing_duration_exceeded=downswing_duration_exceeded,
+                    max_underwater_stretch=max_underwater_stretch,
                     config=config
                 )
                 log_message(f"Analysis complete for '{strategy_name}'.")
