@@ -1977,6 +1977,16 @@ def run_full_analysis(config, progress_callback=None):
     if num_strategies == 0:
         raise ValueError("No strategies are defined. Please add at least one strategy.")
 
+    # --- Sanity Check Accuracy Override ---
+    # For a sanity check to be accurate against an analytical model, the simulation
+    # must be very granular. We override the hands_per_check to a small number.
+    is_sanity_check = config.get("SANITY_CHECK_STRATEGY_NAME") in config.get('STRATEGIES_TO_RUN', {})
+    original_hpc = config['HANDS_PER_CHECK']
+    if is_sanity_check:
+        # Using a small value like 100 makes the simulation path much more detailed,
+        # leading to a more accurate measurement of downswing peaks and troughs.
+        config['HANDS_PER_CHECK'] = 100
+
     try:
         master_rng = np.random.default_rng(config['SEED'])
         log_message("Master RNG created.")
@@ -2062,6 +2072,10 @@ def run_full_analysis(config, progress_callback=None):
 
     if progress_callback:
         progress_callback(1.0, "Finalizing report...")
+
+    # Restore original config value if it was changed
+    if is_sanity_check:
+        config['HANDS_PER_CHECK'] = original_hpc
 
     log_message("Full analysis complete. Returning results to UI.")
     return {
