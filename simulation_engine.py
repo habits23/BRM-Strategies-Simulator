@@ -1782,13 +1782,110 @@ def create_title_page(pdf, timestamp):
     pdf.savefig(fig)
     plt.close(fig)
 
-def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
-    """Gathers all the text lines for a strategy's detailed report."""
-    report_lines = [
-        f"--- Detailed Report for: {strategy_name} ---",
-        f"Initial Table Mix: {get_initial_table_mix_string(strategy_obj, config)}",
-        ""
-    ]
+def write_summary_table_to_pdf(pdf, all_results):
+    """Creates a PDF page with the main strategy comparison summary table."""
+    summary_data = []
+    for name, res in all_results.items():
+        summary_data.append({
+            "Strategy": name,
+            "Median Final BR": f"€{res['median_final_bankroll']:,.2f}",
+            "Median Total Return": f"€{res.get('median_total_return', 0.0):,.2f}",
+            "Risk of Ruin (%)": f"{res['risk_of_ruin']:.2f}",
+            "Target Prob (%)": f"{res['target_prob']:.2f}",
+            "P95 Max Downswing": f"€{res['p95_max_downswing']:,.2f}",
+            "Median W/D": f"€{res.get('median_total_withdrawn', 0.0):,.2f}",
+        })
+    df = pd.DataFrame(summary_data)
+
+    fig, ax = plt.subplots(figsize=(11, 8.5))
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(1, 1.8)  # Adjust row height
+
+    # Style header
+    for (i, j), cell in table.get_celld().items():
+        if i == 0:
+            cell.set_text_props(weight='bold', color='white')
+            cell.set_facecolor('royalblue')
+
+    fig.suptitle('Strategy Comparison Summary', fontsize=16, y=0.95)
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
+
+def write_text_page_to_pdf(pdf, title, text_content, font_size=9, font_family='monospace'):
+    """Writes a block of text to a new PDF page with a title, handling pagination."""
+    lines_per_page = 50 if font_family == 'monospace' else 38
+    # Simple word wrap for the analysis report
+    if font_family != 'monospace':
+        wrapped_lines = []
+        # Strip markdown for cleaner text rendering
+        clean_content = text_content.replace('**', '').replace('### ', '').replace('- ', '• ')
+        for line in clean_content.split('\n'):
+            wrapped_lines.extend(plt.textwrap.wrap(line, width=100))
+        lines = wrapped_lines
+    else:
+        lines = text_content.split('\n')
+
+    pages_of_lines = [lines[i:i + lines_per_page] for i in range(0, len(lines), lines_per_page)]
+
+    for i, page_lines in enumerate(pages_of_lines):
+        report_text = "\n".join(page_lines)
+        fig = plt.figure(figsize=(11, 8.5))
+
+        page_title = title if i == 0 else f"{title} (cont.)"
+        fig.suptitle(page_title, fontsize=16, y=0.95, weight='bold')
+
+        fig.text(0.05, 0.87, report_text, transform=fig.transFigure, size=font_size, va='top', ha='left', fontfamily=font_family)
+        pdf.savefig(fig)
+        plt.close(fig)
+
+def get_strategy_report_lines(strategy_name, result, config):
+    """Generates a formatted string with all detailed results for a single strategy."""
+    lines = []
+    def add_line(text=""): lines.append(text)
+    def add_header(title, char="="):
+        add_line(f"\n{title}")
+        add_line(char * len(title))
+
+    add_header(f"Detailed Report for Strategy: {strategy_name}")
+
+    # --- Key Metrics ---
+    add_header("Key Metrics", "-")
+    lines.append(f"{'Median Final Bankroll':<28}: €{result['median_final_bankroll']:>12,.2f}")
+    lines.append(f"{'Median Total Withdrawn':<28}: €{result.get('median_total_withdrawn', 0.0):>12,.2f}")
+    lines.append(f"{'Median Total Return':<28}: €{result.get('median_total_return', 0.0):>12,.2f}")
+    lines.append(f"{'Risk of Ruin':<28}: {result['risk_of_ruin']:>11.2f}%")
+    lines.append(f"{'Target Probability':<28}: {result['target_prob']:>11.2f}%")
+    lines.append(f"{'Median Max Downswing':<28}: €{result['median_max_downswing']:>12,.2f}")
+    lines.append(f"{'95th Pct. Downswing':<28}: €{result['p95_max_downswing']:>12,.2f}")
+    lines.append(f"{'Median Hands Played':<28}: {result.get('median_hands_played', 0):>12,.0f}")
+
+    # --- Downswing Probabilities ---
+    add_header("Downswing Probabilities", "-")
+    downswing_analysis = result.get('downswing_analysis', {})
+    depth_probs = downswing_analysis.get('depth_probabilities', {})
+    if depth_probs:
+        add_line("  Depth (BBs):")
+        for depth, prob in depth_probs.items():
+            if prob > 0: lines.append(f"    >= {depth:<5} BB: {prob:>6.2f}%")
+    duration_probs = downswing_analysis.get('duration_probabilities', {})
+    if duration_probs:
+        add_line("\n  Duration (Hands):")
+        for duration, prob in duration_probs.items():
+            if prob > 0: lines.append(f"    >= {duration:<7} Hands: {prob:>6.2f}%")
+
+    # --- Risk of Demotion ---
+    if result.get('risk_of_demotion'):
+        add_header("Risk of Demotion", "-")
+        stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
+        sorted_demotions = sorted(result['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
+        for stake, data in sorted_demotions:
+            if data['reached_count'] > 0 and data['prob'] > 0:
+                add_line(f"  From {stake:<10}: {data['prob']:>5.2f}% (of {int(data['reached_count']):,} sims)")
+
     # Helper functions for different sections of the report
     def _write_threshold_analysis(res):
         lines = ["--- Strategy Threshold Analysis ---"]
@@ -1802,283 +1899,87 @@ def get_strategy_report_lines(strategy_name, result, strategy_obj, config):
                 lines.append(f"   - €{threshold:,.0f}: {(count / config['NUMBER_OF_SIMULATIONS']) * 100:.2f}%")
         return lines
 
-    def _write_hands_distribution(res):
-        lines = []
-        if 'hands_distribution_pct' in res and res['hands_distribution_pct']:
-            lines.extend(["", "--- Hands Played Distribution ---", "Percentage of total hands played at each stake (averaged over all simulations):"])
-            stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-            sorted_stakes = sorted(res['hands_distribution_pct'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')))
-            for stake_name, pct in sorted_stakes:
-                if pct > 0.01:
-                    lines.append(f"   - {stake_name}: {pct:.2f}%")
-        return lines
+    # --- Percentile Win Rate Analysis ---
+    if result.get('percentile_win_rates'):
+        add_header("Percentile Win Rate Analysis (bb/100)", "-")
+        percentile_wrs = result.get('percentile_win_rates', {})
+        percentiles_to_show = {
+            "2.5th Percentile": "2.5th", "5th Percentile": "5th", "25th Percentile": "25th",
+            "Median Percentile": "Median", "75th Percentile": "75th", "95th Percentile": "95th",
+            "97.5th Percentile": "97.5th"
+        }
+        add_line(f"{'Percentile':<12} | {'Assigned WR':>12} | {'Play WR':>12} | {'Rakeback WR':>12} | {'Variance Imp.':>15}")
+        add_line("-" * 72)
+        for long_name, short_name in percentiles_to_show.items():
+            if long_name in percentile_wrs:
+                data = percentile_wrs[long_name]
+                assigned = data.get('Assigned WR', 'N/A')
+                realized = data.get('Realized WR (Play)', 'N/A')
+                rakeback = data.get('Rakeback (bb/100)', 'N/A')
+                impact = data.get('Variance Impact', 'N/A')
+                add_line(f"{short_name:<12} | {assigned:>12} | {realized:>12} | {rakeback:>12} | {impact:>15}")
 
-    def _write_demotion_analysis(res):
-        lines = []
-        if 'risk_of_demotion' in res and res['risk_of_demotion']:
-            lines.extend(["", "--- Risk of Demotion Analysis ---"])
-            lines.append("Demotion Risk: Percentage of simulations that dropped to a lower stake after reaching a peak.")
-            stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-            sorted_demotions = sorted(res['risk_of_demotion'].items(), key=lambda item: stake_order_map.get(item[0], float('inf')), reverse=True)
-            for stake_name, data in sorted_demotions:
-                lines.append(f"   - From {stake_name}: {data['prob']:.2f}% (based on {data['reached_count']} simulations reaching this peak)")
-        return lines
-
-    def _write_downswing_analysis(res):
-        lines = []
-        if 'median_max_downswing' in res:
-            lines.extend(["", "--- Maximum Downswing Analysis ---"])
-            lines.append("A downswing is the largest single peak-to-trough drop in bankroll during a simulation.")
-            median_downswing = res['median_max_downswing']
-            p95_downswing = res['p95_max_downswing']
-            median_integrated_drawdown = res.get('median_integrated_drawdown', 0)
-            lines.append(f"   - Median Downswing Depth: €{median_downswing:,.2f}")
-            lines.append(f"   - 95th Percentile Downswing Depth: €{p95_downswing:,.2f} (5% of runs had a worse downswing)")
-            if median_integrated_drawdown > 0:
-                lines.append(f"   - Median Integrated Drawdown: {median_integrated_drawdown:,.0f} Euro-Hands")
-                lines.append("     (This measures the total 'pain' by combining the size and duration of all time spent underwater.)")
-        return lines
-
-    def _write_income_analysis(res):
-        lines = []
-        # Only add this section if withdrawals were enabled for the run
-        if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
-            lines.extend(["", "--- Income & Total Return Analysis ---"])
-            lines.append("Metrics related to money taken out of the bankroll and overall value generated.")
-            median_withdrawn = res.get('median_total_withdrawn', 0.0)
-            p95_withdrawn = res.get('p95_total_withdrawn', 0.0)
-            median_return = res.get('median_total_return', 0.0)
-            lines.append(f"   - Median Total Withdrawn: €{median_withdrawn:,.2f}")
-            lines.append(f"   - 95th Percentile Withdrawn: €{p95_withdrawn:,.2f} (5% of runs withdrew more than this)")
-            lines.append(f"   - Median Total Return: €{median_return:,.2f} ((Final BR - Start BR) + Withdrawn)")
-        return lines
-
-    def _write_final_stake_distribution(res):
-        lines = []
-        if 'final_stake_distribution' in res and res['final_stake_distribution']:
-            lines.extend(["", "--- Final Stake Distribution ---", "Percentage of simulations ending at each stake/table mix:"])
-            # Sort by percentage (value) descending, then by mix string (key) ascending as a tie-breaker.
-            sorted_dist = sorted(res['final_stake_distribution'].items(), key=lambda item: (-item[1], str(item[0])))
-            for mix_str, pct in sorted_dist:
-                if pct > 0.01:
-                    lines.append(f"   - {mix_str}: {pct:.2f}%")
-        return lines
-
-    def _write_final_highest_stake_distribution(res):
-        lines = []
-        if 'final_highest_stake_distribution' in res and res['final_highest_stake_distribution']:
-            lines.extend(["", "--- Final Highest Stake Played ---", "Percentage of simulations ending with this as their highest active stake:"])
-            stake_order_map = {stake['name']: stake['bb_size'] for stake in config['STAKES_DATA']}
-            sorted_dist = sorted(res['final_highest_stake_distribution'].items(), key=lambda item: stake_order_map.get(item[0], -1), reverse=True)
-            for stake, pct in sorted_dist:
-                if pct > 0.01:
-                    lines.append(f"   - {stake}: {pct:.2f}%")
-        return lines
-
-    def _write_final_bankroll_metrics(res):
-        p2_5 = res.get('p2_5', 0.0)
-        p5 = res.get('p5', 0.0)
-        median = res.get('median_final_bankroll', 0.0)
-        p95 = np.percentile(res.get('final_bankrolls', [0]), 95)
-        p97_5 = np.percentile(res.get('final_bankrolls', [0]), 97.5)
-        return [
-            "", "--- Final Bankroll Metrics ---",
-            f"Risk of Ruin: {res.get('risk_of_ruin', 0.0):.2f}% (Percentage of runs that dropped to or below €{config['RUIN_THRESHOLD']})",
-            f"Probability of reaching €{config['TARGET_BANKROLL']}: {res.get('target_prob', 0.0):.2f}%",
-            f"2.5th Percentile: €{p2_5:.2f} (97.5% of runs finished above this value)",
-            f"5th Percentile:   €{p5:.2f} (95% of runs finished above this value)",
-            f"50th Percentile:  €{median:.2f} (Median)",
-            f"95th Percentile:  €{p95:.2f} (5% of runs finished above this value)",
-            f"97.5th Percentile:€{p97_5:.2f} (2.5% of runs finished above this value)"
-        ]
-
-    def _write_win_rate_analysis(res):
-        lines = ["", "--- Effective Win Rate Analysis (bb/100) ---", "Win rates for simulations ending at specific percentiles:"]
-        for percentile_name, wr_data in sorted(res['percentile_win_rates'].items(), key=lambda item: item[1]['p_val']):
-            play_wr = wr_data.get('Realized WR (Play)', 'N/A')
-            rb_wr = wr_data.get('Rakeback (bb/100)', 'N/A')
-            assigned_wr = wr_data.get('Assigned WR', 'N/A')
-            primary_wr_str = f"Realized (Play): {play_wr}, Rakeback: {rb_wr}, Assigned: {assigned_wr}"
-            stake_wr_string = ", ".join([f"{stake}: {wr}" for stake, wr in wr_data.items() if stake not in ['Realized WR (Play)', 'Rakeback (bb/100)', 'Assigned WR', 'p_val']])
-            lines.extend([f"   - {percentile_name}:", f"     {primary_wr_str}", f"     (Assigned Stake Breakdown: {stake_wr_string})" if stake_wr_string else ""])
-        return lines
-
-    report_lines.extend(_write_threshold_analysis(result))
-    report_lines.extend(_write_hands_distribution(result))
-    report_lines.extend(_write_demotion_analysis(result))
-    report_lines.extend(_write_downswing_analysis(result))
-    report_lines.extend(_write_income_analysis(result))
-    report_lines.extend(_write_final_bankroll_metrics(result))
-    report_lines.extend(_write_final_stake_distribution(result))
-    report_lines.extend(_write_final_highest_stake_distribution(result))
-    if 'percentile_win_rates' in result and result['percentile_win_rates']:
-        report_lines.extend(_write_win_rate_analysis(result))
-    return report_lines
-
-def write_strategy_report_to_pdf(pdf, report_lines, start_page_num=None):
-    """Writes the detailed text report for a single strategy to a PDF page, handling pagination."""
-    lines_per_page = 45
-    pages_of_lines = [report_lines[i:i + lines_per_page] for i in range(0, len(report_lines), lines_per_page)]
-
-    for i, page_lines in enumerate(pages_of_lines):
-        report_text = "\n".join(page_lines)
-        fig = plt.figure(figsize=(11, 8.5))
-        if start_page_num is not None:
-            fig.text(0.95, 0.05, f"Page {start_page_num + i}", transform=fig.transFigure, size=8, va='bottom', ha='right', color='gray')
-        fig.text(0.05, 0.95, report_text, transform=fig.transFigure, size=10, va='top', ha='left', fontfamily='monospace')
-        pdf.savefig(fig)
-        plt.close(fig)
-
-def save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config):
-    """Creates a table of the main summary results and saves it to a PDF page."""
-    header = ['Strategy', 'Page', 'Median Final BR', 'Med Withdrawn', 'Med Total Return', 'Median Growth', 'Median Rakeback', 'RoR (%)', 'Target Prob (%)', '5th %ile']
-
-    # Conditionally add the stop-loss header
-    if config.get("STOP_LOSS_BB", 0) > 0:
-        header.insert(7, 'Median SL') # Insert after Median Rakeback
-
-    cell_text = []
-    for strategy_name, result in all_results.items():
-        row = [
-            strategy_name,
-            str(strategy_page_map.get(strategy_name, '-')),
-            f"€{result['median_final_bankroll']:,.2f}",
-            f"€{result.get('median_total_withdrawn', 0.0):,.2f}",
-            f"€{result.get('median_total_return', 0.0):,.2f}",
-            f"{result['growth_rate']:.2%}",
-            f"€{result.get('median_rakeback_eur', 0.0):,.2f}",
-            f"{result['risk_of_ruin']:.2f}",
-            f"{result['target_prob']:.2f}",
-            f"€{result['p5']:,.2f}"
-        ]
-
-        # Conditionally add the stop-loss value to the row
-        if config.get("STOP_LOSS_BB", 0) > 0:
-            row.insert(7, f"{result.get('median_stop_losses', 0):.1f}")
-
-        cell_text.append(row)
-
-    if not cell_text: return
-
-    # Use a fixed, wide figure size for stability. Dynamic sizing can be fragile.
-    fig, ax = plt.subplots(figsize=(14, 2 + len(cell_text) * 0.4))
-    ax.axis('tight')
-    ax.axis('off')
-    # Remove the complex and fragile manual column width calculation.
-    # Use table.scale() instead, which is more robust.
-    the_table = ax.table(cellText=cell_text, colLabels=header, loc='center', cellLoc='center')
-    the_table.auto_set_font_size(False)
-    the_table.set_fontsize(9)
-    the_table.scale(1, 1.8) # Adjust row height for readability
-    ax.set_title('Strategy Comparison Summary', fontweight="bold", pad=20)
-    pdf.savefig(fig, bbox_inches='tight')
-    plt.close(fig)
-
-def _get_plot_callables(all_results, result, strategy_name, config, color_map, weighted_input_wr, pdf):
-    """Helper to map plot names to their actual plotting function calls with correct arguments."""
-    
-    # Note: The keys here must match the strings in the plot lists in generate_pdf_report
-    comparison_plot_map = {
-        'Median Progression': lambda: plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf),
-        'Final Bankroll Distribution': lambda: plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf),
-        'Total Withdrawn': lambda: plot_total_withdrawn_comparison(all_results, config, color_map=color_map, pdf=pdf),
-        'Time Underwater': lambda: plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf),
-        'Risk vs Reward': lambda: plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf),
-    }
-
-    strategy_plot_map = {
-        'Strategy Progression': lambda: plot_strategy_progression(result.get('bankroll_histories'), result.get('hands_histories'), strategy_name, config, pdf=pdf),
-        'Final Bankroll Distribution': lambda: plot_final_bankroll_distribution(result.get('final_bankrolls'), result, strategy_name, config, pdf=pdf, color_map=color_map),
-        'Assigned WR Distribution': lambda: plot_assigned_wr_distribution(result.get('avg_assigned_wr_per_sim'), result.get('median_run_assigned_wr'), weighted_input_wr, strategy_name, pdf=pdf),
-        'Max Downswing Distribution': lambda: plot_max_downswing_distribution(result.get('max_downswings'), result, strategy_name, pdf=pdf, color_map=color_map),
-        'Downswing Probabilities': lambda: plot_downswing_analysis_tables(result, strategy_name, pdf=pdf),
-    }
-    return comparison_plot_map, strategy_plot_map
+    return "\n".join(lines)
 
 def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
-    """
-    Generates the entire multi-page PDF report, writing to an in-memory buffer.
-    """
+    """Generates a comprehensive, multi-page PDF report."""
     pdf_buffer = io.BytesIO()
-    strategy_page_map = {}
-
-    # --- Define the plots to be generated to avoid "magic numbers" for page counting. ---
-    # These lists explicitly define which plots are included in the PDF report.
-    # If a plot is added or removed, only these lists need to be updated.
-    comparison_plots = [
-        'Median Progression', 'Final Bankroll Distribution', 'Time Underwater', 'Risk vs Reward'
-    ]
-    if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
-        comparison_plots.append('Total Withdrawn')
-    num_comparison_plots = len(comparison_plots)
-
-    # Plots generated for each individual strategy's detailed report section.
-    strategy_detail_plots = [
-        'Strategy Progression', 'Final Bankroll Distribution', 'Assigned WR Distribution',
-        'Max Downswing Distribution', 'Downswing Probabilities'
-    ]
-    num_plot_pages_per_strategy = len(strategy_detail_plots)
-
-    # --- Calculate the starting page number for the detailed reports section. ---
-    # This calculation is now dynamic based on the defined plot lists.
-    # 1 (Title Page)
-    # + 1 (Summary Table Page)
-    # + num_comparison_plots (for the comparison charts)
-    # + (1 if analysis_report else 0) (for the qualitative analysis page)
-    page_counter_for_map = 2 + num_comparison_plots + (1 if analysis_report else 0)
-    lines_per_page = 45
-
-    for strategy_name, result in all_results.items():
-        strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
-        strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA']) # noqa
-        # The page this strategy's report starts on
-        strategy_page_map[strategy_name] = page_counter_for_map + 1
-
-        report_lines = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
-        num_text_pages = (len(report_lines) + lines_per_page - 1) // lines_per_page # Ceiling division
-        page_counter_for_map += num_text_pages + num_plot_pages_per_strategy
-
-    # Calculate a representative input win rate for the plot's label
-    total_sample_hands = sum(s['sample_hands'] for s in config['STAKES_DATA'])
-    if total_sample_hands > 0:
-        weighted_input_wr = sum(s['ev_bb_per_100'] * s['sample_hands'] for s in config['STAKES_DATA']) / total_sample_hands
-    else:
-        # Fallback if no sample hands are provided
-        weighted_input_wr = config['STAKES_DATA'][0]['ev_bb_per_100'] if config['STAKES_DATA'] else 1.5
-
-    # Create the color map once for the entire PDF generation process
-    colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
-    color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
-
     with PdfPages(pdf_buffer) as pdf:
+        # Page 1: Title Page
         create_title_page(pdf, timestamp_str)
-        # --- DEBUGGING: Temporarily disable the two most likely causes of the hang. ---
-        # save_summary_table_to_pdf(pdf, all_results, strategy_page_map, config)
-        # if analysis_report:
-        #     write_analysis_report_to_pdf(pdf, analysis_report)
 
-        # --- Generate Comparison Plots Dynamically ---
-        # This loop is driven by the `comparison_plots` list defined above.
-        comparison_plot_calls, _ = _get_plot_callables(all_results, None, None, config, color_map, None, pdf)
-        for plot_name in comparison_plots:
-            if plot_name in comparison_plot_calls:
-                comparison_plot_calls[plot_name]()
+        # Page 2: Summary Table
+        write_summary_table_to_pdf(pdf, all_results)
 
+        # Page 3: Automated Analysis
+        write_text_page_to_pdf(pdf, "Automated Strategy Analysis", analysis_report, font_size=10, font_family='sans-serif')
+
+        # Pages 4-X: Comparison Plots
+        colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
+        color_map = {name: colors[i] for i, name in enumerate(all_results.keys())}
+
+        plot_median_progression_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        plot_final_bankroll_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        plot_time_underwater_comparison(all_results, config, color_map=color_map, pdf=pdf)
+        plot_risk_reward_scatter(all_results, config, color_map=color_map, pdf=pdf)
+
+        # Add the withdrawn plot if applicable
+        if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
+            fig_withdrawn = plot_total_withdrawn_comparison(all_results, config, color_map=color_map)
+            if fig_withdrawn:
+                pdf.savefig(fig_withdrawn)
+                plt.close(fig_withdrawn)
+
+        # Subsequent Pages: Detailed Strategy Reports
         for strategy_name, result in all_results.items():
-            strategy_config = config['STRATEGIES_TO_RUN'][strategy_name]
-            strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
-            page_num = strategy_page_map.get(strategy_name, 0)
-            report_lines_for_writing = get_strategy_report_lines(strategy_name, result, strategy_obj, config)
-            write_strategy_report_to_pdf(pdf, report_lines_for_writing, start_page_num=page_num)
-            
-            # --- Generate Strategy-Specific Plots Dynamically ---
-            _, strategy_plot_calls = _get_plot_callables(all_results, result, strategy_name, config, color_map, weighted_input_wr, pdf)
-            for plot_name in strategy_detail_plots:
-                if plot_name in strategy_plot_calls:
-                    strategy_plot_calls[plot_name]()
+            # Add detailed text report (can be multiple pages)
+            report_text = get_strategy_report_lines(strategy_name, result, config)
+            write_text_page_to_pdf(pdf, f"Detailed Report: {strategy_name}", report_text)
 
-    pdf_buffer.seek(0)
-    return pdf_buffer
+            # Add detailed plots for this strategy
+            plot_strategy_progression(result['bankroll_histories'], result['hands_histories'], strategy_name, config, pdf=pdf)
+            plot_final_bankroll_distribution(result['final_bankrolls'], result, strategy_name, config, color_map=color_map, pdf=pdf)
+
+            if 'avg_assigned_wr_per_sim' in result:
+                # Calculate a representative input win rate for the plot's label
+                total_sample_hands = sum(s['sample_hands'] for s in config['STAKES_DATA'])
+                if total_sample_hands > 0:
+                    weighted_input_wr = sum(s['ev_bb_per_100'] * s['sample_hands'] for s in config['STAKES_DATA']) / total_sample_hands
+                else:
+                    weighted_input_wr = config['STAKES_DATA'][0]['ev_bb_per_100'] if config['STAKES_DATA'] else 1.5
+
+                plot_assigned_wr_distribution(
+                    result['avg_assigned_wr_per_sim'],
+                    result['median_run_assigned_wr'],
+                    weighted_input_wr,
+                    strategy_name,
+                    pdf=pdf
+                )
+
+            if 'max_downswings' in result:
+                plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, pdf=pdf, color_map=color_map)
+
+    return pdf_buffer.getvalue()
 # =================================================================================
 #   QUALITATIVE ANALYSIS FUNCTIONS
 # =================================================================================
