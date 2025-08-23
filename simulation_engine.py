@@ -482,9 +482,9 @@ def _process_simulation_block(
     current_drawdown = peak_bankrolls_so_far - bankroll_history[:, i+1]
     current_drawdown[current_drawdown < 0] = 0 # A drawdown cannot be negative.
     # 2. Next, update the all-time maximum drawdown if the current one is larger.
-    max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdown)
+    np.maximum(max_drawdowns_so_far, current_drawdown, out=max_drawdowns_so_far)
     # 3. Finally, update the peak for the NEXT block.
-    peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
+    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
