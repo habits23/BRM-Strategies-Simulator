@@ -524,9 +524,23 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 col2.metric("Expected Std. Dev. of Final BR", f"€{expected_std_dev_eur:,.2f}", help="Calculated as: (Std Dev / 10) * sqrt(Total Hands) * bb Size")
                 col2.metric("Actual Std. Dev. of Final BR", f"€{actual_std_dev_br:,.2f}", delta=f"€{actual_std_dev_br - expected_std_dev_eur:,.2f} ({std_dev_diff_pct:+.2f}%)")
 
-            # For the sanity check, we only want to show the core validation and the two most relevant plots.
-            # The other detailed metrics (downswings, time underwater, etc.) are not relevant for this simple validation.
-            st.subheader("Visual Confirmation")
+            # --- Key Metrics Row ---
+            st.subheader(f"Key Metrics for '{strategy_name}'")
+            metric_cols = st.columns(8)
+            (
+                col1, col2, col3, col4, col5, col6, col7, col8
+            ) = metric_cols[:8]
+            col1.metric("Median Final Bankroll", f"€{result['median_final_bankroll']:,.2f}")
+            col2.metric("Median Hands Played", f"{result.get('median_hands_played', 0):,.0f}")
+            col3.metric("Median Profit (Play)", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}")
+            col4.metric("Median Rakeback", f"€{result.get('median_rakeback_eur', 0.0):,.2f}")
+            col5.metric("Risk of Ruin", f"{result['risk_of_ruin']:.2f}%")
+            col6.metric("Target Probability", f"{result['target_prob']:.2f}%")
+            col7.metric("Median Downswing", f"€{result['median_max_downswing']:,.2f}")
+            col8.metric("95th Pct. Downswing", f"€{result['p95_max_downswing']:,.2f}")
+
+            # --- Visual Analysis ---
+            st.subheader("Visual Analysis")
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
                 st.markdown("###### Bankroll Progression")
@@ -539,7 +553,61 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 st.pyplot(fig)
                 plt.close(fig)
 
-            # Exit early to avoid showing the more complex, irrelevant metrics for this simple strategy.
+            st.markdown("###### Maximum Downswing Distribution")
+            if 'max_downswings' in result:
+                fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
+                st.pyplot(fig)
+                plt.close(fig)
+
+            # --- Downswing Probabilities ---
+            def display_downswing_table(title, data, column_names):
+                """Nested helper function to display a formatted downswing probability table."""
+                st.markdown(f"##### {title}")
+                if data:
+                    df = pd.DataFrame(list(data.items()), columns=column_names)
+                    df[column_names[1]] = df[column_names[1]].map('{:,.2f}%'.format)
+                    st.dataframe(df.style.hide(axis="index"), use_container_width=True)
+                else:
+                    st.info(f"No {title.lower()} data available.")
+
+            st.markdown("---")
+            st.subheader("Downswing Probabilities")
+            col1, col2 = st.columns(2)
+            downswing_analysis = result.get('downswing_analysis', {})
+            with col1:
+                display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'])
+            with col2:
+                display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'])
+
+            # --- Percentile Win Rate Analysis ---
+            if result.get('percentile_win_rates'):
+                st.markdown("---")
+                st.markdown("**Percentile Win Rate Analysis (bb/100)**")
+                st.caption(
+                    "**Sanity Check Insight:** For a sanity check, the 'Assigned WR' should be nearly identical across all percentiles and match your input EV Win Rate. "
+                    "The 'Play WR' will still vary due to short-term variance, which is expected."
+                )
+                percentile_wrs = result.get('percentile_win_rates', {})
+                percentiles_to_show = {
+                    "2.5th": "2.5th Percentile", "5th": "5th Percentile", "25th": "25th Percentile",
+                    "Median": "Median Percentile", "75th": "75th Percentile", "95th": "95th Percentile",
+                    "97.5th": "97.5th Percentile"
+                }
+                available_percentiles = {
+                    short: long for short, long in percentiles_to_show.items() if long in percentile_wrs
+                }
+                if not available_percentiles:
+                    st.write("No percentile data available.")
+                else:
+                    cols = st.columns(len(available_percentiles))
+                    for i, (short_name, long_name) in enumerate(available_percentiles.items()):
+                        with cols[i]:
+                            st.markdown(f"**{short_name} %ile**")
+                            data = percentile_wrs.get(long_name, {})
+                            st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}")
+                            st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}")
+                            st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}")
+                            st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}")
             return
 
         # --- Display Key Metrics in a multi-column layout ---
