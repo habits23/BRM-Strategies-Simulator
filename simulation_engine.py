@@ -477,12 +477,13 @@ def _process_simulation_block(
         current_underwater_stretch_hands[made_new_peak_mask] = 0
 
     # --- Maximum Drawdown and Peak Update ---
+    # This logic is written explicitly to avoid potential side effects from in-place operations.
     # 1. First, calculate the drawdown for this block using the peak from the START of the block.
     current_drawdown = peak_bankrolls_so_far - bankroll_history[:, i+1]
     # 2. Next, update the all-time maximum drawdown if the current one is larger.
-    np.maximum(max_drawdowns_so_far, current_drawdown, out=max_drawdowns_so_far)
+    max_drawdowns_so_far = np.maximum(max_drawdowns_so_far, current_drawdown)
     # 3. Finally, update the peak for the NEXT block.
-    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
+    peak_bankrolls_so_far = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
