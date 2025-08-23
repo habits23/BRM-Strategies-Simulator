@@ -1816,6 +1816,82 @@ def write_summary_table_to_pdf(pdf, all_results):
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
 
+def write_analysis_report_to_pdf(pdf, analysis_report):
+    """
+    Writes the qualitative analysis report to the PDF with enhanced,
+    user-friendly formatting, including pagination.
+    """
+    # Define colors and fonts for a professional look
+    colors = {
+        "header": "#1E3A8A",    # Dark Blue
+        "category": "#1F2937",  # Dark Gray
+        "text": "#4B5563",      # Medium Gray
+        "bullet": "#1E3A8A",
+    }
+
+    # Clean emojis and markdown from the entire report at once
+    clean_report = analysis_report.replace('**', '').replace('🏆','').replace('📉','').replace('🛡️','').replace('🎲','') \
+        .replace('🚀','').replace('😌','').replace('🎢','').replace('🧠','') \
+        .replace('⚡','').replace('💸','').replace('💰','').replace('⚠️','')
+
+    lines = clean_report.strip().split('\n')
+
+    fig = plt.figure(figsize=(11, 8.5))
+    y_pos = 0.92
+
+    def new_page():
+        nonlocal fig, y_pos
+        pdf.savefig(fig, bbox_inches='tight')
+        plt.close(fig)
+        fig = plt.figure(figsize=(11, 8.5))
+        y_pos = 0.92
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # --- Handle Section Headers (###) ---
+        if line.startswith('### '):
+            if y_pos < 0.25: new_page()
+            if y_pos < 0.9: y_pos -= 0.04 # Add space before header
+            header_text = line[4:]
+            fig.text(0.1, y_pos, header_text, ha='left', va='top', fontsize=16, weight='bold', color=colors['header'])
+            y_pos -= 0.07
+            continue
+
+        # --- Handle Bullet Points (- ) ---
+        if line.startswith('- '):
+            if y_pos < 0.2: new_page()
+            bullet = "•"
+            text = line[2:]
+            wrapped_text = textwrap.wrap(text, width=85)
+
+            fig.text(0.12, y_pos, bullet, ha='left', va='top', fontsize=11, color=colors['bullet'])
+            for j, wrapped_line in enumerate(wrapped_text):
+                if y_pos < 0.1: new_page(); fig.text(0.12, y_pos, bullet, ha='left', va='top', fontsize=11, color=colors['bullet'])
+                fig.text(0.15, y_pos, wrapped_line, ha='left', va='top', fontsize=10, color=colors['text'])
+                y_pos -= 0.03
+            y_pos -= 0.01
+            continue
+
+        # --- Handle "Category: Description" format ---
+        if ':' in line:
+            parts = line.split(':', 1)
+            if len(parts[0]) < 40 and len(parts[1]) > 1: # Heuristic to identify a category title
+                if y_pos < 0.25: new_page()
+                category = parts[0] + ':'
+                description = parts[1].strip()
+                wrapped_description = textwrap.wrap(description, width=65)
+
+                fig.text(0.1, y_pos, category, ha='left', va='top', fontsize=10, weight='bold', color=colors['category'])
+                for j, wrapped_line in enumerate(wrapped_description):
+                    if y_pos < 0.1: new_page(); fig.text(0.1, y_pos, category, ha='left', va='top', fontsize=10, weight='bold', color=colors['category'])
+                    fig.text(0.4, y_pos, wrapped_line, ha='left', va='top', fontsize=10, color=colors['text'])
+                    y_pos -= 0.03
+                y_pos -= 0.02
+                continue
+
 def write_text_page_to_pdf(pdf, title, text_content, font_size=9, font_family='monospace'):
     """Writes a block of text to a new PDF page with a title, handling pagination."""
     lines_per_page = 50 if font_family == 'monospace' else 38
@@ -1944,7 +2020,7 @@ def generate_pdf_report(all_results, analysis_report, config, timestamp_str):
         write_summary_table_to_pdf(pdf, all_results)
 
         # Page 3: Automated Analysis
-        write_text_page_to_pdf(pdf, "Automated Strategy Analysis", analysis_report, font_size=10, font_family='sans-serif')
+        write_analysis_report_to_pdf(pdf, analysis_report)
 
         # Pages 4-X: Comparison Plots
         colors = plt.cm.tab10(np.linspace(0, 1, len(all_results)))
