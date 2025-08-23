@@ -477,9 +477,11 @@ def _process_simulation_block(
         current_underwater_stretch_hands[made_new_peak_mask] = 0
 
     # --- Maximum Drawdown and Peak Update ---
-    current_drawdowns = peak_bankrolls_so_far - bankroll_history[:, i+1]
-    current_drawdowns[current_drawdowns < 0] = 0 # Drawdown cannot be negative
-    np.maximum(max_drawdowns_so_far, current_drawdowns, out=max_drawdowns_so_far)
+    # 1. First, calculate the drawdown for this block using the peak from the START of the block.
+    current_drawdown = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    # 2. Next, update the all-time maximum drawdown if the current one is larger.
+    np.maximum(max_drawdowns_so_far, current_drawdown, out=max_drawdowns_so_far)
+    # 3. Finally, update the peak for the NEXT block.
     np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
 
     # --- History Updates ---
@@ -1807,12 +1809,6 @@ def generate_qualitative_analysis(all_results, config):
     if worst_downswing and worst_downswing not in best_downswings:
         underwater_pct = all_results[worst_downswing]['median_time_underwater_pct']
         insights.append(f"\n**🎢 Rollercoaster Ride:** Be prepared for significant swings with the **'{worst_downswing}'** strategy, which had the largest median downswing of €{all_results[worst_downswing]['median_max_downswing']:,.0f} and spent {underwater_pct:.0f}% of the time 'underwater'.")
-
-    best_pain, _ = find_best_worst_with_ties('median_integrated_drawdown', higher_is_better=False)
-    if best_pain:
-        names = f"'{best_pain[0]}'" if len(best_pain) == 1 else f"'{', '.join(best_pain)}'"
-        verb = "offered" if len(best_pain) == 1 else "were tied for offering"
-        insights.append(f"\n**🧠 Least Painful Journey:** The **{names}** strategy {verb} the most psychologically comfortable ride. It had the lowest 'Integrated Drawdown', meaning it minimized both the size and duration of downswings, reducing overall financial stress.")
 
     # Add insight for withdrawals if enabled
     if config.get("WITHDRAWAL_SETTINGS", {}).get("enabled"):
