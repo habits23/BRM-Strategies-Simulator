@@ -553,11 +553,13 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 st.pyplot(fig)
                 plt.close(fig)
 
-            st.markdown("###### Maximum Downswing Distribution")
-            if 'max_downswings' in result:
-                fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
-                st.pyplot(fig)
-                plt.close(fig)
+            row2_col1, _ = st.columns(2)
+            with row2_col1:
+                st.markdown("###### Maximum Downswing Distribution")
+                if 'max_downswings' in result:
+                    fig = engine.plot_max_downswing_distribution(result['max_downswings'], result, strategy_name, color_map=color_map)
+                    st.pyplot(fig)
+                    plt.close(fig)
 
             # --- Downswing Probabilities ---
             def display_downswing_table(title, data, column_names):
