@@ -306,45 +306,6 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
     # The final Assigned WR is the shrunken skill estimate plus the long-term luck adjustment.
     return skill_estimate_wr + long_term_luck_adjustment
 
-def sample_percentage_range(range_str, rng):
-    """Given a range string like "40-60", return a random float in that range."""
-    parts = range_str.split('-')
-    low, high = map(float, parts)
-    return rng.uniform(low, high)
-
-def normalize_percentages(percentages):
-    """Normalizes a dictionary of percentages so they sum to 1."""
-    total = sum(percentages.values())
-    if total == 0:
-        return {k: 1.0 / len(percentages) for k in percentages}
-    return {k: v / total for k, v in percentages.items()}
-
-def resolve_proportions(rule, rng):
-    """Resolves a strategy rule into a dictionary of proportions (floats summing to 1)."""
-    percentages = {}
-    fixed_ratios = {}
-    for stake, val in rule.items():
-        if isinstance(val, str):
-            sanitized_val = val.replace('%', '').replace(' ', '')
-            if "-" in sanitized_val:
-                percentages[stake] = sample_percentage_range(sanitized_val, rng)
-            else:
-                try:
-                    percentages[stake] = float(sanitized_val)
-                except (ValueError, TypeError):
-                    raise ValueError(
-                        f"Invalid table mix value '{val}' for stake '{stake}'. "
-                        "Please use an integer (e.g., 1), a percentage (e.g., '50%'), or a range (e.g., '20-40%')."
-                    )
-        elif isinstance(val, int) and val > 0:
-            fixed_ratios[stake] = val
-
-    if fixed_ratios:
-        return normalize_percentages(fixed_ratios)
-    if percentages:
-        return normalize_percentages(percentages)
-    return {}
-
 def _initialize_simulation_state(num_sims, num_checks, config):
     """Initializes all common numpy arrays for a simulation run."""
     bankroll_history = np.full((num_sims, num_checks + 1), config['STARTING_BANKROLL_EUR'], dtype=float)
@@ -531,6 +492,42 @@ def _process_simulation_block(
     
     return True # Signal to continue loop
 
+def _vectorized_rule_application(rule, mask, proportions_per_stake, rng):
+    """
+    Applies a single BRM rule to a masked array of simulations in a vectorized way.
+    This is a performance-critical helper function that replaces the old `resolve_proportions`.
+    """
+    num_sims_in_rule = np.sum(mask)
+    if num_sims_in_rule == 0:
+        return
+
+    # Check if the rule uses ratios (all integer values)
+    is_ratio_rule = all(isinstance(v, int) for v in rule.values())
+
+    if is_ratio_rule and rule:
+        total_ratio = sum(rule.values())
+        if total_ratio > 0:
+            for stake_name, ratio_val in rule.items():
+                proportion = ratio_val / total_ratio
+                proportions_per_stake[stake_name][mask] = proportion
+    else:
+        # Handle percentage and percentage-range rules (string values)
+        for stake_name, prop_rule in rule.items():
+            if isinstance(prop_rule, str) and '%' in prop_rule:
+                try:
+                    if '-' in prop_rule:  # Range, e.g., "20-40%"
+                        low_str, high_str = prop_rule.replace('%', '').split('-')
+                        low = float(low_str) / 100.0
+                        high = float(high_str) / 100.0
+                        random_props = rng.uniform(low, high, size=num_sims_in_rule)
+                        proportions_per_stake[stake_name][mask] = random_props
+                    else:  # Fixed percentage, e.g., "50%"
+                        prop = float(prop_rule.replace('%', '')) / 100.0
+                        proportions_per_stake[stake_name][mask] = prop
+                except (ValueError, IndexError):
+                    # Silently ignore malformed rule parts
+                    pass
+
 def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config, progress_callback=None):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
@@ -568,27 +565,20 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         # Determine the table mix for each simulation based on its current bankroll
         proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
 
-        remaining_mask = np.ones_like(current_bankrolls, dtype=bool)
-        for threshold, rule in zip(thresholds, rules):
-            current_mask = (current_bankrolls >= threshold) & remaining_mask
-            if not np.any(current_mask):
-                continue
+        remaining_mask = np.ones(num_sims, dtype=bool)
 
-            indices = np.where(current_mask)[0]
-            for sim_idx in indices:
-                resolved_proportions = resolve_proportions(rule, rng)
-                for stake_name, prop in resolved_proportions.items():
-                    proportions_per_stake[stake_name][sim_idx] = prop
+        # Apply rules from highest threshold to lowest
+        for threshold, rule in zip(thresholds, rules):
+            # Find sims that meet this threshold and haven't been assigned a rule yet
+            current_mask = (current_bankrolls >= threshold) & remaining_mask
+            _vectorized_rule_application(rule, current_mask, proportions_per_stake, rng)
+            # Mark these sims as having a rule applied
             remaining_mask[current_mask] = False
 
         # Handle simulations with bankroll below the lowest threshold by applying the lowest rule
         if np.any(remaining_mask) and rules:
             lowest_rule = rules[-1] # The last rule is the lowest threshold
-            indices = np.where(remaining_mask)[0]
-            for sim_idx in indices:
-                resolved_proportions = resolve_proportions(lowest_rule, rng)
-                for stake_name, prop in resolved_proportions.items():
-                    proportions_per_stake[stake_name][sim_idx] = prop
+            _vectorized_rule_application(lowest_rule, remaining_mask, proportions_per_stake, rng)
 
         # --- Demotion Tracking Logic for the current block ---
         current_levels = np.full(config['NUMBER_OF_SIMULATIONS'], -1, dtype=int)
@@ -957,15 +947,14 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
 
         proportions_per_stake = {stake["name"]: np.zeros(num_sims, dtype=float) for stake in config['STAKES_DATA']}
 
-        for rule_idx in range(len(stake_rules)):
+        # This is the fully vectorized approach for the Hysteresis strategy.
+        # For each possible stake index, we find all simulations currently at that stake
+        # and set their proportion for the corresponding stake name to 1.0.
+        for rule_idx, rule in enumerate(stake_rules):
             at_this_stake_mask = (current_stake_indices == rule_idx)
-            if not np.any(at_this_stake_mask):
-                continue
-
-            rule = stake_rules[rule_idx]['tables']
-            resolved_proportions = resolve_proportions(rule, rng)
-            for stake_name, prop in resolved_proportions.items():
-                proportions_per_stake[stake_name][at_this_stake_mask] = prop
+            if np.any(at_this_stake_mask):
+                stake_name_for_rule = rule['stake_name']
+                proportions_per_stake[stake_name_for_rule][at_this_stake_mask] = 1.0
 
         # Calculate bb_sizes_eur for the current block
         bb_sizes_eur = np.zeros(num_sims, dtype=float)
