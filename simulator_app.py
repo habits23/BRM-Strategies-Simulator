@@ -21,6 +21,7 @@ import traceback
 import json
 import copy
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 # --- Custom Simulation Engine ---
 # This imports the file containing all the core Monte Carlo simulation logic,
@@ -1327,83 +1328,82 @@ with tab2:
 
 # This block runs ONLY when the "Run Simulation" button is clicked, which sets the `run_simulation` flag to True.
 if st.session_state.run_simulation:
-    # --- 1. Assemble the config dictionary from session_state ---
-    config = {
-        "STARTING_BANKROLL_EUR": st.session_state.start_br,
-        "TARGET_BANKROLL": st.session_state.target_br,
-        "RUIN_THRESHOLD": st.session_state.ruin_thresh,
-        "NUMBER_OF_SIMULATIONS": st.session_state.num_sims,
-        "TOTAL_HANDS_TO_SIMULATE": st.session_state.total_hands,
-        "HANDS_PER_CHECK": st.session_state.hands_per_check,
-        "RAKEBACK_PERCENTAGE": st.session_state.rb_percent / 100.0,
-        "STOP_LOSS_BB": st.session_state.stop_loss_bb if st.session_state.enable_stop_loss else 0,
-        "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
-        "ZERO_HANDS_INPUT_WEIGHT": st.session_state.zero_hands_weight,
-        "SEED": st.session_state.seed,
-        "WITHDRAWAL_SETTINGS": {
-            "enabled": st.session_state.enable_withdrawals,
-            "monthly_volume": st.session_state.monthly_volume_hands,
-            "strategy": st.session_state.withdrawal_strategy,
-            "value": st.session_state.withdrawal_value,
-            "min_bankroll": st.session_state.min_br_for_withdrawal
-        } if st.session_state.enable_withdrawals else {"enabled": False},
-        "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
-        "ENABLE_DIAGNOSTIC_LOG": st.session_state.enable_diagnostic_log,
-        # Pass Downswing Analysis constants to the engine.
-        # These are defined at the top of the file.
-        "DOWNSWING_DEPTH_THRESHOLDS_BB": DOWNSWING_DEPTH_THRESHOLDS_BB,
-        "DOWNSWING_DURATION_THRESHOLDS_HANDS": DOWNSWING_DURATION_THRESHOLDS_HANDS,
-    }
-
-    # --- 2. Parse and validate the inputs for stakes and strategies ---
+    inputs_are_valid = False
     try:
-        # The data_editor state is a DataFrame, convert it to the list of dicts the engine expects.
+        config = {
+            "STARTING_BANKROLL_EUR": st.session_state.start_br,
+            "TARGET_BANKROLL": st.session_state.target_br,
+            "RUIN_THRESHOLD": st.session_state.ruin_thresh,
+            "NUMBER_OF_SIMULATIONS": st.session_state.num_sims,
+            "TOTAL_HANDS_TO_SIMULATE": st.session_state.total_hands,
+            "HANDS_PER_CHECK": st.session_state.hands_per_check,
+            "RAKEBACK_PERCENTAGE": st.session_state.rb_percent / 100.0,
+            "STOP_LOSS_BB": st.session_state.stop_loss_bb if st.session_state.enable_stop_loss else 0,
+            "PRIOR_SAMPLE_SIZE": st.session_state.prior_sample,
+            "ZERO_HANDS_INPUT_WEIGHT": st.session_state.zero_hands_weight,
+            "SEED": st.session_state.seed,
+            "WITHDRAWAL_SETTINGS": {
+                "enabled": st.session_state.enable_withdrawals,
+                "monthly_volume": st.session_state.monthly_volume_hands,
+                "strategy": st.session_state.withdrawal_strategy,
+                "value": st.session_state.withdrawal_value,
+                "min_bankroll": st.session_state.min_br_for_withdrawal
+            } if st.session_state.enable_withdrawals else {"enabled": False},
+            "PLOT_PERCENTILE_LIMIT": st.session_state.plot_percentile_limit,
+            "ENABLE_DIAGNOSTIC_LOG": st.session_state.enable_diagnostic_log,
+            "DOWNSWING_DEPTH_THRESHOLDS_BB": DOWNSWING_DEPTH_THRESHOLDS_BB,
+            "DOWNSWING_DURATION_THRESHOLDS_HANDS": DOWNSWING_DURATION_THRESHOLDS_HANDS,
+        }
         config["STAKES_DATA"] = st.session_state.stakes_data.to_dict('records')
-        # The strategies are already in the correct dictionary format in session state.
         config["STRATEGIES_TO_RUN"] = st.session_state.strategy_configs
-
-        # Store the final config used for this run, so we can access it for display later.
         st.session_state.config_for_display = config
         inputs_are_valid = True
 
-    except Exception as e: # Catch any other potential errors during config assembly
+    except Exception as e:
         st.error(f"Error preparing simulation configuration. Details: {e}")
-        inputs_are_valid = False
         st.session_state.simulation_output = None
 
-    # --- 3. Run the simulation if inputs are valid ---
     if inputs_are_valid:
-        st.header("Simulation Results")
+        progress_bar = st.progress(0, text="Initializing simulation...")
+        status_text = st.empty()
+        start_time = time.time()
+
+        def progress_callback(progress, text):
+            progress = max(0.0, min(1.0, progress))
+            # Format the progress value as a percentage string (e.g., "55%")
+            progress_percent_str = f"{progress:.0%}"
+            # Combine the percentage with the detailed text from the engine.
+            display_text = f"{progress_percent_str} | {text}"
+            progress_bar.progress(progress, text=display_text)
+            elapsed_time = time.time() - start_time
+            if progress > 0.01:
+                total_est_time = elapsed_time / progress
+                remaining_time = total_est_time - elapsed_time
+                if remaining_time > 0:
+                    mins, secs = divmod(int(remaining_time), 60)
+                    status_text.text(f"Estimated time remaining: {mins}m {secs}s")
+            else:
+                status_text.text("Calculating time estimate...")
+
         try:
-            # --- Progress Bar Setup ---
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            status_text.text("Starting simulation...")
-            
-            # Define a callback function that the engine can call to update the UI.
-            def update_progress(progress, message):
-                progress_bar.progress(progress)
-                status_text.text(message)
-
-            # THIS IS THE MAIN CALL TO THE SIMULATION ENGINE
-            # Pass the callback function to the engine
-            st.session_state.simulation_output = engine.run_full_analysis(config, progress_callback=update_progress)
-
-            # Clean up the progress bar and status text after completion
-            status_text.text("Simulation complete! Displaying results...")
-            progress_bar.empty()
-            status_text.empty()
+            st.session_state.simulation_output = engine.run_full_analysis(config, progress_callback=progress_callback)
+            status_text.success("Simulation complete! Report generated below.", icon="✅")
+            progress_bar.progress(1.0, text="Done!")
         except ValueError as e:
             st.error(f"A configuration error prevented the simulation from running: {e}")
             st.info("Please check your strategy rules and stake definitions for issues.")
-            st.session_state.simulation_output = None # Clear results on error
+            status_text.error("Simulation failed.")
+            progress_bar.empty()
+            st.session_state.simulation_output = None
         except Exception as e:
             st.error("An error occurred during the simulation.")
             st.exception(e)
-            st.session_state.simulation_output = None # Clear results on error
+            status_text.error("Simulation failed.")
+            progress_bar.empty()
+            st.session_state.simulation_output = None
 
-    # --- 4. Reset the run flag so the simulation doesn't run again on the next user interaction ---
     st.session_state.run_simulation = False
+    st.rerun()
 
 # This block displays the results if they exist in the session state.
 # It runs on every script rerun as long as `simulation_output` is present.
