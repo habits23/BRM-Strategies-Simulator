@@ -201,6 +201,7 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
         *   **Median Profit (Play)**: The median profit from gameplay only, excluding rakeback.
         *   **Median Rakeback**: The median rakeback earned. Compare this to "Median Profit (Play)" to see how much your strategy relies on rakeback.
+        *   **Median Total Return**: The median total value generated. Calculated as: `(Final Bankroll - Starting Bankroll) + Total Withdrawn`.
         *   **Risk of Ruin (RoR)**: Your chance of going broke according to your ruin threshold. A critical risk metric.
         *   **Target Prob**: Your chance of hitting your goal.
         *   **5th %ile BR**: The 5th percentile final bankroll. 95% of simulations ended with a bankroll higher than this value.
@@ -210,6 +211,8 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Final Bankroll Distribution**: A key plot. A tall, narrow peak means a strategy is very consistent. A short, wide curve means the strategy has a wider range of outcomes (higher risk/reward).
         *   **Psychological Cost: Time Spent Below Bankroll Peak**: A bar chart showing the median percentage of hands a strategy spends 'underwater'. A lower percentage indicates a smoother, less stressful journey.
         *   **Risk vs. Reward Analysis**: A scatter plot showing the trade-off between risk (X-axis) and reward (Y-axis). The ideal strategy is in the top-left corner (low risk, high reward).
+        *   **Volatility Comparison: Max Downswing**: Shows the 95th percentile of maximum downswings. A higher bar means a higher risk of a catastrophic downswing.
+        *   **Income Generation: Median Total Withdrawn**: Shows the median amount withdrawn for each strategy, measuring its income potential.
 
     #### Detailed Analysis (Per Strategy)
     This section gives you a deep dive into each strategy.
@@ -226,12 +229,13 @@ with st.expander("Need Help? Click here for the User Guide"):
         *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
         *   **Median Stop-Losses**: If enabled, this metric shows the typical number of times a stop-loss was triggered during a simulation run. It's a good indicator of session volatility.
         *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
-    *   **Percentile Win Rate Analysis**: This section is crucial for understanding *why* some runs did well and others did poorly. It shows a five-number summary (5th, 25th, Median, 75th, 95th) of outcomes, giving you a detailed look at the full spectrum of possibilities.
-        *   **5th Percentile**: A typical "bad run" or unlucky outcome.
+        *   **Downswing Probabilities**: These tables show the probability of experiencing a downswing of a certain depth (in big blinds) or duration (in hands).
+    *   **Percentile Win Rate Analysis**: This section is crucial for understanding *why* some runs did well and others did poorly. It shows a five-number summary (2.5th, 5th, 25th, Median, 75th, 95th, 97.5th) of outcomes, giving you a detailed look at the full spectrum of possibilities.
+        *   **2.5th/5th Percentile**: A typical "bad run" or unlucky outcome.
         *   **25th Percentile**: A "mildly bad" run. Not a disaster, but a common losing scenario.
         *   **Median (50th)**: The outcome for the run that finished with the median final bankroll.
         *   **75th Percentile**: A "mildly good" run. A common winning scenario.
-        *   **95th Percentile**: A typical "good run" or heater.
+        *   **95th/97.5th Percentile**: A typical "good run" or heater.
     *   For each percentile, you'll see these metrics:
         *   **Assigned WR**: The "true" win rate (skill + long-term luck) the simulator assigned to the entire run. A high number here means this simulated "you" was on a long-term heater.
             It is influenced by:
@@ -245,6 +249,7 @@ with st.expander("Need Help? Click here for the User Guide"):
             *   **`Std Dev (bb/100)`**: Directly determines the magnitude of the upswings and downswings in each session.
             *   **`Hands per Bankroll Check`**: The length of the "session" being simulated.
         *   **Rakeback WR**: The extra win rate you got from rakeback.
+        *   **Variance Impact**: The difference between `Play WR` and `Assigned WR`. It shows the net effect of short-term variance (good or bad luck) over the entire simulation.
 
     Finally, you can download a **Full PDF Report** with all of this information, including the Automated Strategy Analysis, for offline viewing and sharing. Happy simulating!
     """)
@@ -830,7 +835,7 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                         st.metric(label="Assigned WR", value=f"{data.get('Assigned WR', 'N/A')}", help="The 'true' win rate (Skill + Long-Term Luck) assigned to this simulation run. It's influenced by your EV Win Rate, Sample Hands, and Std Dev.")
                         st.metric(label="Play WR", value=f"{data.get('Realized WR (Play)', 'N/A')}", help="The actual win rate realized from gameplay after adding short-term (session) variance. It's influenced by: the Assigned WR (the baseline), Std Dev (magnitude of swings), and Hands per Bankroll Check (session length).")
                         st.metric(label="Rakeback WR", value=f"{data.get('Rakeback (bb/100)', 'N/A')}", help="The effective win rate gained from rakeback.")
-                        st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR, showing the net effect of short-term variance.")
+                        st.metric(label="Variance Impact", value=f"{data.get('Variance Impact', 'N/A')}", help="The difference between Play WR and Assigned WR (Play WR - Assigned WR). A positive value means the run had good short-term luck, while a negative value means it had bad short-term luck.")
 
 # --- Sidebar for User Inputs ---
 # The sidebar contains all the global parameters for the simulation.
@@ -942,7 +947,7 @@ with st.sidebar.expander("Advanced Statistical Settings", expanded=False):
         ),
         key="prior_sample"
     )
-    st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes where you have no hands played, this slider balances between your manual win rate estimate (1.0) and the model's extrapolation from other stakes (0.0).", key="zero_hands_weight")
+    st.slider("Weight for 0-Hand Stake Estimates", 0.0, 1.0, step=0.05, help="For stakes with 0 hands, this slider balances the win rate estimate. 1.0 = Use your manual 'EV Win Rate' input only. 0.0 = Use the model's extrapolation from other stakes only. 0.5 is a balanced mix.", key="zero_hands_weight")
 
 with st.sidebar.expander("Plotting & Display Settings", expanded=False):
     st.slider(
@@ -1312,7 +1317,7 @@ with tab2:
                         **{
                             stake: st.column_config.TextColumn(
                                 f"{stake} Mix",
-                                help=f"Table mix for {stake}. Use a fixed ratio (e.g., 1), a percentage (e.g., '80%'), or a range (e.g., '20-40%'). Ratios are proportional (e.g., NL20: 1, NL50: 3 is a 25%/75% split).",
+                                help=f"Table mix for {stake}. Use a fixed ratio (e.g., 1), a percentage (e.g., '80%'), or a range (e.g., '20-40%'). Ratios are proportional (e.g., NL20: 1, NL50: 3 is a 25%/75% split). Leave blank for 0%.",
                             )
                             for stake in available_stakes
                         },
@@ -1520,7 +1525,7 @@ if st.session_state.get("simulation_output"):
 
         comp_col5, comp_col6 = st.columns(2)
         with comp_col5:
-            st.markdown("###### Volatility Comparison: Max Downswing", help="This plot shows the distribution of maximum downswings for each strategy. A wider distribution indicates higher volatility and risk.")
+            st.markdown("###### Volatility Comparison: Max Downswing", help="This plot compares the 95th percentile of maximum downswings for each strategy. A higher bar indicates a greater risk of a large, 'worst-case' downswing. 5% of simulations had a downswing larger than this value.")
             fig = engine.plot_downswing_comparison(all_results, config, color_map=color_map)
             st.pyplot(fig)
             plt.close(fig)
