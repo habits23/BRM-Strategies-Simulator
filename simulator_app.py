@@ -849,11 +849,20 @@ with st.sidebar.expander("General Settings", expanded=True):
     st.number_input("Target Bankroll (€)", min_value=0, step=100, help="The bankroll amount you are aiming to reach. This is used to calculate 'Target Probability'.", key="target_br")
     st.number_input("Ruin Threshold (€)", min_value=0, step=50, help="If a simulation's bankroll drops to or below this value, it is considered 'ruined' and stops.", key="ruin_thresh")
 
+    # --- Dynamically set max values based on environment ---
+    # Streamlit Cloud has limited resources (~1GB RAM), so we cap the inputs
+    # to prevent users from crashing the app.
+    import os
+    IS_CLOUD = os.environ.get('IS_STREAMLIT_CLOUD', 'false').lower() == 'true'
+
+    max_sims = 10000 if IS_CLOUD else 50000
+    max_hands = 250000 if IS_CLOUD else 10000000 # A very high local limit
+
     col1, col2 = st.columns(2)
     with col1:
-        st.number_input("Number of Simulations", min_value=10, max_value=50000, step=100, help="How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (e.g., 2000-10000)", key="num_sims")
+        st.number_input("Number of Simulations", min_value=10, max_value=max_sims, step=100, help=f"How many times to run the entire simulation from start to finish. Higher numbers give more accurate results but take longer. (Max on Cloud: {max_sims:,})", key="num_sims")
     with col2:
-        st.number_input("Total Hands to Simulate", min_value=1000, step=1000, help="The total number of hands to play in a single simulation run. This determines the time horizon.", key="total_hands")
+        st.number_input("Total Hands to Simulate", min_value=1000, max_value=max_hands, step=1000, help=f"The total number of hands to play in a single simulation run. (Max on Cloud: {max_hands:,})", key="total_hands")
 
 with st.sidebar.expander("Gameplay & Rakeback Settings", expanded=True):
     st.number_input("Hands per Bankroll Check", min_value=100, step=100, help="How often (in hands) to check your bankroll and apply your BRM rules. A common value is 1000.", key="hands_per_check")
