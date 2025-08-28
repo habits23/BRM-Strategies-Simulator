@@ -531,7 +531,7 @@ def _process_simulation_block(
     
     return True # Signal to continue loop
 
-def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
+def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_level_map, config, progress_callback=None):
     """
     Runs all simulations at once using vectorized NumPy operations for speed.
     This version dynamically resolves table mixes for each session.
@@ -624,6 +624,10 @@ def run_multiple_simulations_vectorized(strategy, all_win_rates, rng, stake_leve
         )
         if not should_continue:
             break
+        
+        # Report progress intermittently to avoid slowing down the simulation
+        if progress_callback and (i % 5 == 0 or i == num_checks - 1):
+            progress_callback((i + 1) / num_checks, f"Block {i+1}/{num_checks}...")
 
     # --- Final Downswing Duration Check ---
     # For sims that are still underwater at the very end, their current stretch is their final one.
@@ -890,7 +894,7 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
             'duration_probabilities': duration_probs_data
         }
     }
-def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config):
+def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_map, config, progress_callback=None):
     """
     Runs a simulation with a specific 'sticky' bankroll management strategy.
     This version correctly handles multiple stakes by implementing a proper state machine.
@@ -982,6 +986,10 @@ def run_sticky_simulation_vectorized(strategy, all_win_rates, rng, stake_level_m
         )
         if not should_continue:
             break
+
+        # Report progress intermittently to avoid slowing down the simulation
+        if progress_callback and (i % 5 == 0 or i == num_checks - 1):
+            progress_callback((i + 1) / num_checks, f"Block {i+1}/{num_checks}...")
 
     # --- Final Downswing Duration Check ---
     # For sims that are still underwater at the very end, their current stretch is their final one.
@@ -1988,6 +1996,23 @@ def generate_qualitative_analysis(all_results, config):
 
     return "\n".join(insights)
 
+def _create_strategy_progress_callback(strat_idx, strat_name, total_strats, main_callback):
+    """Creates a wrapper callback to calculate and report overall progress."""
+    if not main_callback:
+        return None
+
+    def wrapper(inner_progress, inner_text):
+        base_progress = strat_idx / total_strats
+        progress_fraction = 1.0 / total_strats
+        # Cap inner_progress at 1.0 to prevent overshooting
+        overall_progress = base_progress + (min(inner_progress, 1.0) * progress_fraction)
+
+        # Cap overall progress at just under the final analysis step
+        overall_progress = min(overall_progress, 0.99)
+
+        full_text = f"({strat_idx+1}/{total_strats}) {strat_name}: {inner_text}"
+        main_callback(overall_progress, full_text)
+    return wrapper
 # =================================================================================
 #   MAIN CONTROLLER FUNCTIONS
 # =================================================================================
@@ -2041,19 +2066,17 @@ def run_full_analysis(config, progress_callback=None):
         for i, (strategy_name, strategy_config) in enumerate(config['STRATEGIES_TO_RUN'].items()):
             try:
                 log_message(f"--- Starting Strategy: {strategy_name} ({i+1}/{num_strategies}) ---")
-                if progress_callback:
-                    progress = i / num_strategies
-                    progress_callback(progress, f"Simulating strategy: {strategy_name} ({i+1}/{num_strategies})...")
 
+                strategy_specific_callback = _create_strategy_progress_callback(i, strategy_name, num_strategies, progress_callback)
                 strategy_seed = master_rng.integers(1, 1_000_000_000)
                 all_win_rates, rng = setup_simulation_parameters(config, strategy_seed)
                 strategy_obj = initialize_strategy(strategy_name, strategy_config, config['STAKES_DATA'])
                 log_message(f"Parameters and win rates set up for '{strategy_name}'.")
 
                 if isinstance(strategy_obj, HysteresisStrategy):
-                    sim_results_tuple = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+                    sim_results_tuple = run_sticky_simulation_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config, progress_callback=strategy_specific_callback)
                 else:
-                    sim_results_tuple = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config)
+                    sim_results_tuple = run_multiple_simulations_vectorized(strategy_obj, all_win_rates, rng, stake_level_map, config, progress_callback=strategy_specific_callback)
                 log_message(f"Vectorized simulation loop completed for '{strategy_name}'.")
 
                 (bankroll_histories, hands_per_stake_histories, rakeback_histories, peak_stake_levels,
