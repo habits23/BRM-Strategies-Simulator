@@ -429,61 +429,44 @@ def _process_simulation_block(
     total_withdrawn_histories[:, i+1] = total_withdrawn_histories[:, i] + withdrawal_amounts_this_block
     new_bankrolls = temp_bankrolls
     bankroll_history[:, i+1] = np.where(active_mask, new_bankrolls, current_bankrolls)
-
-    # --- Maximum Drawdown, Underwater Time, and Duration ---
-    # These calculations MUST use the peak bankroll from the START of the block.
-    # We identify new peaks and calculate drawdowns BEFORE updating the peak for the next block.
-
-    # Identify simulations that made a new peak in this block
-    made_new_peak_mask = new_bankrolls > peak_bankrolls_so_far
-
-    # --- Underwater Time Calculation ---
-    underwater_mask = (bankroll_history[:, i+1] < peak_bankrolls_so_far) & active_mask
+ 
+    # --- Drawdown, Underwater, and Peak Calculations ---
+    # This section is critical. All calculations are based on the peak from the START of the block.
+    # The peak itself is only updated at the very end of this section.
+ 
+    # 1. Calculate the drawdown for this block. This is the single source of truth for all related metrics.
+    # A drawdown is defined as Peak - Current. It cannot be negative.
+    drawdown_this_block = peak_bankrolls_so_far - bankroll_history[:, i+1]
+    drawdown_this_block[drawdown_this_block < 0] = 0
+ 
+    # 2. Update metrics that depend on the current drawdown.
+    # a) Time spent underwater (total and current stretch)
+    underwater_mask = (drawdown_this_block > 0) & active_mask
     if np.any(underwater_mask):
         underwater_hands_count[underwater_mask] += config['HANDS_PER_CHECK']
         current_underwater_stretch_hands[underwater_mask] += config['HANDS_PER_CHECK']
-
-    # --- Downswing Probability Calculations (PrimeDope style) ---
-    # This must be done BEFORE the peak is updated. It calculates the proportion of time
-    # spent in a downswing of a certain depth or duration.
-    current_drawdown_eur = peak_bankrolls_so_far - bankroll_history[:, i+1]
-    current_drawdown_eur[current_drawdown_eur < 0] = 0 # Can't be negative
-
-    # Use the average bb_size for the current block to convert EUR to BB.
-    current_drawdown_bb = np.divide(current_drawdown_eur, bb_sizes_eur, out=np.zeros_like(current_drawdown_eur), where=bb_sizes_eur > 0)
-
+ 
+    # b) Downswing probability analysis (PrimeDope style)
     hands_this_block = config['HANDS_PER_CHECK']
-
-    # Tally hands spent in downswings of various depths
-    if downswing_depth_hands_count:
+    if downswing_depth_hands_count or downswing_duration_hands_count:
+        current_drawdown_bb = np.divide(drawdown_this_block, bb_sizes_eur, out=np.zeros_like(drawdown_this_block), where=bb_sizes_eur > 0)
         for depth_thresh in downswing_depth_hands_count.keys():
             in_downswing_mask = (current_drawdown_bb >= depth_thresh) & active_mask
             downswing_depth_hands_count[depth_thresh][in_downswing_mask] += hands_this_block
-
-    # Tally hands spent in downswings of various durations
-    if downswing_duration_hands_count:
         for duration_thresh in downswing_duration_hands_count.keys():
             in_downswing_mask = (current_underwater_stretch_hands >= duration_thresh) & active_mask
             downswing_duration_hands_count[duration_thresh][in_downswing_mask] += hands_this_block
-
-    # --- Downswing Duration Logic ---
+ 
+    # c) Reset current downswing stretch for sims that made a new peak.
+    made_new_peak_mask = new_bankrolls > peak_bankrolls_so_far
     if np.any(made_new_peak_mask):
         ended_stretch_durations = current_underwater_stretch_hands[made_new_peak_mask]
         np.maximum(max_underwater_stretch_so_far[made_new_peak_mask], ended_stretch_durations, out=max_underwater_stretch_so_far[made_new_peak_mask])
         current_underwater_stretch_hands[made_new_peak_mask] = 0
-
-    # --- Maximum Drawdown and Peak Update ---
-    # This logic is written explicitly to avoid potential side effects from in-place operations.
-    # 1. First, calculate the drawdown for this block, but ONLY for active simulations.
-    # For inactive sims, the drawdown for this block is 0.
-    current_drawdown = np.zeros_like(max_drawdowns_so_far)
-    if np.any(active_mask):
-        current_drawdown[active_mask] = peak_bankrolls_so_far[active_mask] - bankroll_history[active_mask, i+1]
-    current_drawdown[current_drawdown < 0] = 0 # A drawdown cannot be negative.
-    # 2. Next, update the all-time maximum drawdown if the current one is larger.
-    max_drawdowns_so_far[:] = np.maximum(max_drawdowns_so_far, current_drawdown)
-    # 3. Finally, update the peak for the NEXT block.
-    peak_bankrolls_so_far[:] = np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1])
+ 
+    # 3. Finally, update the all-time max drawdown and the peak for the next block.
+    np.maximum(max_drawdowns_so_far, drawdown_this_block, out=max_drawdowns_so_far)
+    np.maximum(peak_bankrolls_so_far, bankroll_history[:, i+1], out=peak_bankrolls_so_far)
 
     # --- History Updates ---
     rakeback_histories[:, i+1] = rakeback_histories[:, i] + np.where(active_mask, block_rakeback_eur, 0)
@@ -696,6 +679,11 @@ def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_st
                 stake_wrs['Realized WR (Play)'] = "N/A"
                 stake_wrs['Rakeback (bb/100)'] = "N/A"
                 stake_wrs['Variance Impact'] = "N/A"
+        else: # Handle case where total_hands_for_sim is 0
+            stake_wrs['Assigned WR'] = "N/A"
+            stake_wrs['Realized WR (Play)'] = "N/A"
+            stake_wrs['Rakeback (bb/100)'] = "N/A"
+            stake_wrs['Variance Impact'] = "N/A"
 
         percentile_win_rates[f"{name} Percentile"] = stake_wrs
     return percentile_win_rates
