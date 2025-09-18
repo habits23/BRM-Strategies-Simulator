@@ -275,8 +275,11 @@ def calculate_effective_win_rate(ev_bb_per_100, std_dev_per_100, sample_hands, l
         user_estimate = ev_bb_per_100
         skill_estimate_wr = (config['ZERO_HANDS_INPUT_WEIGHT'] * user_estimate) + ((1 - config['ZERO_HANDS_INPUT_WEIGHT']) * model_extrapolation)
 
+    # A very large prior sample size is a signal to run in "sanity check" mode,
+    # where long-term luck is disabled to match analytical models.
+    SANITY_CHECK_PRIOR_THRESHOLD = 10_000_000
     # For a true sanity check, we can bypass the luck factor entirely.
-    if config.get('PRIOR_SAMPLE_SIZE') >= 10_000_000:
+    if config.get('PRIOR_SAMPLE_SIZE') >= SANITY_CHECK_PRIOR_THRESHOLD:
         # The issue is that for the first stake, skill_estimate_wr is a float.
         # We must ensure it's an array of the correct size for all simulations.
         if isinstance(skill_estimate_wr, (int, float)):
