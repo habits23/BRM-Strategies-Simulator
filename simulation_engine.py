@@ -640,6 +640,69 @@ def calculate_binned_mode(data, ruin_threshold):
     except (np.linalg.LinAlgError, ValueError):
         return np.median(filtered_data)
 
+def _get_strategy_boundaries(strategy_obj, starting_bankroll):
+    """
+    Determines the bankroll thresholds for moving up or down from the current state.
+    This function understands the difference between Standard and Hysteresis logic.
+    """
+    rules = strategy_obj.rules  # These are sorted descending by threshold
+    if not rules:
+        return {
+            "move_up_threshold": None, "move_up_mix": None,
+            "move_down_threshold": None, "move_down_mix": None
+        }
+
+    # Find the current rule that applies to the starting bankroll
+    current_rule_index = -1
+    for i, rule in enumerate(rules):
+        if starting_bankroll >= rule['threshold']:
+            current_rule_index = i
+            break
+
+    # Case 1: Bankroll is below all defined thresholds (i.e., "No Play" state)
+    if current_rule_index == -1:
+        lowest_rule = rules[-1]
+        return {
+            "move_up_threshold": lowest_rule['threshold'],
+            "move_up_mix": lowest_rule.get('tables', {}),
+            "move_down_threshold": None,  # Cannot move down from "No Play"
+            "move_down_mix": None,
+        }
+
+    current_rule = rules[current_rule_index]
+
+    # --- Move Up Logic (same for both strategy types) ---
+    move_up_threshold = None
+    move_up_mix = None
+    if current_rule_index > 0:  # Can only move up if not already at the top rule
+        next_up_rule = rules[current_rule_index - 1]
+        move_up_threshold = next_up_rule['threshold']
+        move_up_mix = next_up_rule.get('tables', {})
+
+    # --- Move Down Logic (differs by strategy type) ---
+    move_down_threshold = None
+    move_down_mix = None
+
+    if isinstance(strategy_obj, HysteresisStrategy):
+        # For Hysteresis, you move down from stake N to N-1 if you drop below the threshold for N-1.
+        if current_rule_index < len(rules) - 1:  # If there is a rule below the current one
+            next_down_rule = rules[current_rule_index + 1]
+            move_down_threshold = next_down_rule['threshold']  # This is the key difference
+            move_down_mix = next_down_rule.get('tables', {})
+        else:  # At the lowest stake, you move down to "No Play" if you drop below its own threshold
+            move_down_threshold = current_rule['threshold']
+            move_down_mix = {}
+    else:  # Standard Strategy
+        # For Standard, you move down if you drop below the current rule's threshold.
+        move_down_threshold = current_rule['threshold']
+        if current_rule_index < len(rules) - 1:
+            next_down_rule = rules[current_rule_index + 1]
+            move_down_mix = next_down_rule.get('tables', {})
+        else:  # At the lowest rule, moving down means "No Play"
+            move_down_mix = {}
+
+    return { "move_up_threshold": move_up_threshold, "move_up_mix": move_up_mix, "move_down_threshold": move_down_threshold, "move_down_mix": move_down_mix }
+
 def _calculate_percentile_win_rates(final_bankrolls, all_win_rates, hands_per_stake_histories, rakeback_histories, total_withdrawn_histories, config, bb_size_map):
     """Calculates assigned and realized win rates for simulations closest to key percentiles."""
     percentile_win_rates = {}
@@ -839,8 +902,11 @@ def analyze_strategy_results(strategy_name, strategy_obj, bankroll_histories, ha
             avg_proportion = np.mean(proportions)
             duration_probs_data[int(thresh)] = avg_proportion * 100
 
+    initial_table_mix = strategy_obj.get_table_mix(config['STARTING_BANKROLL_EUR'])
+    strategy_boundaries = _get_strategy_boundaries(strategy_obj, config['STARTING_BANKROLL_EUR'])
+
     return {
-        'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
+        'initial_table_mix': initial_table_mix, 'strategy_boundaries': strategy_boundaries, 'final_bankrolls': final_bankrolls, 'median_final_bankroll': percentiles[50],
         'final_bankroll_mode': final_bankroll_mode, 'growth_rate': median_growth_rate,
         'risk_of_ruin': risk_of_ruin_percent, 'p5': percentiles[5], 'p2_5': percentiles[2.5],
         'bankroll_histories': bankroll_histories, 'hands_histories': total_hands_histories,
@@ -1606,19 +1672,86 @@ def write_detailed_strategy_report_to_pdf(pdf, strategy_name, result, config):
         fig.text(val_x, y_pos, value, ha='left', va='top', fontsize=9, color=colors['text'])
         y_pos -= 0.03
 
+    def render_key_value_wrapped(key, value, key_x=0.1, val_x=0.4, wrap_width=70):
+        nonlocal y_pos
+        
+        wrapped_text = textwrap.wrap(str(value), width=wrap_width)
+        required_lines = len(wrapped_text)
+        
+        if y_pos - (required_lines * 0.03) < 0.1:
+            new_page_check(0.9) # Force new page
+
+        fig.text(key_x, y_pos, key, ha='left', va='top', fontsize=9, weight='bold', color=colors['category'])
+        
+        start_y = y_pos
+        for i, line in enumerate(wrapped_text):
+            current_y = start_y - (i * 0.03)
+            fig.text(val_x, current_y, line, ha='left', va='top', fontsize=9, color=colors['text'])
+        
+        y_pos = start_y - (required_lines * 0.03)
+
+    def _format_mix_string_for_pdf(mix_dict):
+        """Helper to format a table mix dictionary into a readable string for PDF."""
+        if not mix_dict:
+            return "No Tables"
+        mix_parts = []
+        # Sort the mix by stake name to ensure consistent order
+        sorted_mix = sorted(mix_dict.items())
+        for stake, value in sorted_mix:
+            # Check if the stake is actually played
+            is_played = False
+            if isinstance(value, str) and '%' in value:
+                try:
+                    # Handle ranges like '20-40%' by checking the first number
+                    numeric_val = float(value.replace('%','').strip().split('-')[0])
+                    if numeric_val > 0:
+                        is_played = True
+                except (ValueError, IndexError):
+                    pass # Ignore malformed strings
+            elif isinstance(value, int) and value > 0:
+                is_played = True
+
+            if is_played:
+                mix_parts.append(f"{stake}: {value}")
+
+        return ", ".join(mix_parts) if mix_parts else "No Tables"
+
     # --- Main Title ---
     render_header(f"Detailed Report: {strategy_name}", size=16)
 
+    # --- Action Guide ---
+    new_page_check(0.4)
+    render_header("Action Guide")
+    initial_mix = result.get('initial_table_mix', {})
+    boundaries = result.get('strategy_boundaries', {})
+    move_up_thresh = boundaries.get('move_up_threshold')
+    move_down_thresh = boundaries.get('move_down_threshold')
+
+    mix_str = _format_mix_string_for_pdf(initial_mix)
+    render_key_value_wrapped("Current Action:", f"Based on start BR of €{config['STARTING_BANKROLL_EUR']:,.0f}, play: {mix_str if mix_str != 'No Tables' else 'no tables.'}")
+    y_pos -= 0.02
+
+    up_mix_str = _format_mix_string_for_pdf(boundaries.get('move_up_mix', {})) if move_up_thresh is not None else "N/A"
+    render_key_value_wrapped("Next Move Up:", f"If bankroll reaches €{move_up_thresh:,.0f}, switch to: {up_mix_str}." if move_up_thresh is not None else "You are at the highest level for this strategy.")
+
+    down_mix_str = _format_mix_string_for_pdf(boundaries.get('move_down_mix', {})) if move_down_thresh is not None else "N/A"
+    render_key_value_wrapped("Next Move Down:", f"If bankroll drops below €{move_down_thresh:,.0f}, switch to: {down_mix_str}." if move_down_thresh is not None else "You are at the lowest level for this strategy.")
+
     # --- Key Metrics ---
+    new_page_check(0.5)
     render_header("Key Metrics")
     render_key_value("Median Final Bankroll:", f"€{result['median_final_bankroll']:,.2f}")
     render_key_value("Median Total Withdrawn:", f"€{result.get('median_total_withdrawn', 0.0):,.2f}")
     render_key_value("Median Total Return:", f"€{result.get('median_total_return', 0.0):,.2f}")
+    render_key_value("Median Profit (Play):", f"€{result.get('median_profit_from_play_eur', 0.0):,.2f}")
+    render_key_value("Median Rakeback:", f"€{result.get('median_rakeback_eur', 0.0):,.2f}")
     render_key_value("Risk of Ruin:", f"{result['risk_of_ruin']:.2f}%")
     render_key_value("Target Probability:", f"{result['target_prob']:.2f}%")
     render_key_value("Median Max Downswing:", f"€{result['median_max_downswing']:,.2f}")
     render_key_value("95th Pct. Downswing:", f"€{result['p95_max_downswing']:,.2f}")
     render_key_value("Median Hands Played:", f"{result.get('median_hands_played', 0):,.0f}")
+    if config.get("STOP_LOSS_BB", 0) > 0:
+        render_key_value("Median Stop-Losses:", f"{result.get('median_stop_losses', 0):.1f}")
 
     # --- Downswing Probabilities ---
     new_page_check(0.4)
@@ -1650,8 +1783,8 @@ def write_detailed_strategy_report_to_pdf(pdf, strategy_name, result, config):
         sections.append(("Risk of Demotion", result['risk_of_demotion']))
     if result.get('hands_distribution_pct'):
         sections.append(("Hands Played Distribution", result['hands_distribution_pct']))
-    if result.get('final_stake_distribution'):
-        sections.append(("Final Stake Distribution", result['final_stake_distribution']))
+    if result.get('final_highest_stake_distribution'):
+        sections.append(("Final Highest Stake", result['final_highest_stake_distribution']))
 
     for title, data in sections:
         new_page_check(0.3)
@@ -1665,12 +1798,33 @@ def write_detailed_strategy_report_to_pdf(pdf, strategy_name, result, config):
         elif title == "Hands Played Distribution":
             stake_order_map = {s['name']: s['bb_size'] for s in config['STAKES_DATA']}
             sorted_data = sorted(data.items(), key=lambda i: stake_order_map.get(i[0], float('inf')))
+
+            stakes_data_list = config.get('STAKES_DATA', [])
+            sample_hands_map = {s['name']: s.get('sample_hands', 0) for s in stakes_data_list}
+            prior_sample_size = config.get('PRIOR_SAMPLE_SIZE', 50000)
+            avg_win_rates = result.get('average_assigned_win_rates', {})
+
             for stake, pct in sorted_data:
-                if pct > 0.01: render_key_value(f"{stake}:", f"{pct:.2f}%")
-        elif title == "Final Stake Distribution":
-            sorted_data = sorted(data.items(), key=lambda i: (-i[1], str(i[0])))
-            for mix, pct in sorted_data:
-                if pct > 0.01: render_key_value(f"{mix}:", f"{pct:.2f}%")
+                if pct > 0.01:
+                    sample_hands = sample_hands_map.get(stake, 0)
+                    trust_factor = 0.0
+                    if sample_hands > 0 and (sample_hands + prior_sample_size) > 0:
+                        trust_factor = sample_hands / (sample_hands + prior_sample_size)
+
+                    details_parts = []
+                    if stake in avg_win_rates:
+                        details_parts.append(f"Avg. WR: {avg_win_rates[stake]:.2f}")
+                    details_parts.append(f"Trust: {trust_factor:.0%}")
+
+                    details_str = f" ({', '.join(details_parts)})"
+                    render_key_value(f"{stake}:", f"{pct:.2f}%{details_str}")
+        elif title == "Final Highest Stake":
+            stake_order_map = {s['name']: s['bb_size'] for s in config['STAKES_DATA']}
+            sorted_data = sorted(data.items(), key=lambda i: stake_order_map.get(i[0], -1), reverse=True)
+            for stake, pct in sorted_data:
+                if pct > 0.01:
+                    display_stake = "Below Min. Threshold / Ruined" if stake == "No Play" else stake
+                    render_key_value(f"{display_stake}:", f"{pct:.2f}%")
 
     # --- Percentile Win Rate Analysis ---
     if result.get('percentile_win_rates'):

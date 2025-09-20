@@ -217,29 +217,39 @@ with st.expander("Need Help? Click here for the User Guide"):
     #### Detailed Analysis (Per Strategy)
     This section gives you a deep dive into each strategy.
 
-    *   **Visuals**:
+    *   **Action Guide**: This is the first box you'll see. It gives you immediate, actionable advice based on your starting bankroll:
+        *   **`▶️ Current Action`**: Tells you exactly which tables and stakes the strategy recommends you play *right now*.
+        *   **`↗️ Next Move Up`**: Shows the bankroll you need to reach to move up to the next level and what your new table mix will be.
+        *   **`↘️ Next Move Down`**: Shows the bankroll threshold you would need to drop below to move down, and what table mix you would switch to.
+
+    *   **Key Metrics**: A row of the most important performance indicators for this specific strategy, giving you an at-a-glance summary.
+
+    *   **Visual Analysis**: A series of plots to help you understand the strategy's behavior.
         *   **Bankroll Progression**: Shows the median path (blue line), the 25th-75th percentile range (shaded area), and 50 random individual simulations (grey lines) to give you a feel for the variance.
+        *   **Final Bankroll Distribution**: Shows the frequency of different final bankroll outcomes for this strategy.
         *   **Distribution of Assigned Luck (WR)**: This chart visualizes the "luck" factor. It shows the range of "true skill + long-term luck" the simulation assigns to different runs. The width of this curve is determined by your `Sample Hands` input—less data means more uncertainty and a wider curve.
         *   **Maximum Downswing Distribution**: Shows the full range of potential downswings. Helps you mentally prepare for the worst!
-    *   **Key Insights**:
+
+    *   **Downswing Probabilities**: These tables show the probability of experiencing a downswing of a certain depth (in big blinds) or duration (in hands).
+
+    *   **Detailed Strategy Insights**:
         *   **Hands Distribution**: Shows where you'll spend most of your time. For each stake, it provides:
             *   **Percentage**: The share of total hands played at this stake across all simulations.
             *   **Avg. WR**: The average win rate the simulation used for this stake. This includes the "luck" factor, so it will differ slightly from your input. It represents the average "true skill" assigned to players at this stake.
             *   **Trust**: A percentage showing how much the model "trusts" your input EV Win Rate. It's calculated based on your `Sample Hands` versus the `Prior Sample Size`. A high trust percentage means the model is confident in your data and will apply less long-term luck (variance) to your win rate. A low trust percentage means the model is uncertain and will simulate a wider range of good and bad luck.
-        *   **Median Hands Played**: The median number of hands played per simulation. This can be lower than the total if a stop-loss is frequently triggered.
-        *   **Median Stop-Losses**: If enabled, this metric shows the typical number of times a stop-loss was triggered during a simulation run. It's a good indicator of session volatility.
-        *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake.
-        *   **Downswing Probabilities**: These tables show the probability of experiencing a downswing of a certain depth (in big blinds) or duration (in hands).
+        *   **Final Stake**: Shows the percentage of simulations that finished with a given stake as their highest active stake. This tells you where you are most likely to end up.
+        *   **Risk of Demotion**: The chance you'll have to move down after successfully moving up to a stake. A high number here indicates an unstable strategy.
+
     *   **Percentile Win Rate Analysis**: This section is crucial for understanding *why* some runs did well and others did poorly. It shows a five-number summary (2.5th, 5th, 25th, Median, 75th, 95th, 97.5th) of outcomes, giving you a detailed look at the full spectrum of possibilities.
         *   **2.5th/5th Percentile**: A typical "bad run" or unlucky outcome.
-        *   **25th Percentile**: A "mildly bad" run. Not a disaster, but a common losing scenario.
+        *   **25th Percentile**: A "mildly bad" run. A common losing scenario.
         *   **Median (50th)**: The outcome for the run that finished with the median final bankroll.
         *   **75th Percentile**: A "mildly good" run. A common winning scenario.
         *   **95th/97.5th Percentile**: A typical "good run" or heater.
     *   For each percentile, you'll see these metrics:
         *   **Assigned WR**: The "true" win rate (skill + long-term luck) the simulator assigned to the entire run. A high number here means this simulated "you" was on a long-term heater.
             It is influenced by:
-            *   **`EV Win Rate (bb/100)`**: Your stated skill level, which is the starting point.
+            *   **`EV Win Rate (bb/100)`**: Your stated skill level, which is a starting point.
             *   **`Sample Hands`**: The more hands you have, the more the model trusts your EV Win Rate, and the smaller the "luck" adjustment will be.
             *   **`Std Dev (bb/100)`**: Higher volatility means more uncertainty, which allows for a wider range of possible long-term luck adjustments.
             *   **`Prior Sample Size`**: The model's "skepticism." A high value here makes the model more skeptical of small samples, leading to a wider luck distribution.
@@ -503,6 +513,68 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
     which keeps the main part of the script clean and avoids code duplication.
     """
     with st.expander(f"Detailed Analysis for: {strategy_name}", expanded=False):
+        def _format_mix_string(mix_dict):
+            """Helper to format a table mix dictionary into a readable string."""
+            if not mix_dict:
+                return "**No Tables**"
+            mix_parts = []
+            # Sort the mix by stake name to ensure consistent order
+            sorted_mix = sorted(mix_dict.items())
+            for stake, value in sorted_mix:
+                # Check if the stake is actually played
+                is_played = False
+                if isinstance(value, str) and '%' in value:
+                    try:
+                        # Handle ranges like '20-40%' by checking the first number
+                        numeric_val = float(value.replace('%','').strip().split('-')[0])
+                        if numeric_val > 0:
+                            is_played = True
+                    except (ValueError, IndexError):
+                        pass # Ignore malformed strings
+                elif isinstance(value, int) and value > 0:
+                    is_played = True
+
+                if is_played:
+                    mix_parts.append(f"**{stake}**: {value}")
+
+            return ", ".join(mix_parts) if mix_parts else "**No Tables**"
+
+        # --- Actionable Strategy Guide ---
+        initial_mix = result.get('initial_table_mix', {})
+        boundaries = result.get('strategy_boundaries', {})
+        move_up_thresh = boundaries.get('move_up_threshold')
+        move_down_thresh = boundaries.get('move_down_threshold')
+
+        # Only show the box if there's something actionable to display.
+        if initial_mix or move_up_thresh is not None or move_down_thresh is not None:
+            with st.container(border=True):
+                # --- Initial Recommendation ---
+                if initial_mix:
+                    mix_str = _format_mix_string(initial_mix)
+                    if mix_str != "**No Tables**":
+                        st.markdown(f"**▶️ Current Action:** Based on your starting bankroll of **€{config['STARTING_BANKROLL_EUR']:,.0f}**, this strategy recommends you play: {mix_str}")
+                    else:
+                        st.markdown(f"**▶️ Current Action:** Based on your starting bankroll of **€{config['STARTING_BANKROLL_EUR']:,.0f}**, this strategy recommends **not playing any tables**. This is likely because your bankroll is below the lowest threshold.")
+                
+                st.markdown("---") # Separator
+
+                # --- Strategy Boundaries ---
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**<p style='font-size: 1.1em;'>↗️ Next Move Up</p>**", unsafe_allow_html=True)
+                    if move_up_thresh is not None:
+                        up_mix_str = _format_mix_string(boundaries.get('move_up_mix', {}))
+                        st.markdown(f"If your bankroll reaches **€{move_up_thresh:,.0f}**, switch to: {up_mix_str}.")
+                    else:
+                        st.markdown("You are at the highest level for this strategy.")
+                with col2:
+                    st.markdown(f"**<p style='font-size: 1.1em;'>↘️ Next Move Down</p>**", unsafe_allow_html=True)
+                    if move_down_thresh is not None:
+                        down_mix_str = _format_mix_string(boundaries.get('move_down_mix', {}))
+                        st.markdown(f"If your bankroll drops below **€{move_down_thresh:,.0f}**, switch to: {down_mix_str}.")
+                    else:
+                        st.markdown("You are at the lowest level for this strategy.")
+
         # --- Special Sanity Check Analysis Box ---
         if strategy_name == SANITY_CHECK_STRATEGY_NAME:
             with st.container(border=True):
