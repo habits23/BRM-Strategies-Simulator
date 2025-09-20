@@ -916,7 +916,7 @@ st.sidebar.header("Simulation Parameters")
 st.sidebar.button(
     "**Run Simulation**",
     on_click=click_run_button,
-    use_container_width=True,
+    width='stretch',
     type="primary",
     help="Click to run the simulation with the current settings."
 )
@@ -1033,7 +1033,7 @@ with st.sidebar.expander("Advanced & Debugging Settings", expanded=False):
     st.checkbox("Enable Diagnostic Log", key="enable_diagnostic_log", value=False, help="Generate a detailed log of the simulation process. Useful for debugging, but can slightly slow down the simulation.")
 
 with st.sidebar.expander("Model Validation", expanded=False):
-    st.button("Load Sanity Check Config", on_click=setup_sanity_check, help="Loads a simple configuration to validate the simulation engine against a standard variance calculator. This will overwrite your current settings.", use_container_width=True)
+    st.button("Load Sanity Check Config", on_click=setup_sanity_check, help="Loads a simple configuration to validate the simulation engine against a standard variance calculator. This will overwrite your current settings.", width='stretch')
 
 
 def randomize_seed():
@@ -1048,7 +1048,7 @@ seed_col1, seed_col2 = st.sidebar.columns([3, 1])
 with seed_col1:
     st.number_input("Random Seed", label_visibility="collapsed", step=1, help="A fixed number that ensures the exact same random results every time. Change it to get a different set of random outcomes.", key="seed")
 with seed_col2:
-    st.button("🎲", on_click=randomize_seed, help="Generate a new random seed.", use_container_width=True)
+    st.button("🎲", on_click=randomize_seed, help="Generate a new random seed.", width='stretch')
 
 st.sidebar.header("Save & Load Configuration")
 
@@ -1082,7 +1082,7 @@ st.sidebar.download_button(
     data=get_full_config_as_json(),
     file_name=f"poker_sim_config_{datetime.datetime.now().strftime('%Y%m%d')}.json",
     mime="application/json",
-    use_container_width=True
+    width='stretch'
 )
 
 def process_uploaded_config():
@@ -1215,7 +1215,7 @@ with tab2:
         "You can use fixed ratios (e.g., `1`), percentages (e.g., `'80%'`), or percentage ranges (e.g., `'20-40%'`). "
         "Hover over the 'Mix' column headers for more details."
     )
-    st.button("Add New Strategy", on_click=add_strategy, use_container_width=True)
+    st.button("Add New Strategy", on_click=add_strategy, width='stretch')
     st.write("---")
 
     # Get the list of available stake names from the stakes data tab.
@@ -1249,11 +1249,11 @@ with tab2:
             with col3:
                 st.write("")  # Spacer
                 st.write("")  # Spacer
-                st.button("Clone", key=f"clone_{name}", on_click=clone_strategy, args=(name,), use_container_width=True)
+                st.button("Clone", key=f"clone_{name}", on_click=clone_strategy, args=(name,), width='stretch')
             with col4:
                 st.write("")  # Spacer
                 st.write("")  # Spacer
-                st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), use_container_width=True)
+                st.button("Remove", key=f"remove_{name}", on_click=remove_strategy, args=(name,), width='stretch')
 
             # Handle strategy renaming.
             if new_name != name:
@@ -1633,6 +1633,6 @@ if st.session_state.get("simulation_output"):
                 data=pdf_bytes,
                 file_name=f"poker_sim_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
-                use_container_width=False,
+                width='content',
                 help="Click to download a detailed, multi-page PDF report of the simulation results."
             )
