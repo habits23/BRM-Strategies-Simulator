@@ -88,6 +88,27 @@ DEFAULT_STRATEGIES = {
             {"threshold": 2000, "tables": {"NL20": "100%"}},
         ]
     },
+    "The Step Ladder": {
+        "type": "standard",
+        "rules": [
+            {"threshold": 12400, "tables": {"NL200": 5, "NL100": 0}},
+            {"threshold": 10600, "tables": {"NL200": 4, "NL100": 1}},
+            {"threshold": 9000, "tables": {"NL200": 3, "NL100": 2}},
+            {"threshold": 7800, "tables": {"NL200": 2, "NL100": 3}},
+            {"threshold": 6500, "tables": {"NL200": 1, "NL100": 4}},
+            {"threshold": 6200, "tables": {"NL100": 5, "NL50": 0}},
+            {"threshold": 5300, "tables": {"NL100": 4, "NL50": 1}},
+            {"threshold": 4500, "tables": {"NL100": 3, "NL50": 2}},
+            {"threshold": 3800, "tables": {"NL100": 2, "NL50": 3}},
+            {"threshold": 3200, "tables": {"NL100": 1, "NL50": 4}},
+            {"threshold": 3100, "tables": {"NL50": 5, "NL20": 0}},
+            {"threshold": 2650, "tables": {"NL50": 4, "NL20": 1}},
+            {"threshold": 2250, "tables": {"NL50": 3, "NL20": 2}},
+            {"threshold": 1750, "tables": {"NL50": 2, "NL20": 3}},
+            {"threshold": 1250, "tables": {"NL50": 1, "NL20": 4}},
+            {"threshold": 675, "tables": {"NL20": 5}}
+        ]
+    },
     "Hysteresis (Sticky)": {
         "type": "hysteresis",
         "num_buy_ins": 40
@@ -644,9 +665,9 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                     plt.close(fig)
 
             # --- Downswing Probabilities ---
-            def display_downswing_table(title, data, column_names):
+            def display_downswing_table(title, data, column_names, help_text):
                 """Nested helper function to display a formatted downswing probability table."""
-                st.markdown(f"##### {title}")
+                st.markdown(f"##### {title}", help=help_text)
                 if data:
                     df = pd.DataFrame(list(data.items()), columns=column_names)
                     df[column_names[1]] = df[column_names[1]].map('{:,.2f}%'.format)
@@ -659,9 +680,9 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
             col1, col2 = st.columns(2)
             downswing_analysis = result.get('downswing_analysis', {})
             with col1:
-                display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'])
+                display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'], "This table shows the percentage of total hands played while in a downswing of a certain depth. For example, a 10% probability for '>= 500 BB' means you will spend 10% of your time with a bankroll at least 500 big blinds below a previous peak.")
             with col2:
-                display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'])
+                display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'], "This table shows the percentage of total hands played while being 'underwater' (below a previous bankroll peak) for a continuous stretch of hands. For example, a 5% probability for '>= 50,000 Hands' means you will spend 5% of your time in a downswing that has already lasted for 50,000 hands or more.")
 
             # --- Percentile Win Rate Analysis ---
             if result.get('percentile_win_rates'):
@@ -753,9 +774,9 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 plt.close(fig)
 
         # --- Downswing Extent & Stretch Analysis ---
-        def display_downswing_table(title, data, column_names):
+        def display_downswing_table(title, data, column_names, help_text):
             """Nested helper function to display a formatted downswing probability table."""
-            st.markdown(f"##### {title}")
+            st.markdown(f"##### {title}", help=help_text)
             if data:
                 df = pd.DataFrame(list(data.items()), columns=column_names)
                 df[column_names[1]] = df[column_names[1]].map('{:,.2f}%'.format)
@@ -764,21 +785,24 @@ def display_detailed_strategy_results(strategy_name, result, config, color_map, 
                 st.info(f"No {title.lower()} data available.")
 
         st.markdown("---")
-        st.subheader(
-            "Downswing Probabilities",
-            help=(
-                "These tables show the probability that a simulation will experience at least one downswing of a certain magnitude.\n\n"
-                "- **Downswing Depth:** The probability of experiencing a peak-to-trough loss of at least X big blinds.\n\n"
-                "- **Downswing Duration:** The probability of spending at least X consecutive hands below a previous bankroll peak (i.e., 'underwater')."
-            )
-        )
+        st.subheader("Downswing Probabilities")
 
         col1, col2 = st.columns(2)
         downswing_analysis = result.get('downswing_analysis', {})
         with col1:
-            display_downswing_table("Downswing Depth (in BBs)", downswing_analysis.get('depth_probabilities', {}), ['Depth (BB)', 'Probability'])
+            display_downswing_table(
+                "Downswing Depth (in BBs)",
+                downswing_analysis.get('depth_probabilities', {}),
+                ['Depth (BB)', 'Probability'],
+                "This table shows the percentage of total hands played while in a downswing of a certain depth. For example, a 10% probability for '>= 500 BB' means you will spend 10% of your time with a bankroll at least 500 big blinds below a previous peak."
+            )
         with col2:
-            display_downswing_table("Downswing Duration (in Hands)", downswing_analysis.get('duration_probabilities', {}), ['Duration (Hands)', 'Probability'])
+            display_downswing_table(
+                "Downswing Duration (in Hands)",
+                downswing_analysis.get('duration_probabilities', {}),
+                ['Duration (Hands)', 'Probability'],
+                "This table shows the percentage of total hands played while being 'underwater' (below a previous bankroll peak) for a continuous stretch of hands. For example, a 5% probability for '>= 50,000 Hands' means you will spend 5% of your time in a downswing that has already lasted for 50,000 hands or more."
+            )
 
         st.subheader("Detailed Strategy Insights")
         st.markdown("_For a full breakdown, please download the PDF report._")
